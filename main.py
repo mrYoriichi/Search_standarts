@@ -6,7 +6,7 @@
 import json
 from pathlib import Path
 
-from pdf_processing.parser import parse_pdf
+from pdf_processing.parser import parse_pdf, collect_pages_to_save
 
 
 def save_document_json(document: dict, output_root: Path) -> Path:
@@ -27,21 +27,67 @@ def save_document_json(document: dict, output_root: Path) -> Path:
     return output_path
 
 
+def save_page_images(
+    page_images: dict,
+    pages_to_save: set[int],
+    doc_dir: Path,
+) -> dict[int, str]:
+    """
+    Сохраняет указанные страницы как PNG в подпапку pages/.
+    Возвращает словарь {номер_страницы: относительный_путь} —
+    он пригодится, чтобы вписать пути в JSON.
+
+    page_images   — все картинки страниц из парсера (PIL.Image).
+    pages_to_save — какие именно страницы реально сохраняем.
+    doc_dir       — папка документа (data/raw_data/<document_id>/).
+    """
+    pages_dir = doc_dir / "pages"
+    pages_dir.mkdir(parents=True, exist_ok=True)
+
+    saved_paths: dict[int, str] = {}
+    for page_num in sorted(pages_to_save):
+        image = page_images.get(page_num)
+        if image is None:
+            # Подстраховка: вдруг для этой страницы картинки нет
+            continue
+        # Имя файла: p001.png, p012.png — всегда три цифры
+        filename = f"p{page_num:03d}.png"
+        full_path = pages_dir / filename
+        image.save(full_path, format="PNG")
+        # В JSON будет лежать относительный путь от папки документа
+        saved_paths[page_num] = f"pages/{filename}"
+
+    return saved_paths
+
+
 def main():
     pdf_path = "data/pdfs/MVL649.pdf"
     output_root = Path("data/raw_data")
 
     print(f"Читаю {pdf_path}, подожди...")
-    document = parse_pdf(pdf_path)
+    document, page_images = parse_pdf(pdf_path)
 
-    output_path = save_document_json(document, output_root)
+    # Папка документа: data/raw_data/<document_id>/
+    doc_dir = output_root / document["document_id"]
+    doc_dir.mkdir(parents=True, exist_ok=True)
 
-    # Небольшой отчёт пользователю — что получилось
+    # Сохраняем JSON
+    output_path = doc_dir / "document.json"
+    import json
+    with open(output_path, "w", encoding="utf-8") as f:
+        json.dump(document, f, ensure_ascii=False, indent=2)
+
+    # Решаем, какие страницы сохранить, и сохраняем их
+    pages_to_save = collect_pages_to_save(document)
+    saved_paths = save_page_images(page_images, pages_to_save, doc_dir)
+
+    # Отчёт
     total_blocks = sum(len(p["blocks"]) for p in document["pages"])
     print("\nГотово!")
     print(f"  Файл:    {output_path}")
     print(f"  Страниц: {len(document['pages'])}")
     print(f"  Блоков:  {total_blocks}")
+    print(f"  Сохранено картинок страниц: {len(saved_paths)} (в {doc_dir}/pages/)")
 
 
 if __name__ == "__main__":

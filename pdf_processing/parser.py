@@ -11,7 +11,9 @@ import re
 import unicodedata
 from pathlib import Path
 
-from docling.document_converter import DocumentConverter
+from docling.datamodel.base_models import InputFormat
+from docling.datamodel.pipeline_options import PdfPipelineOptions
+from docling.document_converter import DocumentConverter, PdfFormatOption
 
 
 # Таблица перевода: метка Docling -> наш внутренний тип блока.
@@ -31,6 +33,16 @@ LABEL_MAP = {
     "code": "code",
     "footnote": "footnote",
 }
+
+# Типы блоков, текст которых используется для построения page_text.
+TEXT_BLOCK_TYPES = {
+    "text", "heading", "header", "footer",
+    "caption", "list_item", "footnote",
+}
+
+
+# Типы блоков, для которых нужны скриншоты страниц (для будущей vision LLM).
+VISUAL_BLOCK_TYPES = {"figure", "table"}
 
 
 def make_document_id(filename: str) -> str:
@@ -92,6 +104,23 @@ def make_block(item, block_idx_on_page: int, page_num: int) -> dict:
     }
 
 
+def build_page_text(blocks: list[dict]) -> str:
+    """
+    Склеивает текст всех текстовых блоков страницы в одну строку.
+    Используется как контекст для vision LLM при описании соседних страниц.
+    Пустые блоки и блоки без поля text пропускаем.
+    """
+    pieces = []
+    for block in blocks:
+        if block["type"] not in TEXT_BLOCK_TYPES:
+            continue
+        text = block.get("text")
+        if text:
+            pieces.append(text.strip())
+    # Сцепляем через двойной перевод строки — чтобы границы блоков были видны
+    return "\n\n".join(pieces)
+
+
 def build_document_dict(doc, pdf_filename: str) -> dict:
     """
     Собирает итоговый словарь документа по нашей JSON-схеме.
@@ -107,12 +136,17 @@ def build_document_dict(doc, pdf_filename: str) -> dict:
         block_idx = len(pages_dict[page_num]) + 1
         pages_dict[page_num].append(make_block(item, block_idx, page_num))
 
-    # Шаг 2: превращаем словарь в отсортированный список страниц
+    # Шаг 2: превращаем словарь в отсортированный список страниц.
+    # Для каждой страницы заодно строим page_text — сцепленный текст.
     pages_list = [
-        {"page_number": page_num, "blocks": blocks}
+        {
+            "page_number": page_num,
+            "page_text": build_page_text(blocks),
+            "blocks": blocks,
+        }
         for page_num, blocks in sorted(pages_dict.items())
     ]
-
+    
     return {
         "document_id": make_document_id(pdf_filename),
         "document_name": pdf_filename,
@@ -120,15 +154,67 @@ def build_document_dict(doc, pdf_filename: str) -> dict:
     }
 
 
-def parse_pdf(pdf_path: str) -> dict:
+def collect_pages_to_save(document: dict) -> set[int]:
+    """
+    Возвращает множество номеров страниц, которые нужно сохранить как PNG.
+
+    Сохраняем только страницы, содержащие figure или table.
+    Текстовый контекст соседних страниц берётся отдельно
+    (из поля page_text в JSON) при отправке в vision LLM.
+    """
+    pages = document["pages"]
+    # Множество всех существующих номеров страниц — чтобы не добавлять
+    # «соседей», которых на самом деле нет (за пределами документа).
+
+    pages_to_save: set[int] = set()
+
+    for page in pages:
+        # Есть ли на странице блок типа figure или table?
+        has_visual = any(
+            block["type"] in VISUAL_BLOCK_TYPES for block in page["blocks"]
+        )
+        if not has_visual:
+            continue
+
+        # Сохраняем только саму страницу с figure/table.
+        # Текстовый контекст соседей будет вытаскиваться из JSON-поля page_text
+        # при отправке в vision LLM.
+        pages_to_save.add(page["page_number"])
+
+    return pages_to_save
+
+
+def parse_pdf(pdf_path: str) -> tuple[dict, dict]:
     """
     Главная функция модуля.
-    Принимает путь к PDF, возвращает структурированный словарь документа.
-    Не сохраняет ничего на диск.
+    Принимает путь к PDF.
+    Возвращает кортеж из двух элементов:
+      1. document — структурированный словарь документа.
+      2. page_images — словарь {номер_страницы: PIL.Image} с картинками всех страниц.
+
+    Сохранением на диск занимается тот, кто вызывает (main.py).
     """
-    converter = DocumentConverter()
+    pipeline_options = PdfPipelineOptions()
+    pipeline_options.generate_page_images = True
+    pipeline_options.images_scale = 2.0
+
+    converter = DocumentConverter(
+        format_options={
+            InputFormat.PDF: PdfFormatOption(pipeline_options=pipeline_options)
+        }
+    )
+
     result = converter.convert(pdf_path)
     doc = result.document
 
+    # Собираем картинки всех страниц в обычный словарь {page_no: PIL.Image}.
+    # Так удобнее работать дальше: парсер не «утечёт» в чужой код объектами Docling.
+    page_images = {}
+    for page_num, page in doc.pages.items():
+        if page.image and page.image.pil_image:
+            page_images[page_num] = page.image.pil_image
+
     pdf_filename = Path(pdf_path).name
-    return build_document_dict(doc, pdf_filename)
+    document = build_document_dict(doc, pdf_filename)
+
+    return document, page_images
