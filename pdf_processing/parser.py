@@ -86,14 +86,15 @@ def make_block(item, block_idx_on_page: int, page_num: int) -> dict:
     block_id = f"p{page_num}_b{block_idx_on_page:02d}"
     bbox = extract_bbox(item)
 
-    if block_type == "figure":
+    if block_type in VISUAL_BLOCK_TYPES:
         return {
             "block_id": block_id,
-            "type": "figure",
-            "caption": None,        # позже свяжем с соседней подписью
-            "image_path": None,     # позже впишем путь к картинке
-            "description": None,    # позже впишет vision LLM
+            "type": block_type,
             "bbox": bbox,
+            "page_image_path": None,
+            "prev_page": None,
+            "next_page": None,
+            "description": None,
         }
 
     return {
@@ -121,6 +122,36 @@ def build_page_text(blocks: list[dict]) -> str:
     return "\n\n".join(pieces)
 
 
+def enrich_visual_blocks(document: dict, pages_to_save: set[int]) -> None:
+    """
+    Дозаполняет поля у блоков figure/table:
+      - page_image_path — путь к скриншоту страницы (если её сохраняем);
+      - prev_page, next_page — номера соседних страниц (или None на границах).
+
+    Меняет document на месте (in-place). Ничего не возвращает.
+    """
+    # Все существующие номера страниц — чтобы понять, есть ли сосед
+    all_page_numbers = {p["page_number"] for p in document["pages"]}
+
+    for page in document["pages"]:
+        page_num = page["page_number"]
+        for block in page["blocks"]:
+            if block["type"] not in VISUAL_BLOCK_TYPES:
+                continue
+
+            # Путь к скриншоту — относительный, от папки документа
+            if page_num in pages_to_save:
+                block["page_image_path"] = f"pages/p{page_num:03d}.png"
+
+            # Номера соседних страниц, если они есть в документе
+            prev_num = page_num - 1
+            next_num = page_num + 1
+            if prev_num in all_page_numbers:
+                block["prev_page"] = prev_num
+            if next_num in all_page_numbers:
+                block["next_page"] = next_num
+
+
 def build_document_dict(doc, pdf_filename: str) -> dict:
     """
     Собирает итоговый словарь документа по нашей JSON-схеме.
@@ -146,7 +177,7 @@ def build_document_dict(doc, pdf_filename: str) -> dict:
         }
         for page_num, blocks in sorted(pages_dict.items())
     ]
-    
+
     return {
         "document_id": make_document_id(pdf_filename),
         "document_name": pdf_filename,

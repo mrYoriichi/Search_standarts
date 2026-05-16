@@ -6,7 +6,7 @@
 import json
 from pathlib import Path
 
-from pdf_processing.parser import parse_pdf, collect_pages_to_save
+from pdf_processing.parser import parse_pdf, collect_pages_to_save, enrich_visual_blocks
 
 
 def save_document_json(document: dict, output_root: Path) -> Path:
@@ -71,15 +71,17 @@ def main():
     doc_dir = output_root / document["document_id"]
     doc_dir.mkdir(parents=True, exist_ok=True)
 
-    # Сохраняем JSON
-    output_path = doc_dir / "document.json"
-    import json
-    with open(output_path, "w", encoding="utf-8") as f:
-        json.dump(document, f, ensure_ascii=False, indent=2)
-
-    # Решаем, какие страницы сохранить, и сохраняем их
+    # Решаем, какие страницы сохранять, и сохраняем их
     pages_to_save = collect_pages_to_save(document)
     saved_paths = save_page_images(page_images, pages_to_save, doc_dir)
+
+    # Дозаполняем поля у блоков figure/table (пути к картинкам, соседи)
+    enrich_visual_blocks(document, pages_to_save)
+
+    # Сохраняем итоговый JSON — уже с заполненными путями
+    output_path = doc_dir / "document.json"
+    with open(output_path, "w", encoding="utf-8") as f:
+        json.dump(document, f, ensure_ascii=False, indent=2)
 
     # Отчёт
     total_blocks = sum(len(p["blocks"]) for p in document["pages"])
