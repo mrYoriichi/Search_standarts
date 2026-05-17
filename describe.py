@@ -16,7 +16,7 @@ from dotenv import load_dotenv
 # Загружаем .env (ключ OpenAI) ДО импорта модуля, который обращается к API
 load_dotenv()
 
-from pdf_processing.image_description import describe_page_visuals
+from pdf_processing.image_description import describe_page_visuals, extract_document_metadata
 from pdf_processing.parser import VISUAL_BLOCK_TYPES
 
 
@@ -56,7 +56,22 @@ def main():
     pages = find_pages_with_visuals(document)
 
     print(f"Документ: {document['document_name']}")
-    print(f"Страниц с figure/table: {len(pages)}")
+
+    # Шаг 1: извлекаем название и описание документа по первой странице
+    first_page_image = doc_dir / "pages" / "p001.png"
+    if first_page_image.exists():
+        print("Извлекаю метаданные документа...")
+        meta = extract_document_metadata(first_page_image)
+        document["document_title"] = meta["title"]
+        document["document_summary"] = meta["summary"]
+        print(f"  Название: {meta['title']}")
+    else:
+        print("  [!] Скриншота первой страницы нет, метаданные пропущены")
+        document["document_title"] = ""
+        document["document_summary"] = ""
+
+    # Шаг 2: описываем схемы и таблицы
+    print(f"\nСтраниц с figure/table: {len(pages)}")
     print(f"Начинаю описание через vision LLM...\n")
 
     total_described = 0

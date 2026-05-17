@@ -240,3 +240,53 @@ def describe_page_visuals(
             updated += 1
 
     return updated
+
+
+def extract_document_metadata(image_path: str | Path) -> dict:
+    """
+    Извлекает название и краткое описание документа по его первой странице.
+
+    Возвращает словарь с двумя ключами:
+      - title: полное название документа;
+      - summary: краткое описание (1-2 предложения), о чём документ.
+
+    При неудаче возвращает пустые строки — не роняем программу.
+    """
+    prompt = """Jsi expert na stavební a technickou dokumentaci.
+
+Na obrázku je titulní strana technické normy nebo vzorového listu.
+
+ÚKOL:
+1. Urči celý oficiální název dokumentu (číslo i název dohromady).
+2. Napiš krátké shrnutí (1-2 věty), o čem dokument je a k čemu slouží.
+
+ODPOVĚĎ:
+Vrať POUZE validní JSON s dvěma klíči: "title" a "summary".
+Obojí v češtině. Nepřidávej žádný text mimo JSON.
+
+Příklad formátu:
+{"title": "MVL 649 Železobetonové trubní propustky", "summary": "Dokument stanovuje technické podmínky pro..."}
+"""
+
+    raw_answer = ask_vision(image_path, prompt)
+
+    # Разбираем ответ. Здесь ожидаем не список, а один объект,
+    # поэтому parse_vision_response не подходит — парсим отдельно.
+    text = raw_answer.strip()
+    if text.startswith("```"):
+        lines = text.split("\n")[1:]
+        if lines and lines[-1].strip() == "```":
+            lines = lines[:-1]
+        text = "\n".join(lines)
+
+    try:
+        data = json.loads(text)
+    except json.JSONDecodeError:
+        print("  [!] Не удалось разобрать метаданные документа")
+        return {"title": "", "summary": ""}
+
+    # Берём поля с подстраховкой — если модель что-то не вернула
+    return {
+        "title": data.get("title", ""),
+        "summary": data.get("summary", ""),
+    }

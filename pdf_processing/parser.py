@@ -68,6 +68,37 @@ def map_label(docling_label) -> str:
     return LABEL_MAP.get(label_str, label_str)
 
 
+# Шаблон для номера раздела в начале заголовка: "7", "7.12", "7.12.5"
+SECTION_NUMBER_PATTERN = re.compile(r"^(\d+(?:\.\d+)*)")
+
+
+def parse_heading_number(text: str) -> tuple[str | None, int | None]:
+    """
+    Извлекает номер раздела и его уровень из текста заголовка.
+
+    Примеры:
+      "7  Konstrukční zásady"  -> ("7", 1)
+      "7.12  Zábradlí"         -> ("7.12", 2)
+      "7.12.5  Vzdálenost..."  -> ("7.12.5", 3)
+      "Seznam zkratek"         -> (None, None)   # без номера
+
+    Возвращает кортеж (номер_раздела, уровень).
+    Если номер не найден — (None, None).
+    """
+    if not text:
+        return None, None
+
+    # Ищем номер в самом начале строки
+    match = SECTION_NUMBER_PATTERN.match(text.strip())
+    if not match:
+        return None, None
+
+    section_number = match.group(1)
+    # Уровень = количество точек + 1. "7" -> 0 точек -> уровень 1.
+    level = section_number.count(".") + 1
+    return section_number, level
+
+
 def extract_bbox(item) -> list | None:
     """Возвращает рамку блока [x1, y1, x2, y2] в виде целых чисел или None."""
     if not item.prov:
@@ -97,12 +128,21 @@ def make_block(item, block_idx_on_page: int, page_num: int) -> dict:
             "description": None,
         }
 
-    return {
+    # Обычный текстовый блок
+    block = {
         "block_id": block_id,
         "type": block_type,
         "text": getattr(item, "text", None),
         "bbox": bbox,
     }
+
+    # Для заголовков дополнительно определяем номер раздела и уровень
+    if block_type == "heading":
+        section_number, level = parse_heading_number(block["text"] or "")
+        block["section_number"] = section_number
+        block["level"] = level
+
+    return block
 
 
 def build_page_text(blocks: list[dict]) -> str:
