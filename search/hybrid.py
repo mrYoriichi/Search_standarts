@@ -68,3 +68,4 @@ def hybrid_search(
     fused = reciprocal_rank_fusion([bm25_results, embeddings_results])
     return fused[:top_k]
 
+
