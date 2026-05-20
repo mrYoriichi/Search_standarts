@@ -14,6 +14,7 @@ BM25-индекс НЕ сохраняем — он строится из chunks.
     python index.py     # этап 4: построение индекса
 """
 import json
+import sys
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -21,6 +22,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 from indexing.embeddings_index import build_embeddings_index, EMBEDDING_MODEL
+from pdf_processing.parser import make_document_id
 
 
 def load_chunks(json_path: Path) -> list[dict]:
@@ -35,9 +37,12 @@ def save_index(index: dict, json_path: Path) -> None:
         json.dump(index, f, ensure_ascii=False, indent=2)
 
 
-def main():
-    # Папка документа. Пока имя задаём вручную — позже сделаем аргументом.
-    doc_dir = Path("data/raw_data/mvl649")
+def process(pdf_name: str) -> None:
+    """
+    Строит векторный индекс по chunks.json и сохраняет embeddings.json.
+    pdf_name — то же имя, что передавалось в main.py (например, MVL649).
+    """
+    doc_dir = Path("data/raw_data") / make_document_id(pdf_name)
     chunks_path = doc_dir / "chunks.json"
     index_path = doc_dir / "embeddings.json"
 
@@ -56,4 +61,8 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    if len(sys.argv) < 2:
+        print("Использование: python index.py <pdf_name>")
+        print("Пример:        python index.py MVL649")
+        sys.exit(1)
+    process(sys.argv[1])

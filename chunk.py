@@ -10,9 +10,11 @@
     python chunk.py      # этап 3: нарезка на чанки
 """
 import json
+import sys
 from pathlib import Path
 
 from pdf_processing.chunker import build_chunks
+from pdf_processing.parser import make_document_id
 
 
 def load_document(json_path: Path) -> dict:
@@ -27,9 +29,12 @@ def save_chunks(chunks: list[dict], json_path: Path) -> None:
         json.dump(chunks, f, ensure_ascii=False, indent=2)
 
 
-def main():
-    # Папка документа. Пока имя задаём вручную — позже сделаем аргументом.
-    doc_dir = Path("data/raw_data/mvl649")
+def process(pdf_name: str) -> None:
+    """
+    Нарезает document.json на чанки и сохраняет chunks.json.
+    pdf_name — то же имя, что передавалось в main.py (например, MVL649).
+    """
+    doc_dir = Path("data/raw_data") / make_document_id(pdf_name)
     document_path = doc_dir / "document.json"
     chunks_path = doc_dir / "chunks.json"
 
@@ -52,4 +57,8 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    if len(sys.argv) < 2:
+        print("Использование: python chunk.py <pdf_name>")
+        print("Пример:        python chunk.py MVL649")
+        sys.exit(1)
+    process(sys.argv[1])

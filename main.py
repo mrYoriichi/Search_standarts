@@ -4,6 +4,7 @@
 Когда переедем на БД, изменится только функция сохранения — парсер не трогаем.
 """
 import json
+import sys
 from pathlib import Path
 
 from pdf_processing.parser import parse_pdf, collect_pages_to_save, enrich_visual_blocks
@@ -60,8 +61,15 @@ def save_page_images(
     return saved_paths
 
 
-def main():
-    pdf_path = "data/pdfs/MVL649.pdf"
+def process(pdf_name: str) -> None:
+    """
+    Разбирает один PDF и сохраняет результат в data/raw_data/<document_id>/.
+    pdf_name — имя файла БЕЗ расширения, ожидается в data/pdfs/<pdf_name>.pdf.
+
+    Эта функция — точка входа для CLI И для будущего воркера: воркер
+    просто импортирует process() и вызовет её с нужным именем документа.
+    """
+    pdf_path = f"data/pdfs/{pdf_name}.pdf"
     output_root = Path("data/raw_data")
 
     print(f"Читаю {pdf_path}, подожди...")
@@ -93,4 +101,8 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    if len(sys.argv) < 2:
+        print("Использование: python main.py <pdf_name>")
+        print("Пример:        python main.py MVL649")
+        sys.exit(1)
+    process(sys.argv[1])

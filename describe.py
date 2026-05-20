@@ -9,6 +9,7 @@
     python describe.py   # этап 2: описание схем
 """
 import json
+import sys
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -17,7 +18,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 from pdf_processing.image_description import describe_page_visuals, extract_document_metadata
-from pdf_processing.parser import VISUAL_BLOCK_TYPES
+from pdf_processing.parser import VISUAL_BLOCK_TYPES, make_document_id
 
 
 def load_document(json_path: Path) -> dict:
@@ -47,9 +48,12 @@ def find_pages_with_visuals(document: dict) -> list[int]:
     return sorted(page_numbers)
 
 
-def main():
-    # Папка документа. Пока имя задаём вручную — позже сделаем аргументом.
-    doc_dir = Path("data/raw_data/mvl649")
+def process(pdf_name: str) -> None:
+    """
+    Описывает схемы и метаданные в уже распарсенном document.json.
+    pdf_name — то же имя, что передавалось в main.py (например, MVL649).
+    """
+    doc_dir = Path("data/raw_data") / make_document_id(pdf_name)
     json_path = doc_dir / "document.json"
 
     document = load_document(json_path)
@@ -97,4 +101,8 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    if len(sys.argv) < 2:
+        print("Использование: python describe.py <pdf_name>")
+        print("Пример:        python describe.py MVL649")
+        sys.exit(1)
+    process(sys.argv[1])
