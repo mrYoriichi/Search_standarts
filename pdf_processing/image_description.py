@@ -194,21 +194,21 @@ def describe_page_visuals(
     document: dict,
     page_number: int,
     image_path: str | Path,
-) -> int:
+) -> dict[str, str]:
     """
     Описывает все блоки figure/table на одной странице через vision LLM.
-    Вписывает описания в поле description соответствующих блоков (in-place).
 
-    Возвращает количество блоков, которым проставили описание.
+    Возвращает словарь {block_id: description}. Сам документ не меняет —
+    накопление описаний и сохранение делает вызывающая сторона.
 
-    document     — словарь документа (меняется на месте);
+    document     — словарь документа (только для чтения, нужен для контекста);
     page_number  — номер обрабатываемой страницы;
     image_path   — путь к PNG-скриншоту этой страницы.
     """
     # 1. Собираем контекст страницы
     page_context = get_page_context(document, page_number)
     if not page_context["blocks"]:
-        return 0
+        return {}
 
     # 2. Строим промпт
     prompt = build_vision_prompt(page_context)
@@ -219,27 +219,14 @@ def describe_page_visuals(
     # 4. Разбираем ответ в список {block_id, description}
     descriptions = parse_vision_response(raw_answer)
     if not descriptions:
-        return 0
+        return {}
 
     # 5. Превращаем список описаний в словарь {block_id: description}
-    #    для быстрого поиска
-    desc_by_id = {
+    return {
         item["block_id"]: item["description"]
         for item in descriptions
         if "block_id" in item and "description" in item
     }
-
-    # 6. Идём по блокам страницы и вписываем описания
-    pages_by_number = {p["page_number"]: p for p in document["pages"]}
-    page = pages_by_number[page_number]
-
-    updated = 0
-    for block in page["blocks"]:
-        if block["block_id"] in desc_by_id:
-            block["description"] = desc_by_id[block["block_id"]]
-            updated += 1
-
-    return updated
 
 
 def extract_document_metadata(image_path: str | Path) -> dict:

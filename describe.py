@@ -2,7 +2,9 @@
 Этап 2: описание схем и таблиц через vision LLM.
 
 Берёт готовый document.json (результат main.py), прогоняет страницы
-с figure/table через vision LLM и дописывает описания в тот же файл.
+с figure/table через vision LLM и сохраняет результат в descriptions.json.
+document.json НЕ меняется — это сознательно, чтобы перепуск main.py
+не стирал дорогие vision-описания.
 
 Запускать ПОСЛЕ main.py:
     python main.py       # этап 1: парсинг PDF
@@ -27,10 +29,10 @@ def load_document(json_path: Path) -> dict:
         return json.load(f)
 
 
-def save_document(document: dict, json_path: Path) -> None:
-    """Сохраняет словарь обратно в document.json."""
+def save_descriptions(descriptions: dict, json_path: Path) -> None:
+    """Сохраняет словарь описаний в descriptions.json."""
     with open(json_path, "w", encoding="utf-8") as f:
-        json.dump(document, f, ensure_ascii=False, indent=2)
+        json.dump(descriptions, f, ensure_ascii=False, indent=2)
 
 
 def find_pages_with_visuals(document: dict) -> list[int]:
@@ -50,13 +52,14 @@ def find_pages_with_visuals(document: dict) -> list[int]:
 
 def process(pdf_name: str) -> None:
     """
-    Описывает схемы и метаданные в уже распарсенном document.json.
+    Описывает схемы и метаданные документа, результат пишет в descriptions.json.
     pdf_name — то же имя, что передавалось в main.py (например, MVL649).
     """
     doc_dir = Path("data/raw_data") / make_document_id(pdf_name)
-    json_path = doc_dir / "document.json"
+    document_path = doc_dir / "document.json"
+    descriptions_path = doc_dir / "descriptions.json"
 
-    document = load_document(json_path)
+    document = load_document(document_path)
     pages = find_pages_with_visuals(document)
 
     print(f"Документ: {document['document_name']}")
@@ -66,19 +69,19 @@ def process(pdf_name: str) -> None:
     if first_page_image.exists():
         print("Извлекаю метаданные документа...")
         meta = extract_document_metadata(first_page_image)
-        document["document_title"] = meta["title"]
-        document["document_summary"] = meta["summary"]
-        print(f"  Название: {meta['title']}")
+        document_title = meta["title"]
+        document_summary = meta["summary"]
+        print(f"  Название: {document_title}")
     else:
         print("  [!] Скриншота первой страницы нет, метаданные пропущены")
-        document["document_title"] = ""
-        document["document_summary"] = ""
+        document_title = ""
+        document_summary = ""
 
-    # Шаг 2: описываем схемы и таблицы
+    # Шаг 2: описываем схемы и таблицы — накапливаем в общий словарь
     print(f"\nСтраниц с figure/table: {len(pages)}")
     print(f"Начинаю описание через vision LLM...\n")
 
-    total_described = 0
+    block_descriptions: dict[str, str] = {}
     for i, page_number in enumerate(pages, start=1):
         # Путь к скриншоту этой страницы
         image_path = doc_dir / "pages" / f"p{page_number:03d}.png"
@@ -88,16 +91,21 @@ def process(pdf_name: str) -> None:
             continue
 
         print(f"[{i}/{len(pages)}] стр. {page_number}: запрос в LLM...")
-        described = describe_page_visuals(document, page_number, image_path)
-        total_described += described
-        print(f"           проставлено описаний: {described}")
+        page_descriptions = describe_page_visuals(document, page_number, image_path)
+        block_descriptions.update(page_descriptions)
+        print(f"           проставлено описаний: {len(page_descriptions)}")
 
-    # Сохраняем обогащённый документ обратно в тот же файл
-    save_document(document, json_path)
+    # Сохраняем результат в descriptions.json (полная перезапись)
+    output = {
+        "document_title": document_title,
+        "document_summary": document_summary,
+        "block_descriptions": block_descriptions,
+    }
+    save_descriptions(output, descriptions_path)
 
     print(f"\nГотово!")
-    print(f"  Всего описаний проставлено: {total_described}")
-    print(f"  Файл обновлён: {json_path}")
+    print(f"  Всего описаний проставлено: {len(block_descriptions)}")
+    print(f"  Файл сохранён:              {descriptions_path}")
 
 
 if __name__ == "__main__":
