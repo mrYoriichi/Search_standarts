@@ -86,15 +86,78 @@ def load_library(data_root: Path) -> tuple[list[dict], dict]:
     return all_chunks, {"model": model, "items": all_items}
 
 
+def filter_library(
+    chunks: list[dict],
+    embeddings_index: dict,
+    allowed_ids: set[str],
+) -> tuple[list[dict], dict]:
+    """
+    Оставляет в библиотеке только чанки и эмбеддинги из выбранных документов.
+    Формат входа/выхода тот же — дальше BM25 и гибридный поиск работают как раньше.
+
+    Items эмбеддингов не знают про document_id (там только chunk_id),
+    поэтому фильтруем их по chunk_id отобранных чанков.
+    """
+    chunks_f = [c for c in chunks if c["document_id"] in allowed_ids]
+    allowed_chunk_ids = {c["chunk_id"] for c in chunks_f}
+    items_f = [it for it in embeddings_index["items"] if it["chunk_id"] in allowed_chunk_ids]
+    return chunks_f, {"model": embeddings_index["model"], "items": items_f}
+
+
+def select_scope(doc_ids: list[str]) -> set[str]:
+    """
+    Спрашивает у пользователя, в каких документах искать.
+
+    Пустой ввод — все документы. Иначе принимает номера через запятую
+    ("1, 2") или прямо id документа ("mvl649, tp_107"). Незнакомые токены
+    игнорируются с предупреждением. Если ничего валидного не выбрано —
+    возвращает все документы.
+    """
+    raw = input(
+        'Где искать? (Enter — везде; номера через запятую, напр. "1, 2"; или id): '
+    ).strip()
+    if not raw:
+        return set(doc_ids)
+
+    selected: set[str] = set()
+    for token in raw.split(","):
+        token = token.strip()
+        if not token:
+            continue
+        # Цифра — номер из списка
+        if token.isdigit():
+            idx = int(token) - 1
+            if 0 <= idx < len(doc_ids):
+                selected.add(doc_ids[idx])
+                continue
+        # Иначе — пытаемся как document_id
+        if token in doc_ids:
+            selected.add(token)
+            continue
+        print(f"  [!] Не распознан токен {token!r} — пропущен")
+
+    if not selected:
+        print("  Ничего не выбрано — ищу везде.")
+        return set(doc_ids)
+    return selected
+
+
 def main():
     chunks, embeddings_index = load_library(DATA_ROOT)
 
     # Сколько документов и чанков подгрузили — пользователю полезно видеть
     doc_ids = sorted({c["document_id"] for c in chunks})
     print(f"Библиотека: документов {len(doc_ids)}, чанков {len(chunks)}.")
-    print(f"  {', '.join(doc_ids)}")
+    for i, doc_id in enumerate(doc_ids, start=1):
+        print(f"  [{i}] {doc_id}")
 
-    # BM25-индекс строим из объединённого пула на лету
+    # Выбор области поиска
+    allowed_ids = select_scope(doc_ids)
+    if allowed_ids != set(doc_ids):
+        chunks, embeddings_index = filter_library(chunks, embeddings_index, allowed_ids)
+        print(f"Ищу в {len(allowed_ids)} документах, чанков: {len(chunks)}.")
+
+    # BM25-индекс строим из (возможно отфильтрованного) пула на лету
     bm25 = build_bm25_index(chunks)
 
     # Вопрос с клавиатуры — удобнее, чем менять константу и перезапускать
