@@ -79,8 +79,11 @@ def process(pdf_name: str) -> None:
     doc_dir = output_root / document["document_id"]
     doc_dir.mkdir(parents=True, exist_ok=True)
 
-    # Решаем, какие страницы сохранять, и сохраняем их
+    # Решаем, какие страницы сохранять, и сохраняем их.
+    # Первую страницу сохраняем всегда — describe.py берёт с неё название
+    # и описание документа, даже если визуалов там нет.
     pages_to_save = collect_pages_to_save(document)
+    pages_to_save.add(1)
     saved_paths = save_page_images(page_images, pages_to_save, doc_dir)
 
     # Дозаполняем поля у блоков figure/table (пути к картинкам, соседи)
