@@ -21,6 +21,7 @@ load_dotenv()
 
 from pdf_processing.image_description import describe_page_visuals, extract_document_metadata
 from pdf_processing.parser import VISUAL_BLOCK_TYPES, make_document_id
+from pricing import vision_cost
 
 
 def load_document(json_path: Path) -> dict:
@@ -64,11 +65,17 @@ def process(pdf_name: str) -> None:
 
     print(f"Документ: {document['document_name']}")
 
+    # Накопители токенов: метаданные считаем отдельно от страниц,
+    # чтобы знать "чистую" цену страницы с figure/table.
+    meta_in = meta_out = 0
+    pages_in = pages_out = 0
+    pages_described_count = 0
+
     # Шаг 1: извлекаем название и описание документа по первой странице
     first_page_image = doc_dir / "pages" / "p001.png"
     if first_page_image.exists():
         print("Извлекаю метаданные документа...")
-        meta = extract_document_metadata(first_page_image)
+        meta, meta_in, meta_out = extract_document_metadata(first_page_image)
         document_title = meta["title"]
         document_summary = meta["summary"]
         print(f"  Название: {document_title}")
@@ -91,8 +98,13 @@ def process(pdf_name: str) -> None:
             continue
 
         print(f"[{i}/{len(pages)}] стр. {page_number}: запрос в LLM...")
-        page_descriptions = describe_page_visuals(document, page_number, image_path)
+        page_descriptions, in_tok, out_tok = describe_page_visuals(
+            document, page_number, image_path
+        )
         block_descriptions.update(page_descriptions)
+        pages_in += in_tok
+        pages_out += out_tok
+        pages_described_count += 1
         print(f"           проставлено описаний: {len(page_descriptions)}")
 
     # Сохраняем результат в descriptions.json (полная перезапись)
@@ -106,6 +118,20 @@ def process(pdf_name: str) -> None:
     print(f"\nГотово!")
     print(f"  Всего описаний проставлено: {len(block_descriptions)}")
     print(f"  Файл сохранён:              {descriptions_path}")
+
+    # ---- Сводка по стоимости ----
+    meta_usd = vision_cost(meta_in, meta_out)
+    pages_usd = vision_cost(pages_in, pages_out)
+    total_usd = meta_usd + pages_usd
+
+    print(f"\n=== Стоимость vision ===")
+    print(f"  Метаданные:           input={meta_in:>6}, output={meta_out:>5} → ${meta_usd:.4f}")
+    print(f"  Страницы с figure/table ({pages_described_count} шт.):")
+    print(f"                        input={pages_in:>6}, output={pages_out:>5} → ${pages_usd:.4f}")
+    if pages_described_count:
+        per_page_usd = pages_usd / pages_described_count
+        print(f"  $ на страницу с figure/table:                       ${per_page_usd:.4f}")
+    print(f"  ИТОГО vision:                                       ${total_usd:.4f}")
 
 
 if __name__ == "__main__":

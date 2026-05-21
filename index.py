@@ -23,6 +23,7 @@ load_dotenv()
 
 from indexing.embeddings_index import build_embeddings_index, EMBEDDING_MODEL
 from pdf_processing.parser import make_document_id
+from pricing import embedding_cost
 
 
 def load_chunks(json_path: Path) -> list[dict]:
@@ -45,19 +46,36 @@ def process(pdf_name: str) -> None:
     doc_dir = Path("data/raw_data") / make_document_id(pdf_name)
     chunks_path = doc_dir / "chunks.json"
     index_path = doc_dir / "embeddings.json"
+    document_path = doc_dir / "document.json"
 
     chunks = load_chunks(chunks_path)
+
+    # Для метрики "$ за страницу" нужно общее число страниц документа —
+    # читаем его из document.json (там len(pages) — это страницы PDF).
+    with open(document_path, encoding="utf-8") as f:
+        document = json.load(f)
+    total_pages = len(document["pages"])
 
     print(f"Чанков загружено: {len(chunks)}")
     print(f"Модель: {EMBEDDING_MODEL}")
     print("Строю векторный индекс (запрос к OpenAI)...")
 
-    index = build_embeddings_index(chunks)
+    index, tokens = build_embeddings_index(chunks)
     save_index(index, index_path)
 
     print("\nГотово!")
     print(f"  Векторов сохранено: {len(index['items'])}")
     print(f"  Файл: {index_path}")
+
+    # ---- Сводка по стоимости ----
+    usd = embedding_cost(tokens)
+    print(f"\n=== Стоимость embeddings ===")
+    print(f"  Страниц в документе: {total_pages}")
+    print(f"  Чанков:              {len(chunks)}")
+    print(f"  Токены:              {tokens}")
+    print(f"  ИТОГО embeddings:                                  ${usd:.4f}")
+    if total_pages:
+        print(f"  $ на страницу (embeddings):                        ${usd/total_pages:.4f}")
 
 
 if __name__ == "__main__":

@@ -12,7 +12,7 @@ from openai import OpenAI
 
 # Модель для распознавания изображений.
 # Вынесена в константу — поменять модель = поменять одну строку.
-VISION_MODEL = "gpt-5.4-mini"
+VISION_MODEL = "gpt-5.5"
 
 
 def encode_image_to_base64(image_path: str | Path) -> str:
@@ -29,10 +29,12 @@ def encode_image_to_base64(image_path: str | Path) -> str:
         return base64.b64encode(f.read()).decode("utf-8")
 
 
-def ask_vision(image_path: str | Path, prompt: str) -> str:
+def ask_vision(image_path: str | Path, prompt: str) -> tuple[str, int, int]:
     """
     Отправляет один запрос в vision LLM: картинка + текстовый промпт.
-    Возвращает текстовый ответ модели.
+
+    Возвращает кортеж (текст_ответа, prompt_tokens, completion_tokens).
+    Токены нужны для подсчёта стоимости вызова (см. pricing.py).
 
     image_path — путь к PNG-скриншоту страницы.
     prompt     — текстовая инструкция для модели.
@@ -63,8 +65,13 @@ def ask_vision(image_path: str | Path, prompt: str) -> str:
         ],
     )
 
-    # Ответ модели лежит внутри структуры response
-    return response.choices[0].message.content
+    # OpenAI возвращает использованные токены в response.usage.
+    # prompt_tokens включает токены и текста, и картинки.
+    return (
+        response.choices[0].message.content,
+        response.usage.prompt_tokens,
+        response.usage.completion_tokens,
+    )
 
 
 def get_page_context(document: dict, page_number: int) -> dict:
@@ -194,12 +201,13 @@ def describe_page_visuals(
     document: dict,
     page_number: int,
     image_path: str | Path,
-) -> dict[str, str]:
+) -> tuple[dict[str, str], int, int]:
     """
     Описывает все блоки figure/table на одной странице через vision LLM.
 
-    Возвращает словарь {block_id: description}. Сам документ не меняет —
-    накопление описаний и сохранение делает вызывающая сторона.
+    Возвращает кортеж (descriptions, prompt_tokens, completion_tokens).
+    descriptions — словарь {block_id: description}. Документ не меняет —
+    накопление и сохранение делает вызывающая сторона.
 
     document     — словарь документа (только для чтения, нужен для контекста);
     page_number  — номер обрабатываемой страницы;
@@ -208,36 +216,37 @@ def describe_page_visuals(
     # 1. Собираем контекст страницы
     page_context = get_page_context(document, page_number)
     if not page_context["blocks"]:
-        return {}
+        return {}, 0, 0
 
     # 2. Строим промпт
     prompt = build_vision_prompt(page_context)
 
-    # 3. Отправляем в модель
-    raw_answer = ask_vision(image_path, prompt)
+    # 3. Отправляем в модель — получаем ответ и счётчики токенов
+    raw_answer, prompt_tokens, completion_tokens = ask_vision(image_path, prompt)
 
     # 4. Разбираем ответ в список {block_id, description}
     descriptions = parse_vision_response(raw_answer)
     if not descriptions:
-        return {}
+        return {}, prompt_tokens, completion_tokens
 
     # 5. Превращаем список описаний в словарь {block_id: description}
-    return {
+    desc_by_id = {
         item["block_id"]: item["description"]
         for item in descriptions
         if "block_id" in item and "description" in item
     }
+    return desc_by_id, prompt_tokens, completion_tokens
 
 
-def extract_document_metadata(image_path: str | Path) -> dict:
+def extract_document_metadata(image_path: str | Path) -> tuple[dict, int, int]:
     """
     Извлекает название и краткое описание документа по его первой странице.
 
-    Возвращает словарь с двумя ключами:
-      - title: полное название документа;
-      - summary: краткое описание (1-2 предложения), о чём документ.
+    Возвращает кортеж (meta, prompt_tokens, completion_tokens).
+    meta — словарь с ключами 'title' и 'summary'.
 
-    При неудаче возвращает пустые строки — не роняем программу.
+    При неудаче разбора возвращает пустые строки в meta, но токены — реальные
+    (запрос всё равно был сделан).
     """
     prompt = """Jsi expert na stavební a technickou dokumentaci.
 
@@ -255,7 +264,7 @@ Příklad formátu:
 {"title": "MVL 649 Železobetonové trubní propustky", "summary": "Dokument stanovuje technické podmínky pro..."}
 """
 
-    raw_answer = ask_vision(image_path, prompt)
+    raw_answer, prompt_tokens, completion_tokens = ask_vision(image_path, prompt)
 
     # Разбираем ответ. Здесь ожидаем не список, а один объект,
     # поэтому parse_vision_response не подходит — парсим отдельно.
@@ -270,10 +279,11 @@ Příklad formátu:
         data = json.loads(text)
     except json.JSONDecodeError:
         print("  [!] Не удалось разобрать метаданные документа")
-        return {"title": "", "summary": ""}
+        return {"title": "", "summary": ""}, prompt_tokens, completion_tokens
 
     # Берём поля с подстраховкой — если модель что-то не вернула
-    return {
+    meta = {
         "title": data.get("title", ""),
         "summary": data.get("summary", ""),
     }
+    return meta, prompt_tokens, completion_tokens
