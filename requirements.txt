@@ -1,0 +1,17 @@
+# Прямые зависимости проекта Search_standarts.
+# Развёртывание окружения с нуля:
+#   python -m venv .venv
+#   source .venv/bin/activate
+#   pip install -r requirements.txt
+
+# Пайплайн обработки PDF
+docling==2.93.0          # парсинг PDF в структурированный JSON
+
+# LLM и токены
+openai==2.37.0           # OpenAI API (vision + embeddings + generate_answer)
+tiktoken==0.13.0         # подсчёт токенов для лимитов и стоимости
+python-dotenv==1.2.2     # загрузка OPENAI_API_KEY из .env
+
+# Web backend
+fastapi==0.136.1         # web-фреймворк (API)
+uvicorn[standard]==0.47.0  # ASGI-сервер для запуска FastAPI
