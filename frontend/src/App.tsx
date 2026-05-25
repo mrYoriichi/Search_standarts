@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
+import LibraryPage from './LibraryPage'
 
 type Source = {
   document: string
@@ -21,7 +22,11 @@ type Document = {
   status: string
 }
 
+type View = 'search' | 'library'
+
 function App() {
+  const [view, setView] = useState<View>('search')
+
   const [question, setQuestion] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -82,6 +87,35 @@ function App() {
       <div className="max-w-3xl mx-auto px-6 py-10 flex flex-col gap-6">
         <h1 className="text-3xl font-bold">Search_standarts</h1>
 
+        <nav className="flex gap-1 border-b">
+          <button
+            onClick={() => setView('search')}
+            className={
+              'px-4 py-2 text-sm border-b-2 -mb-px ' +
+              (view === 'search'
+                ? 'border-foreground font-medium'
+                : 'border-transparent text-muted-foreground hover:text-foreground')
+            }
+          >
+            Поиск
+          </button>
+          <button
+            onClick={() => setView('library')}
+            className={
+              'px-4 py-2 text-sm border-b-2 -mb-px ' +
+              (view === 'library'
+                ? 'border-foreground font-medium'
+                : 'border-transparent text-muted-foreground hover:text-foreground')
+            }
+          >
+            Библиотека
+          </button>
+        </nav>
+
+        {view === 'library' && <LibraryPage />}
+
+        {view === 'search' && (
+          <>
         <div className="rounded-md border bg-card p-4 flex flex-col gap-2">
           <h2 className="text-sm font-semibold text-muted-foreground">
             Где искать (пусто — во всех документах)
@@ -159,6 +193,8 @@ function App() {
               )}
             </div>
           </div>
+        )}
+          </>
         )}
       </div>
     </div>
