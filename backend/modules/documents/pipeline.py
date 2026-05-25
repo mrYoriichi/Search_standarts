@@ -1,0 +1,69 @@
+"""Pipeline обработки одного PDF: main -> describe -> chunk -> index.
+
+Вызывается из ThreadPoolExecutor (фоновый поток), не из HTTP-запроса.
+Поэтому сессию БД открываем сами через SessionLocal() и закрываем в finally —
+FastAPI-зависимости здесь не работают.
+"""
+import json
+import logging
+from pathlib import Path
+
+from sqlalchemy import select
+
+from backend.core.database import SessionLocal
+from backend.modules.documents.models import Document
+
+
+logger = logging.getLogger(__name__)
+
+
+def run_pipeline(slug: str) -> None:
+    """Прогоняет полный пайплайн для одного документа.
+
+    slug — id документа, совпадает с именем PDF в data/pdfs/{slug}.pdf
+    и именем папки в data/raw_data/{slug}/.
+
+    На любой ошибке: status='failed' + текст ошибки в Document.error_message.
+    На успехе: status='ready', error_message=None.
+    """
+    # Lazy import — Docling и transformers весят и грузятся секунд 20-30.
+    # Если импортировать наверху, всё это тянется при старте сервера
+    # и при каждом --reload, что превращает разработку в пытку.
+    # Здесь же грузится только при первом реальном вызове pipeline.
+    import main as parser_step
+    import describe as describe_step
+    import chunk as chunk_step
+    import index as index_step
+
+    db = SessionLocal()
+    try:
+        try:
+            parser_step.process(slug)
+            describe_step.process(slug)
+            chunk_step.process(slug)
+            index_step.process(slug)
+        except Exception as exc:
+            logger.exception("Pipeline для %s упал", slug)
+            doc = db.scalar(select(Document).where(Document.slug == slug))
+            if doc is not None:
+                doc.status = "failed"
+                doc.error_message = f"{type(exc).__name__}: {exc}"
+                db.commit()
+            return
+
+        # Берём настоящий заголовок документа из descriptions.json
+        # (его проставил describe_step). При загрузке у нас был только
+        # filename — теперь подменим на нормальное название.
+        descriptions_path = Path("data/raw_data") / slug / "descriptions.json"
+        with open(descriptions_path, encoding="utf-8") as f:
+            real_title = json.load(f).get("document_title")
+
+        doc = db.scalar(select(Document).where(Document.slug == slug))
+        if doc is not None:
+            if real_title:
+                doc.title = real_title
+            doc.status = "ready"
+            doc.error_message = None
+            db.commit()
+    finally:
+        db.close()

@@ -18,3 +18,7 @@ uvicorn[standard]==0.47.0  # ASGI-сервер для запуска FastAPI
 
 # База данных
 sqlalchemy==2.0.49       # ORM: Python-классы ↔ таблицы БД (SQLite сейчас, Postgres потом)
+python-multipart==0.0.29
+
+# Поиск
+rank_bm25==0.2.2         # BM25-индекс для лексического поиска по чанкам

@@ -21,6 +21,8 @@ class Document(Base):
     # Тип исходника: pdf сейчас; docx/xlsx/dwg/... — в будущих pipeline.
     source_type: Mapped[str] = mapped_column(default="pdf")
     status: Mapped[str] = mapped_column(default="processing")
+    # Если pipeline упал — кладём сюда текст ошибки. У готовых документов None.
+    error_message: Mapped[str | None] = mapped_column(default=None)
     created_at: Mapped[datetime] = mapped_column(
         DateTime, server_default=func.now()
     )

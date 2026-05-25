@@ -11,6 +11,7 @@ import re
 import unicodedata
 from pathlib import Path
 
+from docling.datamodel.accelerator_options import AcceleratorDevice, AcceleratorOptions
 from docling.datamodel.base_models import InputFormat
 from docling.datamodel.pipeline_options import PdfPipelineOptions
 from docling.document_converter import DocumentConverter, PdfFormatOption
@@ -268,6 +269,9 @@ def parse_pdf(pdf_path: str) -> tuple[dict, dict]:
     pipeline_options = PdfPipelineOptions()
     pipeline_options.generate_page_images = True
     pipeline_options.images_scale = 2.0
+    # MPS (Apple Silicon GPU) не поддерживает float64, на котором работают
+    # модели Docling (RT-DETR). Принудительно используем CPU.
+    pipeline_options.accelerator_options = AcceleratorOptions(device=AcceleratorDevice.CPU)
 
     converter = DocumentConverter(
         format_options={
