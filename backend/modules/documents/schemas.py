@@ -18,6 +18,7 @@ class DocumentResponse(BaseModel):
     title: str
     status: str
     error_message: str | None = None
+    pinned: bool
     created_at: datetime
 
 

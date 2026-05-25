@@ -17,6 +17,7 @@ class LibraryFile(BaseModel):
     # status — None, если документ ещё не в БД (не индексирован).
     # Иначе processing/ready/failed.
     status: str | None
+    pinned: bool
 
 
 class LibraryFolder(BaseModel):
@@ -26,3 +27,22 @@ class LibraryFolder(BaseModel):
     path: str  # абсолютный путь к папке
     folders: list["LibraryFolder"]
     files: list[LibraryFile]
+
+
+class OrphanDocument(BaseModel):
+    """Документ в БД, чей PDF исчез из папки библиотеки.
+
+    Юзер мог удалить файл или переименовать. UI показывает их в отдельной
+    секции «Висячие» с кнопками «Это переименование» и (в будущем) «Убрать».
+    """
+
+    slug: str
+    title: str
+    status: str
+
+
+class LibraryResponse(BaseModel):
+    """Полный ответ GET /api/library: дерево + висячие документы."""
+
+    tree: LibraryFolder
+    orphans: list[OrphanDocument]

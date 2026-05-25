@@ -21,6 +21,7 @@ class Source(BaseModel):
     """Один источник: на какой документ/раздел/страницы опирался ответ."""
 
     document: str
+    slug: str  # id документа — нужно фронту, чтобы построить ссылку на PDF
     section: str
     pages: list[int]
 

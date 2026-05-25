@@ -135,6 +135,7 @@ def generate_answer(question: str, chunks: list[dict]) -> dict:
             continue  # модель назвала id, которого мы не давали — игнорируем
         sources.append({
             "document": chunk.get("document_title", ""),
+            "slug": chunk.get("document_id", ""),
             "section": chunk.get("section_title", ""),
             "pages": chunk.get("pages", []),
         })

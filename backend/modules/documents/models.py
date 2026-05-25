@@ -23,6 +23,8 @@ class Document(Base):
     status: Mapped[str] = mapped_column(default="processing")
     # Если pipeline упал — кладём сюда текст ошибки. У готовых документов None.
     error_message: Mapped[str | None] = mapped_column(default=None)
+    # Закреплён юзером — показывать в отдельной секции «Закреплённые» сверху.
+    pinned: Mapped[bool] = mapped_column(default=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime, server_default=func.now()
     )

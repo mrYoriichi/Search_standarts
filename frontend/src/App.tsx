@@ -5,6 +5,7 @@ import LibraryPage from './LibraryPage'
 
 type Source = {
   document: string
+  slug: string
   section: string
   pages: number[]
 }
@@ -180,15 +181,29 @@ function App() {
                 </p>
               ) : (
                 <ul className="flex flex-col gap-2 text-sm">
-                  {result.sources.map((src, i) => (
-                    <li key={i}>
-                      <span className="font-medium">{src.document}</span>
-                      {' / '}
-                      <span>{src.section}</span>
-                      {' / стр. '}
-                      <span>{src.pages.join(', ')}</span>
-                    </li>
-                  ))}
+                  {result.sources.map((src, i) => {
+                    const firstPage = src.pages[0]
+                    const href = `/api/library/pdf/${src.slug}${
+                      firstPage ? `#page=${firstPage}` : ''
+                    }`
+                    return (
+                      <li key={i}>
+                        <a
+                          href={href}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="hover:underline"
+                          title="Открыть PDF на этой странице"
+                        >
+                          <span className="font-medium">{src.document}</span>
+                          {' / '}
+                          <span>{src.section}</span>
+                          {' / стр. '}
+                          <span>{src.pages.join(', ')}</span>
+                        </a>
+                      </li>
+                    )
+                  })}
                 </ul>
               )}
             </div>
