@@ -17,11 +17,13 @@ from backend.modules.documents.models import Document
 logger = logging.getLogger(__name__)
 
 
-def run_pipeline(slug: str) -> None:
+def run_pipeline(slug: str, pdf_path: str | None = None) -> None:
     """Прогоняет полный пайплайн для одного документа.
 
-    slug — id документа, совпадает с именем PDF в data/pdfs/{slug}.pdf
-    и именем папки в data/raw_data/{slug}/.
+    slug — id документа, совпадает с именем папки в data/raw_data/{slug}/.
+    pdf_path — полный путь к PDF. Если не задан, main.py возьмёт по старой
+    логике из data/pdfs/{slug}.pdf (upload-flow). Сканирование папки
+    библиотеки передаёт сюда путь к PDF прямо из папки юзера.
 
     На любой ошибке: status='failed' + текст ошибки в Document.error_message.
     На успехе: status='ready', error_message=None.
@@ -38,7 +40,7 @@ def run_pipeline(slug: str) -> None:
     db = SessionLocal()
     try:
         try:
-            parser_step.process(slug)
+            parser_step.process(slug, pdf_path=pdf_path)
             describe_step.process(slug)
             chunk_step.process(slug)
             index_step.process(slug)

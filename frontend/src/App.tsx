@@ -16,14 +16,132 @@ type AskResponse = {
   query_log_id: number
 }
 
-type Document = {
-  id: number
+type LibraryFile = {
+  name: string
+  path: string
   slug: string
-  title: string
-  status: string
+  status: 'processing' | 'ready' | 'failed' | null
+  pinned: boolean
+}
+
+type LibraryFolder = {
+  name: string
+  path: string
+  folders: LibraryFolder[]
+  files: LibraryFile[]
+}
+
+type LibraryResponse = {
+  tree: LibraryFolder
+  orphans: unknown[]
 }
 
 type View = 'search' | 'library'
+
+
+// Собирает slug'и всех индексированных (ready) PDF в папке, включая подпапки.
+// Используется для чекбокса «выбрать всю папку».
+function collectReadySlugs(folder: LibraryFolder): string[] {
+  const result: string[] = []
+  for (const f of folder.files) {
+    if (f.status === 'ready') result.push(f.slug)
+  }
+  for (const sub of folder.folders) {
+    result.push(...collectReadySlugs(sub))
+  }
+  return result
+}
+
+function FilterTree({
+  folder,
+  selectedSlugs,
+  searchAll,
+  onToggleFile,
+  onToggleFolder,
+  isRoot = false,
+}: {
+  folder: LibraryFolder
+  selectedSlugs: Set<string>
+  // Когда searchAll=true, чекбоксы в дереве визуально checked и неактивны —
+  // пользователь сначала снимает «Вся база», а потом делает тонкий выбор.
+  searchAll: boolean
+  onToggleFile: (slug: string) => void
+  onToggleFolder: (folder: LibraryFolder) => void
+  isRoot?: boolean
+}) {
+  const readySlugs = collectReadySlugs(folder)
+  // Папки без индексированных файлов скрываем — иначе много пустоты.
+  if (readySlugs.length === 0) return null
+  const allSelected = searchAll || readySlugs.every((s) => selectedSlugs.has(s))
+  const readyFiles = folder.files.filter((f) => f.status === 'ready')
+
+  return (
+    <details className="text-sm">
+      <summary className="cursor-pointer flex items-center gap-2">
+        {/* У root чекбокса нет — он дублировал бы «Вся база» сверху. */}
+        {!isRoot && (
+          <input
+            type="checkbox"
+            checked={allSelected}
+            disabled={searchAll}
+            onChange={() => onToggleFolder(folder)}
+            onClick={(e) => e.stopPropagation()}
+            className="h-4 w-4"
+          />
+        )}
+        <span className="font-medium">📁 {folder.name}</span>
+      </summary>
+      <div className="ml-5 mt-1 flex flex-col gap-1">
+        {folder.folders.map((sub) => (
+          <FilterTree
+            key={sub.path}
+            folder={sub}
+            selectedSlugs={selectedSlugs}
+            searchAll={searchAll}
+            onToggleFile={onToggleFile}
+            onToggleFolder={onToggleFolder}
+          />
+        ))}
+        {readyFiles.map((file) => (
+          <FileCheckbox
+            key={file.path}
+            file={file}
+            selected={searchAll || selectedSlugs.has(file.slug)}
+            disabled={searchAll}
+            onToggle={onToggleFile}
+          />
+        ))}
+      </div>
+    </details>
+  )
+}
+
+
+function FileCheckbox({
+  file,
+  selected,
+  disabled,
+  onToggle,
+}: {
+  file: LibraryFile
+  selected: boolean
+  disabled: boolean
+  onToggle: (slug: string) => void
+}) {
+  return (
+    <label className="flex items-center gap-2 cursor-pointer text-sm">
+      <input
+        type="checkbox"
+        checked={selected}
+        disabled={disabled}
+        onChange={() => onToggle(file.slug)}
+        className="h-4 w-4"
+      />
+      <span>📄 {file.name}</span>
+    </label>
+  )
+}
+
 
 function App() {
   const [view, setView] = useState<View>('search')
@@ -33,15 +151,18 @@ function App() {
   const [error, setError] = useState<string | null>(null)
   const [result, setResult] = useState<AskResponse | null>(null)
 
-  const [documents, setDocuments] = useState<Document[]>([])
+  const [library, setLibrary] = useState<LibraryResponse | null>(null)
   const [selectedSlugs, setSelectedSlugs] = useState<Set<string>>(new Set())
+  // По умолчанию ищем во всех — самый частый кейс. При снятии открывается дерево.
+  const [searchAll, setSearchAll] = useState(true)
 
-  // Загружаем список документов один раз при открытии страницы
+  // Загружаем дерево библиотеки один раз — берём готовое API /api/library,
+  // в фильтре показываем только ready-документы и папки, где они есть.
   useEffect(() => {
-    fetch('/api/documents')
-      .then((res) => res.json())
-      .then((data: Document[]) => setDocuments(data))
-      .catch(() => setDocuments([]))
+    fetch('/api/library')
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data: LibraryResponse | null) => setLibrary(data))
+      .catch(() => setLibrary(null))
   }, [])
 
   function toggleSlug(slug: string) {
@@ -53,14 +174,30 @@ function App() {
     })
   }
 
+  function toggleFolder(folder: LibraryFolder) {
+    const slugs = collectReadySlugs(folder)
+    if (slugs.length === 0) return
+    setSelectedSlugs((prev) => {
+      const next = new Set(prev)
+      const allSelected = slugs.every((s) => next.has(s))
+      if (allSelected) {
+        slugs.forEach((s) => next.delete(s))
+      } else {
+        slugs.forEach((s) => next.add(s))
+      }
+      return next
+    })
+  }
+
   async function handleAsk() {
     setLoading(true)
     setError(null)
     setResult(null)
     try {
-      // Если ничего не выбрано — не шлём document_ids, бэк ищет везде
+      // Если режим «во всех документах» или ничего не выбрано — не шлём
+      // document_ids, бэк ищет везде.
       const body: { question: string; document_ids?: string[] } = { question }
-      if (selectedSlugs.size > 0) {
+      if (!searchAll && selectedSlugs.size > 0) {
         body.document_ids = Array.from(selectedSlugs)
       }
 
@@ -119,28 +256,34 @@ function App() {
           <>
         <div className="rounded-md border bg-card p-4 flex flex-col gap-2">
           <h2 className="text-sm font-semibold text-muted-foreground">
-            Где искать (пусто — во всех документах)
+            Где искать
           </h2>
-          {documents.length === 0 ? (
+          {!library || collectReadySlugs(library.tree).length === 0 ? (
             <p className="text-sm text-muted-foreground">
-              Документов нет. Запусти seed-скрипт.
+              Индексированных документов нет. Перейди в «Библиотеку» и нажми «Сканировать».
             </p>
           ) : (
-            <ul className="flex flex-col gap-1">
-              {documents.map((doc) => (
-                <li key={doc.id}>
-                  <label className="flex items-center gap-2 cursor-pointer text-sm">
-                    <input
-                      type="checkbox"
-                      checked={selectedSlugs.has(doc.slug)}
-                      onChange={() => toggleSlug(doc.slug)}
-                      className="h-4 w-4"
-                    />
-                    <span>{doc.title}</span>
-                  </label>
-                </li>
-              ))}
-            </ul>
+            <>
+              <label className="flex items-center gap-2 cursor-pointer text-sm">
+                <input
+                  type="checkbox"
+                  checked={searchAll}
+                  onChange={() => setSearchAll((v) => !v)}
+                  className="h-4 w-4"
+                />
+                <span>Вся база</span>
+              </label>
+              <div className="mt-1">
+                <FilterTree
+                  folder={library.tree}
+                  selectedSlugs={selectedSlugs}
+                  searchAll={searchAll}
+                  onToggleFile={toggleSlug}
+                  onToggleFolder={toggleFolder}
+                  isRoot
+                />
+              </div>
+            </>
           )}
         </div>
 

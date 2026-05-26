@@ -61,15 +61,16 @@ def save_page_images(
     return saved_paths
 
 
-def process(pdf_name: str) -> None:
+def process(pdf_name: str, pdf_path: str | None = None) -> None:
     """
     Разбирает один PDF и сохраняет результат в data/raw_data/<document_id>/.
-    pdf_name — имя файла БЕЗ расширения, ожидается в data/pdfs/<pdf_name>.pdf.
-
-    Эта функция — точка входа для CLI И для будущего воркера: воркер
-    просто импортирует process() и вызовет её с нужным именем документа.
+    pdf_name — имя файла БЕЗ расширения.
+    pdf_path — полный путь к PDF. Если не задан, берётся data/pdfs/<pdf_name>.pdf
+    (старое поведение для CLI и upload-flow). Сканирование папки библиотеки
+    передаёт сюда путь к PDF прямо из папки юзера.
     """
-    pdf_path = f"data/pdfs/{pdf_name}.pdf"
+    if pdf_path is None:
+        pdf_path = f"data/pdfs/{pdf_name}.pdf"
     output_root = Path("data/raw_data")
 
     print(f"Читаю {pdf_path}, подожди...")

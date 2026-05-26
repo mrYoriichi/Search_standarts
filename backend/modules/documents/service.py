@@ -1,6 +1,7 @@
 """Бизнес-логика модуля documents."""
 
 import json
+import shutil
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
@@ -27,6 +28,60 @@ def list_documents(db: Session) -> list[Document]:
     """Все документы из библиотеки, упорядоченные по дате создания."""
     stmt = select(Document).order_by(Document.created_at)
     return list(db.scalars(stmt))
+
+
+def reindex_document(
+    db: Session,
+    slug: str,
+    library_path: Path,
+    executor: ThreadPoolExecutor,
+) -> Document:
+    """Полностью переобрабатывает документ: удаляет старые артефакты и запускает pipeline.
+
+    Нужно, когда юзер заменил содержимое PDF (имя файла осталось то же).
+    Старые чанки/эмбеддинги тогда устарели — выбрасываем их и собираем заново.
+    Сам PDF в библиотеке НЕ трогаем.
+    """
+    doc = db.scalar(select(Document).where(Document.slug == slug))
+    if doc is None:
+        raise ValueError(f"Документ {slug} не найден")
+    if doc.relative_path is None:
+        raise ValueError(
+            f"У документа {slug} нет relative_path — нужен Сканировать сначала"
+        )
+
+    pdf_path = library_path / doc.relative_path
+    if not pdf_path.exists():
+        raise ValueError(f"PDF не найден в библиотеке: {pdf_path}")
+
+    artifacts_dir = RAW_DATA_DIR / slug
+    if artifacts_dir.exists():
+        shutil.rmtree(artifacts_dir)
+
+    doc.status = "processing"
+    doc.error_message = None
+    db.commit()
+
+    executor.submit(run_pipeline, slug, str(pdf_path))
+    return doc
+
+
+def delete_document(db: Session, slug: str) -> None:
+    """Убирает документ из индекса: удаляет запись и наши артефакты.
+
+    PDF в папке юзера НЕ трогаем — программа никогда не модифицирует
+    файлы пользователя (см. PROJECT_STATE.md, принцип 16).
+    """
+    doc = db.scalar(select(Document).where(Document.slug == slug))
+    if doc is None:
+        raise ValueError(f"Документ {slug} не найден")
+
+    artifacts_dir = RAW_DATA_DIR / slug
+    if artifacts_dir.exists():
+        shutil.rmtree(artifacts_dir)
+
+    db.delete(doc)
+    db.commit()
 
 
 def toggle_pin(db: Session, slug: str) -> Document:

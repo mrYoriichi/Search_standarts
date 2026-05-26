@@ -46,3 +46,10 @@ class LibraryResponse(BaseModel):
 
     tree: LibraryFolder
     orphans: list[OrphanDocument]
+
+
+class ScanSummary(BaseModel):
+    """Ответ POST /api/library/scan: сколько PDF было найдено и что с ними сделали."""
+
+    created: int  # новые документы, отправленные в pipeline
+    already_indexed: int  # PDF, для которых запись в БД уже есть

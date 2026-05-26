@@ -17,6 +17,9 @@ class Document(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     slug: Mapped[str] = mapped_column(unique=True)  # имя папки в data/raw_data/
+    # Путь PDF относительно library_path (например, "MVL/649.pdf").
+    # None у старых записей, заполняется при сканировании.
+    relative_path: Mapped[str | None] = mapped_column(default=None)
     title: Mapped[str]
     # Тип исходника: pdf сейчас; docx/xlsx/dwg/... — в будущих pipeline.
     source_type: Mapped[str] = mapped_column(default="pdf")

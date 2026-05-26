@@ -2,14 +2,14 @@
 
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from backend.core.database import get_session
 from backend.modules.library import service
-from backend.modules.library.schemas import LibraryResponse
+from backend.modules.library.schemas import LibraryResponse, ScanSummary
 from backend.modules.settings import service as settings_service
 
 
@@ -49,6 +49,19 @@ def open_library_file(
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return {"status": "ok"}
+
+
+@router.post("/library/scan", response_model=ScanSummary)
+def scan_library(
+    request: Request,
+    db: Session = Depends(get_session),
+) -> ScanSummary:
+    """Сканирует папку библиотеки: новые PDF отправляет в pipeline в фон."""
+    library_path = settings_service.get_library_path(db)
+    if library_path is None:
+        raise HTTPException(status_code=400, detail="Папка библиотеки не задана")
+    executor = request.app.state.executor
+    return service.scan_library(Path(library_path), db, executor)
 
 
 @router.get("/library/pdf/{slug}")

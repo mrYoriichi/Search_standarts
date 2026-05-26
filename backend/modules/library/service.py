@@ -7,17 +7,20 @@
 
 import platform
 import subprocess
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from backend.modules.documents.models import Document
+from backend.modules.documents.pipeline import run_pipeline
 from backend.modules.library.schemas import (
     LibraryFile,
     LibraryFolder,
     LibraryResponse,
     OrphanDocument,
+    ScanSummary,
 )
 from pdf_processing.parser import make_document_id
 
@@ -81,6 +84,55 @@ def find_pdf_by_slug(library_path: Path, slug: str) -> Path | None:
         if make_document_id(entry.name) == slug:
             return entry
     return None
+
+
+def scan_library(
+    library_path: Path,
+    db: Session,
+    executor: ThreadPoolExecutor,
+) -> ScanSummary:
+    """Сканирует папку библиотеки и кидает в pipeline новые PDF.
+
+    Для каждого PDF:
+      - если запись в БД есть (по slug) — пропускаем, но дозаполняем
+        relative_path, если он был пустой (миграция старых записей);
+      - если нет — создаём Document(status='processing') и отправляем
+        run_pipeline в фон через executor.
+
+    Сам файл юзера НЕ копируем — pipeline прочитает PDF прямо из библиотеки.
+    """
+    docs_by_slug = {doc.slug: doc for doc in db.scalars(select(Document)).all()}
+    created = 0
+    already_indexed = 0
+
+    for pdf_path in sorted(library_path.rglob("*.pdf")):
+        if pdf_path.name.startswith("."):
+            continue
+        slug = make_document_id(pdf_path.name)
+        relative_path = str(pdf_path.relative_to(library_path))
+
+        existing = docs_by_slug.get(slug)
+        if existing is not None:
+            # Старая запись могла появиться до миграции — заполним путь.
+            if existing.relative_path is None:
+                existing.relative_path = relative_path
+            already_indexed += 1
+            continue
+
+        title = pdf_path.stem  # имя без расширения; реальный title подменит pipeline
+        doc = Document(
+            slug=slug,
+            title=title,
+            status="processing",
+            relative_path=relative_path,
+        )
+        db.add(doc)
+        db.commit()
+        executor.submit(run_pipeline, slug, str(pdf_path))
+        created += 1
+
+    db.commit()
+    return ScanSummary(created=created, already_indexed=already_indexed)
 
 
 def open_file(library_path: Path, file_path: str) -> None:
