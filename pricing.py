@@ -19,6 +19,10 @@
 VISION_INPUT_PRICE_PER_M: float | None = 5.0
 VISION_OUTPUT_PRICE_PER_M: float | None = 30
 
+# gpt-5.4-mini (генерация ответа в search/answer.py)
+ANSWER_INPUT_PRICE_PER_M: float | None = 0.75
+ANSWER_OUTPUT_PRICE_PER_M: float | None = 4.50
+
 # text-embedding-3-large
 EMBEDDING_PRICE_PER_M: float | None = 0.13
 
@@ -33,6 +37,19 @@ def vision_cost(prompt_tokens: int, completion_tokens: int) -> float:
     return (
         prompt_tokens * VISION_INPUT_PRICE_PER_M / 1_000_000
         + completion_tokens * VISION_OUTPUT_PRICE_PER_M / 1_000_000
+    )
+
+
+def answer_cost(prompt_tokens: int, completion_tokens: int) -> float:
+    """USD за один вызов модели ответа по факту использованных токенов."""
+    if ANSWER_INPUT_PRICE_PER_M is None or ANSWER_OUTPUT_PRICE_PER_M is None:
+        raise RuntimeError(
+            "В pricing.py не заданы ANSWER_INPUT_PRICE_PER_M / "
+            "ANSWER_OUTPUT_PRICE_PER_M. Заполни актуальными ценами OpenAI."
+        )
+    return (
+        prompt_tokens * ANSWER_INPUT_PRICE_PER_M / 1_000_000
+        + completion_tokens * ANSWER_OUTPUT_PRICE_PER_M / 1_000_000
     )
 
 

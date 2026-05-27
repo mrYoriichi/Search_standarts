@@ -7,12 +7,14 @@
 из будущего AI-агента-оркестратора.
 """
 
+import time
 from pathlib import Path
 
 from sqlalchemy.orm import Session
 
 from ask import load_library, filter_library
 from indexing.bm25_index import build_bm25_index
+from pricing import answer_cost
 from search.hybrid import hybrid_search
 from search.answer import generate_answer
 
@@ -34,6 +36,8 @@ def ask(
 
     document_ids=None — искать по всей библиотеке.
     """
+    started_at = time.perf_counter()
+
     chunks, embeddings_index = load_library(DATA_ROOT)
 
     if document_ids:
@@ -49,8 +53,19 @@ def ask(
 
     result = generate_answer(question, top_chunks)
 
-    # Сохраняем запрос+ответ в историю
-    log = QueryLog(question=question, answer=result["answer"])
+    # Стоимость считаем только по ответному LLM-вызову — он доминирует.
+    # Эмбеддинг запроса (~20-50 токенов) даёт ~$0.000005 за запрос, игнорируем.
+    cost_usd = answer_cost(
+        result["prompt_tokens"], result["completion_tokens"]
+    )
+    duration_ms = int((time.perf_counter() - started_at) * 1000)
+
+    log = QueryLog(
+        question=question,
+        answer=result["answer"],
+        duration_ms=duration_ms,
+        cost_usd=cost_usd,
+    )
     db.add(log)
     db.commit()
     db.refresh(log)

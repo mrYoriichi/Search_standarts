@@ -106,9 +106,12 @@ def generate_answer(question: str, chunks: list[dict]) -> dict:
         "sources": [
           {"document": "...", "section": "...", "pages": [...]},
           ...
-        ]
+        ],
+        "prompt_tokens": int,
+        "completion_tokens": int,
       }
     sources пуст, если модель не нашла ответа в фрагментах.
+    prompt_tokens/completion_tokens — для расчёта стоимости в QueryLog.
     """
     client = OpenAI()
 
@@ -143,4 +146,6 @@ def generate_answer(question: str, chunks: list[dict]) -> dict:
     return {
         "answer": parsed["answer"],
         "sources": sources,
+        "prompt_tokens": response.usage.prompt_tokens,
+        "completion_tokens": response.usage.completion_tokens,
     }
