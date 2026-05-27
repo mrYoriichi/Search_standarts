@@ -11,15 +11,24 @@
   - http://localhost:8000/api/health  — проверка живости
   - http://localhost:8000/docs        — авто-документация (Swagger UI)
 """
+import asyncio
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from dotenv import load_dotenv
+from fastapi import Depends, FastAPI
 from sqlalchemy import select
 
 from pathlib import Path
 
+# Загружаем .env как можно раньше — до импорта сервисов, читающих env-vars.
+load_dotenv()
+
 from backend.core.database import Base, SessionLocal, engine
+from backend.modules.auth import service as auth_service
+from backend.modules.auth.deps import require_auth
+from backend.modules.auth.models import AuthSession  # noqa: F401 — для create_all
+from backend.modules.auth.router import router as auth_router
 from backend.modules.documents.models import Document
 from backend.modules.documents.pipeline import run_pipeline
 from backend.modules.documents.router import router as documents_router
@@ -60,19 +69,27 @@ async def lifespan(app: FastAPI):
     finally:
         db.close()
 
+    # Фоновый verify лицензии раз в час (см. backend/modules/auth/service.py).
+    # Отдельной задачей, чтобы не блокировать старт сервера.
+    verify_task = asyncio.create_task(auth_service.run_verify_loop())
+
     yield
 
     # Не ждём текущих обработок (они могут идти минуты), отменяем очередь.
     # Прерванные подхватятся при следующем старте.
     executor.shutdown(wait=False, cancel_futures=True)
+    verify_task.cancel()
 
 
 app = FastAPI(title="Search_standarts API", lifespan=lifespan)
 
-# Префикс /api отделяет API от будущей статики/SPA, чтобы Nginx
-# или сам FastAPI могли отдавать React-приложение на /
+# /api/health и /api/auth/* — без require_auth (нужно где-то логиниться и пинговать).
+# Остальные роутеры защищены: 401, если нет сессии или сессия в 'blocked'.
 app.include_router(health_router, prefix="/api", tags=["health"])
-app.include_router(queries_router, prefix="/api", tags=["queries"])
-app.include_router(documents_router, prefix="/api", tags=["documents"])
-app.include_router(settings_router, prefix="/api", tags=["settings"])
-app.include_router(library_router, prefix="/api", tags=["library"])
+app.include_router(auth_router, prefix="/api", tags=["auth"])
+
+protected = [Depends(require_auth)]
+app.include_router(queries_router, prefix="/api", tags=["queries"], dependencies=protected)
+app.include_router(documents_router, prefix="/api", tags=["documents"], dependencies=protected)
+app.include_router(settings_router, prefix="/api", tags=["settings"], dependencies=protected)
+app.include_router(library_router, prefix="/api", tags=["library"], dependencies=protected)

@@ -2,6 +2,17 @@ import { useEffect, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import LibraryPage from './LibraryPage'
+import LoginPage from './LoginPage'
+
+type AuthState =
+  | { phase: 'loading' }
+  | { phase: 'anonymous' }
+  | { phase: 'authenticated'; username: string }
+  | { phase: 'blocked'; username: string; reason: string }
+
+// Каждую минуту перечитываем локальный /api/auth/status — фоновый verify
+// на бэке мог перевести нас в blocked.
+const STATUS_POLL_INTERVAL_MS = 60 * 1000
 
 type Source = {
   document: string
@@ -144,6 +155,7 @@ function FileCheckbox({
 
 
 function App() {
+  const [auth, setAuth] = useState<AuthState>({ phase: 'loading' })
   const [view, setView] = useState<View>('search')
 
   const [question, setQuestion] = useState('')
@@ -156,14 +168,75 @@ function App() {
   // По умолчанию ищем во всех — самый частый кейс. При снятии открывается дерево.
   const [searchAll, setSearchAll] = useState(true)
 
-  // Загружаем дерево библиотеки один раз — берём готовое API /api/library,
-  // в фильтре показываем только ready-документы и папки, где они есть.
+  // Проверяем при старте + раз в минуту: есть ли активная локальная сессия и
+  // не перешла ли она в blocked (revoked / grace period истёк). Если blocked —
+  // сразу показываем полноэкранный оверлей.
   useEffect(() => {
+    let cancelled = false
+
+    function applyStatus(data: {
+      logged_in: boolean
+      username?: string
+      effective_status?: 'ok' | 'blocked'
+      status?: 'ok' | 'revoked' | 'offline'
+    } | null) {
+      if (cancelled) return
+      if (!data?.logged_in) {
+        setAuth({ phase: 'anonymous' })
+        return
+      }
+      if (data.effective_status === 'blocked') {
+        const reason =
+          data.status === 'revoked'
+            ? 'Доступ отозван администратором.'
+            : 'Нет связи с сервером лицензий более 1 дня. Подключитесь к интернету.'
+        setAuth({
+          phase: 'blocked',
+          username: data.username ?? '',
+          reason,
+        })
+        return
+      }
+      setAuth({
+        phase: 'authenticated',
+        username: data.username ?? '',
+      })
+    }
+
+    function check() {
+      fetch('/api/auth/status')
+        .then((res) => (res.ok ? res.json() : null))
+        .then(applyStatus)
+        .catch(() => {
+          // /api/auth/status — локальный, ошибка тут значит «бэк лежит».
+          // Не сбрасываем сессию: дождёмся следующего тика.
+        })
+    }
+
+    check()
+    const id = setInterval(check, STATUS_POLL_INTERVAL_MS)
+    return () => {
+      cancelled = true
+      clearInterval(id)
+    }
+  }, [])
+
+  // Дерево библиотеки тянем только после логина — иначе бэк ответил бы 401
+  // в защищённой версии, и форма «Где искать» всё равно бесполезна.
+  useEffect(() => {
+    if (auth.phase !== 'authenticated') return
     fetch('/api/library')
       .then((res) => (res.ok ? res.json() : null))
       .then((data: LibraryResponse | null) => setLibrary(data))
       .catch(() => setLibrary(null))
-  }, [])
+  }, [auth.phase])
+
+  async function handleLogout() {
+    await fetch('/api/auth/logout', { method: 'POST' })
+    setAuth({ phase: 'anonymous' })
+    setLibrary(null)
+    setResult(null)
+  }
 
   function toggleSlug(slug: string) {
     setSelectedSlugs((prev) => {
@@ -220,10 +293,49 @@ function App() {
 
   const canSubmit = question.trim().length > 0 && !loading
 
+  if (auth.phase === 'loading') {
+    // Короткое мерцание; полноценный спиннер избыточен.
+    return <div className="min-h-screen bg-background" />
+  }
+  if (auth.phase === 'anonymous') {
+    return (
+      <LoginPage
+        onLoggedIn={(username) => setAuth({ phase: 'authenticated', username })}
+      />
+    )
+  }
+  if (auth.phase === 'blocked') {
+    return (
+      <div className="min-h-screen bg-background text-foreground flex items-center justify-center px-6">
+        <div className="w-full max-w-md flex flex-col gap-4 rounded-md border bg-card p-6">
+          <h1 className="text-2xl font-bold">Доступ заблокирован</h1>
+          <p className="text-sm text-muted-foreground">{auth.reason}</p>
+          <p className="text-sm text-muted-foreground">
+            Пользователь: <span className="text-foreground">{auth.username}</span>
+          </p>
+          <Button onClick={handleLogout} className="self-start">
+            Выйти и войти заново
+          </Button>
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div className="min-h-screen bg-background text-foreground">
       <div className="max-w-3xl mx-auto px-6 py-10 flex flex-col gap-6">
-        <h1 className="text-3xl font-bold">Search_standarts</h1>
+        <div className="flex items-center justify-between gap-4">
+          <h1 className="text-3xl font-bold">Search_standarts</h1>
+          <div className="flex items-center gap-3 text-sm text-muted-foreground">
+            <span>👤 {auth.username}</span>
+            <button
+              onClick={handleLogout}
+              className="hover:text-foreground hover:underline"
+            >
+              Выйти
+            </button>
+          </div>
+        </div>
 
         <nav className="flex gap-1 border-b">
           <button
