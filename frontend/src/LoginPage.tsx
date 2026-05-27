@@ -10,6 +10,9 @@ export default function LoginPage({ onLoggedIn }: Props) {
   const [password, setPassword] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  // Если сервер сказал 426 — форма скрывается, показываем блок «Установите новую версию».
+  // Логин не пройдёт пока юзер не обновит приложение.
+  const [updateRequired, setUpdateRequired] = useState<{ downloadUrl: string } | null>(null)
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -21,6 +24,11 @@ export default function LoginPage({ onLoggedIn }: Props) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ username, password }),
       })
+      if (res.status === 426) {
+        const data = await res.json()
+        setUpdateRequired({ downloadUrl: data?.detail?.download_url ?? '' })
+        return
+      }
       if (res.status === 401) {
         setError('Неверный логин или пароль')
         return
@@ -48,6 +56,33 @@ export default function LoginPage({ onLoggedIn }: Props) {
 
   const canSubmit =
     username.trim().length > 0 && password.length > 0 && !loading
+
+  if (updateRequired) {
+    return (
+      <div className="min-h-screen bg-background text-foreground flex items-center justify-center px-6">
+        <div className="w-full max-w-md flex flex-col gap-4 rounded-md border bg-card p-6">
+          <h1 className="text-2xl font-bold">Установите новую версию</h1>
+          <p className="text-sm text-muted-foreground">
+            Доступна обязательная версия приложения. Войти можно только после обновления.
+          </p>
+          {updateRequired.downloadUrl ? (
+            <a
+              href={updateRequired.downloadUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-sm text-foreground underline self-start"
+            >
+              Скачать обновление →
+            </a>
+          ) : (
+            <p className="text-sm text-muted-foreground">
+              Ссылка пока недоступна. Обратитесь к администратору.
+            </p>
+          )}
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className="min-h-screen bg-background text-foreground flex items-center justify-center px-6">

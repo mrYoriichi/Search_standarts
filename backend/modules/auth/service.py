@@ -5,6 +5,7 @@
 
 import asyncio
 import os
+from dataclasses import dataclass
 from datetime import datetime, timedelta
 
 import httpx
@@ -12,6 +13,12 @@ from sqlalchemy.orm import Session
 
 from backend.core.database import SessionLocal
 from backend.modules.auth.models import AuthSession
+from backend.version import APP_VERSION
+
+
+# Хедер для всех запросов к серверу лицензий. Сервер сверяет с MIN_SUPPORTED_VERSION
+# и при устаревшей версии отвечает 426 Upgrade Required (см. блок F5).
+VERSION_HEADERS = {"X-App-Version": APP_VERSION}
 
 # Дефолт указывает на прод-сервер. Для локальных тестов можно
 # переопределить в .env: LICENSE_SERVER_URL=http://127.0.0.1:8001
@@ -44,6 +51,22 @@ class LicenseServerUnavailable(Exception):
     """Сервер недоступен (network error / 5xx). Юзеру говорим «попробуйте позже»."""
 
 
+class UpdateRequiredError(Exception):
+    """Сервер ответил 426: версия клиента младше MIN_SUPPORTED_VERSION."""
+
+    def __init__(self, download_url: str):
+        self.download_url = download_url
+        super().__init__("Update required")
+
+
+@dataclass
+class VerifyResult:
+    """Результат проверки токена на сервере лицензий."""
+
+    status: str  # 'ok' | 'revoked' | 'offline' | 'update_required'
+    download_url: str | None = None
+
+
 def login(db: Session, username: str, password: str) -> AuthSession:
     """Ходит на сервер лицензий, получает JWT, сохраняет в БД синглтоном.
 
@@ -53,10 +76,16 @@ def login(db: Session, username: str, password: str) -> AuthSession:
         response = httpx.post(
             f"{LICENSE_SERVER_URL}/auth/login",
             json={"username": username, "password": password},
+            headers=VERSION_HEADERS,
             timeout=HTTP_TIMEOUT,
         )
     except httpx.HTTPError as exc:
         raise LicenseServerUnavailable(str(exc)) from exc
+
+    if response.status_code == 426:
+        # Версия клиента младше MIN_SUPPORTED_VERSION. До обновления — не пустим.
+        detail = response.json().get("detail", {})
+        raise UpdateRequiredError(detail.get("download_url", ""))
 
     if response.status_code >= 500:
         raise LicenseServerUnavailable(f"License server returned {response.status_code}")
@@ -76,6 +105,7 @@ def login(db: Session, username: str, password: str) -> AuthSession:
             username=username,
             last_verified_at=datetime.utcnow(),
             last_verify_status="ok",
+            download_url=None,
         )
         db.add(session)
     else:
@@ -83,6 +113,7 @@ def login(db: Session, username: str, password: str) -> AuthSession:
         session.username = username
         session.last_verified_at = datetime.utcnow()
         session.last_verify_status = "ok"
+        session.download_url = None
     db.commit()
     db.refresh(session)
     return session
@@ -100,28 +131,37 @@ def logout(db: Session) -> None:
         db.commit()
 
 
-def verify_with_server(token: str) -> str:
+def verify_with_server(token: str) -> VerifyResult:
     """Дёргает /auth/verify на сервере лицензий. Возвращает результат-метку.
 
-    - 'ok'      — сервер ответил 200, токен валиден.
-    - 'revoked' — 401/403: токен битый/просрочен или юзер отозван (relogin).
-    - 'offline' — сервер недоступен (network error / 5xx). Сюда же попадаем,
-                  если нет сети — это и есть «работаем по grace period».
+    - status='ok'              — сервер ответил 200, токен валиден.
+    - status='revoked'         — 401/403: токен битый/просрочен или юзер отозван.
+    - status='update_required' — 426: версия клиента младше MIN_SUPPORTED_VERSION.
+                                 download_url присылает сервер.
+    - status='offline'         — сервер недоступен (network error / 5xx). Сюда же
+                                 попадаем без сети — это и есть «grace period».
     """
+    headers = {"Authorization": f"Bearer {token}", **VERSION_HEADERS}
     try:
         response = httpx.get(
             f"{LICENSE_SERVER_URL}/auth/verify",
-            headers={"Authorization": f"Bearer {token}"},
+            headers=headers,
             timeout=HTTP_TIMEOUT,
         )
     except httpx.HTTPError:
-        return "offline"
+        return VerifyResult(status="offline")
 
     if response.status_code == 200:
-        return "ok"
+        return VerifyResult(status="ok")
     if response.status_code in (401, 403):
-        return "revoked"
-    return "offline"  # 5xx и всё прочее трактуем как «сервер недоступен»
+        return VerifyResult(status="revoked")
+    if response.status_code == 426:
+        detail = response.json().get("detail", {})
+        return VerifyResult(
+            status="update_required",
+            download_url=detail.get("download_url", ""),
+        )
+    return VerifyResult(status="offline")  # 5xx и прочее — «сервер недоступен»
 
 
 def verify_once() -> None:
@@ -135,13 +175,14 @@ def verify_once() -> None:
         if session is None:
             return  # не залогинен — нечего проверять
         result = verify_with_server(session.token)
-        if result == "ok":
+        if result.status == "ok":
             session.last_verified_at = datetime.utcnow()
-            session.last_verify_status = "ok"
+            session.download_url = None
         else:
-            # При offline/revoked НЕ обновляем last_verified_at —
+            # При offline/revoked/update_required НЕ обновляем last_verified_at —
             # счётчик grace-period должен тикать от последнего успешного verify.
-            session.last_verify_status = result
+            session.download_url = result.download_url
+        session.last_verify_status = result.status
         db.commit()
     finally:
         db.close()
@@ -168,7 +209,7 @@ def compute_effective_status(session: AuthSession) -> str:
     - offline → blocked, если последний успешный verify был >1 дня назад.
     - ok      → ok.
     """
-    if session.last_verify_status == "revoked":
+    if session.last_verify_status in ("revoked", "update_required"):
         return "blocked"
     if session.last_verify_status == "offline":
         age = datetime.utcnow() - session.last_verified_at

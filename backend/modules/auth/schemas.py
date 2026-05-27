@@ -27,6 +27,9 @@ class StatusResponse(BaseModel):
 
     logged_in: bool
     username: str | None = None
-    status: str | None = None  # 'ok' | 'revoked' | 'offline'
+    status: str | None = None  # 'ok' | 'revoked' | 'offline' | 'update_required'
     effective_status: str | None = None  # 'ok' | 'blocked'
     last_verified_at: datetime | None = None
+    # Заполнен, если status='update_required'. Фронт показывает в оверлее
+    # «Установите новую версию» как ссылку.
+    download_url: str | None = None

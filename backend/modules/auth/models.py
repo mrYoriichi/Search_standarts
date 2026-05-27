@@ -30,3 +30,6 @@ class AuthSession(Base):
         DateTime, server_default=func.now()
     )
     last_verify_status: Mapped[str] = mapped_column(String, default="ok")
+    # Если сервер прислал 426 — кладём сюда URL, фронт покажет в оверлее
+    # «Установите новую версию». Иначе остаётся NULL.
+    download_url: Mapped[str | None] = mapped_column(String, nullable=True)

@@ -26,6 +26,16 @@ def login(
 ) -> LoginResponse:
     try:
         session = service.login(db, body.username, body.password)
+    except service.UpdateRequiredError as exc:
+        # 426 — версия клиента младше MIN_SUPPORTED_VERSION на сервере лицензий.
+        # detail-dict позволяет фронту достать ссылку на скачивание.
+        raise HTTPException(
+            status_code=426,
+            detail={
+                "message": "Update required",
+                "download_url": exc.download_url,
+            },
+        ) from exc
     except service.LoginError as exc:
         raise HTTPException(status_code=exc.status_code, detail=exc.message) from exc
     except service.LicenseServerUnavailable as exc:
@@ -48,6 +58,7 @@ def status(db: Session = Depends(get_session)) -> StatusResponse:
         status=session.last_verify_status,
         effective_status=service.compute_effective_status(session),
         last_verified_at=session.last_verified_at,
+        download_url=session.download_url,
     )
 
 

@@ -8,7 +8,7 @@ type AuthState =
   | { phase: 'loading' }
   | { phase: 'anonymous' }
   | { phase: 'authenticated'; username: string }
-  | { phase: 'blocked'; username: string; reason: string }
+  | { phase: 'blocked'; username: string; reason: string; downloadUrl?: string }
 
 // Каждую минуту перечитываем локальный /api/auth/status — фоновый verify
 // на бэке мог перевести нас в blocked.
@@ -178,7 +178,8 @@ function App() {
       logged_in: boolean
       username?: string
       effective_status?: 'ok' | 'blocked'
-      status?: 'ok' | 'revoked' | 'offline'
+      status?: 'ok' | 'revoked' | 'offline' | 'update_required'
+      download_url?: string | null
     } | null) {
       if (cancelled) return
       if (!data?.logged_in) {
@@ -186,14 +187,19 @@ function App() {
         return
       }
       if (data.effective_status === 'blocked') {
-        const reason =
-          data.status === 'revoked'
-            ? 'Доступ отозван администратором.'
-            : 'Нет связи с сервером лицензий более 1 дня. Подключитесь к интернету.'
+        let reason: string
+        if (data.status === 'revoked') {
+          reason = 'Доступ отозван администратором.'
+        } else if (data.status === 'update_required') {
+          reason = 'Доступна новая версия приложения. Установите её, чтобы продолжить работу.'
+        } else {
+          reason = 'Нет связи с сервером лицензий более 1 дня. Подключитесь к интернету.'
+        }
         setAuth({
           phase: 'blocked',
           username: data.username ?? '',
           reason,
+          downloadUrl: data.download_url ?? undefined,
         })
         return
       }
@@ -313,8 +319,18 @@ function App() {
           <p className="text-sm text-muted-foreground">
             Пользователь: <span className="text-foreground">{auth.username}</span>
           </p>
-          <Button onClick={handleLogout} className="self-start">
-            Выйти и войти заново
+          {auth.downloadUrl && (
+            <a
+              href={auth.downloadUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-sm text-foreground underline self-start"
+            >
+              Скачать обновление →
+            </a>
+          )}
+          <Button onClick={handleLogout} className="self-start" variant="outline">
+            Выйти
           </Button>
         </div>
       </div>
