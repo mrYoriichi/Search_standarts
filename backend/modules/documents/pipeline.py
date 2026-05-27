@@ -12,6 +12,7 @@ from sqlalchemy import select
 
 from backend.core.database import SessionLocal
 from backend.modules.documents.models import Document
+from backend.modules.telemetry.service import track_event
 
 
 logger = logging.getLogger(__name__)
@@ -51,6 +52,7 @@ def run_pipeline(slug: str, pdf_path: str | None = None) -> None:
                 doc.status = "failed"
                 doc.error_message = f"{type(exc).__name__}: {exc}"
                 db.commit()
+            track_event("pdf_failed", error_type=type(exc).__name__)
             return
 
         # Берём настоящий заголовок документа из descriptions.json
@@ -67,5 +69,16 @@ def run_pipeline(slug: str, pdf_path: str | None = None) -> None:
             doc.status = "ready"
             doc.error_message = None
             db.commit()
+
+        # Считаем число чанков как косвенный размер документа — слать имя файла
+        # нельзя (это уже Уровень 2 / персональные данные).
+        chunks_path = Path("data/raw_data") / slug / "chunks.json"
+        chunks_count: int | None = None
+        try:
+            with open(chunks_path, encoding="utf-8") as f:
+                chunks_count = len(json.load(f))
+        except Exception:  # pylint: disable=broad-except
+            pass
+        track_event("pdf_indexed", chunks_count=chunks_count)
     finally:
         db.close()

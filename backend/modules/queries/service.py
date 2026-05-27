@@ -20,6 +20,7 @@ from search.answer import generate_answer
 
 from backend.modules.queries.models import QueryLog
 from backend.modules.queries.schemas import AskResponse, Source
+from backend.modules.telemetry.service import track_event
 
 
 # Тот же top_k, что и в CLI-сценарии ask.py
@@ -69,6 +70,16 @@ def ask(
     db.add(log)
     db.commit()
     db.refresh(log)
+
+    # Анонимная техническая телеметрия: цифры, без текста вопроса/ответа.
+    track_event(
+        "query_asked",
+        duration_ms=duration_ms,
+        cost_usd=cost_usd,
+        scope="filtered" if document_ids else "all",
+        chunks_searched=len(chunks),
+        sources_returned=len(result["sources"]),
+    )
 
     return AskResponse(
         answer=result["answer"],
