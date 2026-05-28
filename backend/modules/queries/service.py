@@ -8,16 +8,16 @@
 """
 
 import time
-from pathlib import Path
 
 from sqlalchemy.orm import Session
 
-from ask import load_library, filter_library
+from ask import filter_library
 from indexing.bm25_index import build_bm25_index
 from pricing import answer_cost
 from search.hybrid import hybrid_search
 from search.answer import generate_answer
 
+from backend.core import library_cache
 from backend.modules.queries.models import QueryLog
 from backend.modules.queries.schemas import AskResponse, Source
 from backend.modules.telemetry.service import track_event
@@ -25,7 +25,6 @@ from backend.modules.telemetry.service import track_event
 
 # Тот же top_k, что и в CLI-сценарии ask.py
 TOP_K = 5
-DATA_ROOT = Path("data/raw_data")
 
 
 def ask(
@@ -39,7 +38,9 @@ def ask(
     """
     started_at = time.perf_counter()
 
-    chunks, embeddings_index = load_library(DATA_ROOT)
+    # Библиотека лежит в памяти (см. backend/core/library_cache.py) — с диска
+    # читаем только при первом вопросе и после изменений библиотеки.
+    chunks, embeddings_index = library_cache.get_library()
 
     if document_ids:
         chunks, embeddings_index = filter_library(

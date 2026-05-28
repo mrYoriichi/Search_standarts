@@ -10,6 +10,7 @@ from pathlib import Path
 
 from sqlalchemy import select
 
+from backend.core import library_cache
 from backend.core.database import SessionLocal
 from backend.modules.documents.models import Document
 from backend.modules.telemetry.service import track_event
@@ -69,6 +70,10 @@ def run_pipeline(slug: str, pdf_path: str | None = None) -> None:
             doc.status = "ready"
             doc.error_message = None
             db.commit()
+
+        # Появились новые чанки/эмбеддинги на диске — сбрасываем кеш библиотеки,
+        # чтобы следующий вопрос увидел свежий документ.
+        library_cache.invalidate()
 
         # Считаем число чанков как косвенный размер документа — слать имя файла
         # нельзя (это уже Уровень 2 / персональные данные).

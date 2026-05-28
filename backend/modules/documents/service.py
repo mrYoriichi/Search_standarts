@@ -9,6 +9,7 @@ from fastapi import UploadFile
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from backend.core import library_cache
 from backend.modules.documents.models import Document
 from backend.modules.documents.pipeline import run_pipeline
 from backend.modules.documents.schemas import UploadItem
@@ -62,6 +63,10 @@ def reindex_document(
     doc.error_message = None
     db.commit()
 
+    # Старые чанки документа уже удалены — убираем их из кеша сразу, не дожидаясь
+    # конца переобработки (pipeline сбросит кеш ещё раз, когда документ снова готов).
+    library_cache.invalidate()
+
     executor.submit(run_pipeline, slug, str(pdf_path))
     return doc
 
@@ -82,6 +87,7 @@ def delete_document(db: Session, slug: str) -> None:
 
     db.delete(doc)
     db.commit()
+    library_cache.invalidate()  # документ исчез с диска — обновить кеш
 
 
 def toggle_pin(db: Session, slug: str) -> Document:
@@ -152,6 +158,7 @@ def relink_document(db: Session, old_slug: str, new_slug: str) -> Document:
     # 4. Обновляем slug в БД.
     doc.slug = new_slug
     db.commit()
+    library_cache.invalidate()  # document_id/chunk_id поменялись — обновить кеш
     return doc
 
 

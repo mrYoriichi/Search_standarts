@@ -100,21 +100,44 @@ def scan_library(
         run_pipeline в фон через executor.
 
     Сам файл юзера НЕ копируем — pipeline прочитает PDF прямо из библиотеки.
+
+    Если два разных файла дают одно имя (id) — это коллизия: мы не можем их
+    различить. Такие файлы НЕ трогаем и возвращаем в duplicates, чтобы юзер
+    переименовал. Иначе один молча перезатёр бы индекс другого.
     """
     docs_by_slug = {doc.slug: doc for doc in db.scalars(select(Document)).all()}
+
+    # Все PDF библиотеки (без скрытых файлов).
+    pdf_paths = [
+        p for p in sorted(library_path.rglob("*.pdf"))
+        if not p.name.startswith(".")
+    ]
+
+    # Первый проход: сколько файлов дают каждый slug. >1 — совпадение имён.
+    slug_counts: dict[str, int] = {}
+    for p in pdf_paths:
+        slug = make_document_id(p.name)
+        slug_counts[slug] = slug_counts.get(slug, 0) + 1
+
     created = 0
     already_indexed = 0
+    duplicates: list[str] = []
 
-    for pdf_path in sorted(library_path.rglob("*.pdf")):
-        if pdf_path.name.startswith("."):
-            continue
+    for pdf_path in pdf_paths:
         slug = make_document_id(pdf_path.name)
         relative_path = str(pdf_path.relative_to(library_path))
 
+        # Совпадение имён — пропускаем все такие файлы и сообщаем юзеру.
+        if slug_counts[slug] > 1:
+            duplicates.append(relative_path)
+            continue
+
         existing = docs_by_slug.get(slug)
         if existing is not None:
-            # Старая запись могла появиться до миграции — заполним путь.
-            if existing.relative_path is None:
+            # Дозаполняем путь у старых записей (был None) И обновляем, если файл
+            # переехал в другую папку — иначе «Переиндексировать» искал бы PDF
+            # по старому пути и падал бы с «PDF не найден».
+            if existing.relative_path != relative_path:
                 existing.relative_path = relative_path
             already_indexed += 1
             continue
@@ -132,7 +155,9 @@ def scan_library(
         created += 1
 
     db.commit()
-    return ScanSummary(created=created, already_indexed=already_indexed)
+    return ScanSummary(
+        created=created, already_indexed=already_indexed, duplicates=duplicates
+    )
 
 
 def open_file(library_path: Path, file_path: str) -> None:

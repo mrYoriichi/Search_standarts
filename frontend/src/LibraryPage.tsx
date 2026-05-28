@@ -436,12 +436,22 @@ function LibraryPage() {
         alert(data.detail ?? `Ошибка ${res.status}`)
         return
       }
-      const data: { created: number; already_indexed: number } = await res.json()
-      if (data.created === 0) {
-        alert(`Новых PDF не найдено (уже в индексе: ${data.already_indexed}).`)
-      } else {
-        alert(`Запущена обработка ${data.created} новых PDF.`)
+      const data: {
+        created: number
+        already_indexed: number
+        duplicates?: string[]
+      } = await res.json()
+      let msg =
+        data.created === 0
+          ? `Новых PDF не найдено (уже в индексе: ${data.already_indexed}).`
+          : `Запущена обработка ${data.created} новых PDF.`
+      if (data.duplicates && data.duplicates.length > 0) {
+        msg +=
+          '\n\n⚠️ Пропущены файлы с одинаковыми именами — переименуйте, ' +
+          'чтобы их можно было различить:\n' +
+          data.duplicates.join('\n')
       }
+      alert(msg)
       await loadAll()
     } catch {
       alert('Ошибка сети')

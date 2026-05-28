@@ -2,7 +2,7 @@
 
 from collections.abc import Generator
 
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, event
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 
 
@@ -18,6 +18,20 @@ engine = create_engine(
     DATABASE_URL,
     connect_args={"check_same_thread": False},
 )
+
+
+@event.listens_for(engine, "connect")
+def _set_sqlite_pragma(dbapi_connection, connection_record) -> None:
+    """Настраивает каждое новое соединение с SQLite.
+
+    WAL — читатели не блокируют писателя (меньше ошибок «database is locked»
+    при параллельной обработке документов + телеметрии).
+    busy_timeout — ждать до 5 сек, пока база освободится, вместо мгновенного падения.
+    """
+    cursor = dbapi_connection.cursor()
+    cursor.execute("PRAGMA journal_mode=WAL")
+    cursor.execute("PRAGMA busy_timeout=5000")
+    cursor.close()
 
 
 # Фабрика сессий. Каждый вызов SessionLocal() создаёт новую сессию.
