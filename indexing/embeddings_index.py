@@ -6,6 +6,8 @@ Embeddings — превращение текста в вектор (список
 смысл. Поиск по смыслу: находит близкие по содержанию чанки,
 даже если слова разные. Дополняет BM25 (точные совпадения).
 """
+import math
+
 import tiktoken
 from openai import OpenAI
 
@@ -111,9 +113,6 @@ def build_embeddings_index(chunks: list[dict]) -> tuple[dict, int]:
         "items": items,
     }
     return index, tokens
-
-
-import math
 
 
 def cosine_similarity(vec_a: list[float], vec_b: list[float]) -> float:

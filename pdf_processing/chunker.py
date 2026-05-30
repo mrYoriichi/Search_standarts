@@ -8,11 +8,22 @@
 Главная функция: build_chunks(document) -> list[dict]
 """
 
+import re
+
 # Типы блоков-мусора, которые не идут в чанки.
 SKIP_BLOCK_TYPES = {"document_index", "header", "footer"}
 
-# Метка, которой vision LLM помечает логотипы и штампы.
-NON_TECHNICAL_MARKER = "NENÍ TECHNICKÝ OBSAH"
+# Фразы-маркеры нетехнического контента (логотипы, штампы). Модель не всегда
+# пишет каноническую метку дословно (например «Logo... bez technického obsahu»),
+# поэтому матчим по подстроке без учёта регистра, а не точным равенством.
+NON_TECHNICAL_SUBSTRINGS = (
+    "není technický obsah",  # каноническая метка из промпта
+    "bez technického",       # частая перефразировка модели
+)
+
+# Слово 'logo' проверяем отдельно — как целое слово (\b), а не подстроку:
+# подстрока ловила бы инфлектированные 'katalogové', 'dialogový' и т.п.
+_LOGO_WORD = re.compile(r"\blogo\b")
 
 # Порог: чанки длиннее этого числа символов — кандидаты на дробление.
 MAX_CHUNK_CHARS = 2500
@@ -39,9 +50,12 @@ def is_block_useful(block: dict) -> bool:
 
     if block_type in ("figure", "table"):
         description = block.get("description")
-        if description == NON_TECHNICAL_MARKER:
-            return False
         if not description:
+            return False
+        low = description.lower()
+        if any(marker in low for marker in NON_TECHNICAL_SUBSTRINGS):
+            return False
+        if _LOGO_WORD.search(low):
             return False
         return True
 
