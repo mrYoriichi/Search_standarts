@@ -256,6 +256,13 @@ def build_chunks(document: dict) -> list[dict]:
     for chunk in chunks:
         result.extend(split_large_chunk(chunk))
 
+    # Уникальный chunk_id: сквозной счётчик внутри документа.
+    # Старая схема (документ + номер раздела) давала дубликаты в нормах
+    # с приложениями, где нумерация разделов начинается заново. Номер
+    # раздела остаётся в поле section_number.
+    for i, chunk in enumerate(result, start=1):
+        chunk["chunk_id"] = f"{document_id}_c{i:03d}"
+
     # Убираем служебное поле _blocks
     for chunk in result:
         chunk.pop("_blocks", None)
