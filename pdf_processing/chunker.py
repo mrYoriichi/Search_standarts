@@ -29,15 +29,6 @@ _LOGO_WORD = re.compile(r"\blogo\b")
 MAX_CHUNK_CHARS = 2500
 
 
-def make_chunk_id(document_id: str, section_number: str) -> str:
-    """
-    Строит chunk_id из id документа и номера раздела.
-    'mvl649' + '7.12' -> 'mvl649_7_12'
-    """
-    section_part = section_number.replace(".", "_")
-    return f"{document_id}_{section_part}"
-
-
 def is_block_useful(block: dict) -> bool:
     """
     Решает, годится ли блок для попадания в чанк.
@@ -138,16 +129,10 @@ def split_large_chunk(chunk: dict) -> list[dict]:
 
     # Собираем под-чанки
     sub_chunks = []
-    for i, part_blocks in enumerate(parts):
-        if i == 0:
-            sub_id = chunk["chunk_id"]
-        else:
-            sub_id = f"{chunk['chunk_id']}_p{i + 1}"
-
+    for part_blocks in parts:
         part_pages = sorted({page_of_block(b) for b in part_blocks})
 
         sub_chunks.append({
-            "chunk_id": sub_id,
             "document_id": chunk["document_id"],
             "document_title": chunk["document_title"],
             "document_summary": chunk["document_summary"],
@@ -190,7 +175,6 @@ def build_chunks(document: dict) -> list[dict]:
         if not current["blocks"]:
             return
         chunks.append({
-            "chunk_id": make_chunk_id(document_id, current["section_number"]),
             "document_id": document_id,
             "document_title": doc_title,
             "document_summary": doc_summary,
