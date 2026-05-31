@@ -24,7 +24,11 @@ type Source = {
 type AskResponse = {
   answer: string
   sources: Source[]
+  related_sources: Source[]
   query_log_id: number
+  search_query: string
+  answer_model: string
+  answer_ms: number
 }
 
 type LibraryFile = {
@@ -154,6 +158,27 @@ function FileCheckbox({
 }
 
 
+function SourceLink({ src }: { src: Source }) {
+  const firstPage = src.pages[0]
+  const href = `/api/library/pdf/${src.slug}${firstPage ? `#page=${firstPage}` : ''}`
+  return (
+    <a
+      href={href}
+      target="_blank"
+      rel="noopener noreferrer"
+      className="hover:underline"
+      title="Otevřít PDF na této stránce"
+    >
+      <span className="font-medium">{src.document}</span>
+      {' / '}
+      <span>{src.section}</span>
+      {' / s. '}
+      <span>{src.pages.join(', ')}</span>
+    </a>
+  )
+}
+
+
 function App() {
   const [auth, setAuth] = useState<AuthState>({ phase: 'loading' })
   const [view, setView] = useState<View>('search')
@@ -167,6 +192,10 @@ function App() {
   const [selectedSlugs, setSelectedSlugs] = useState<Set<string>>(new Set())
   // По умолчанию ищем во всех — самый частый кейс. При снятии открывается дерево.
   const [searchAll, setSearchAll] = useState(true)
+  // Режим поиска: hybrid (7 вектор + 7 BM25), vector (топ-20 смысл), keyword (топ-10 слова).
+  const [searchMode, setSearchMode] = useState<'hybrid' | 'vector' | 'keyword'>('hybrid')
+  // Модель генерации ответа.
+  const [answerModel, setAnswerModel] = useState<'gpt-5.4-mini' | 'gpt-5.5'>('gpt-5.4-mini')
 
   // Проверяем при старте + раз в минуту: есть ли активная локальная сессия и
   // не перешла ли она в blocked (revoked / grace period истёк). Если blocked —
@@ -282,7 +311,16 @@ function App() {
     try {
       // «Вся база» → не шлём document_ids, бэк ищет везде.
       // Иначе шлём выбранные slug'и (size > 0 гарантирован проверкой выше).
-      const body: { question: string; document_ids?: string[] } = { question }
+      const body: {
+        question: string
+        document_ids?: string[]
+        mode: string
+        answer_model: string
+      } = {
+        question,
+        mode: searchMode,
+        answer_model: answerModel,
+      }
       if (!searchAll) {
         body.document_ids = Array.from(selectedSlugs)
       }
@@ -422,6 +460,54 @@ function App() {
           )}
         </div>
 
+        <div className="rounded-md border bg-card p-4 flex flex-col gap-2">
+          <h2 className="text-sm font-semibold text-muted-foreground">
+            Režim hledání
+          </h2>
+          <div className="flex gap-2">
+            {([
+              ['hybrid', 'Hybridní'],
+              ['vector', 'Podle významu'],
+              ['keyword', 'Podle slov'],
+            ] as const).map(([value, label]) => (
+              <button
+                key={value}
+                onClick={() => setSearchMode(value)}
+                className={
+                  'px-3 py-1.5 text-sm rounded-md border ' +
+                  (searchMode === value
+                    ? 'bg-foreground text-background font-medium'
+                    : 'text-muted-foreground hover:text-foreground')
+                }
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="rounded-md border bg-card p-4 flex flex-col gap-2">
+          <h2 className="text-sm font-semibold text-muted-foreground">
+            Model odpovědi
+          </h2>
+          <div className="flex gap-2">
+            {(['gpt-5.4-mini', 'gpt-5.5'] as const).map((value) => (
+              <button
+                key={value}
+                onClick={() => setAnswerModel(value)}
+                className={
+                  'px-3 py-1.5 text-sm rounded-md border ' +
+                  (answerModel === value
+                    ? 'bg-foreground text-background font-medium'
+                    : 'text-muted-foreground hover:text-foreground')
+                }
+              >
+                {value}
+              </button>
+            ))}
+          </div>
+        </div>
+
         <Textarea
           placeholder="Zadejte dotaz ke stavebním normám..."
           value={question}
@@ -442,6 +528,14 @@ function App() {
 
         {result && (
           <div className="flex flex-col gap-4">
+            {result.search_query && (
+              <p className="text-xs text-muted-foreground">
+                Hledáno jako: <span className="italic">{result.search_query}</span>
+              </p>
+            )}
+            <p className="text-xs text-muted-foreground">
+              Model: {result.answer_model} · {(result.answer_ms / 1000).toFixed(1)} s
+            </p>
             <div className="rounded-md border bg-card p-4">
               <h2 className="text-sm font-semibold text-muted-foreground mb-2">
                 Odpověď
@@ -459,32 +553,25 @@ function App() {
                 </p>
               ) : (
                 <ul className="flex flex-col gap-2 text-sm">
-                  {result.sources.map((src, i) => {
-                    const firstPage = src.pages[0]
-                    const href = `/api/library/pdf/${src.slug}${
-                      firstPage ? `#page=${firstPage}` : ''
-                    }`
-                    return (
-                      <li key={i}>
-                        <a
-                          href={href}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="hover:underline"
-                          title="Otevřít PDF na této stránce"
-                        >
-                          <span className="font-medium">{src.document}</span>
-                          {' / '}
-                          <span>{src.section}</span>
-                          {' / s. '}
-                          <span>{src.pages.join(', ')}</span>
-                        </a>
-                      </li>
-                    )
-                  })}
+                  {result.sources.map((src, i) => (
+                    <li key={i}><SourceLink src={src} /></li>
+                  ))}
                 </ul>
               )}
             </div>
+
+            {result.related_sources.length > 0 && (
+              <div className="rounded-md border bg-card p-4">
+                <h2 className="text-sm font-semibold text-muted-foreground mb-2">
+                  Související
+                </h2>
+                <ul className="flex flex-col gap-2 text-sm">
+                  {result.related_sources.map((src, i) => (
+                    <li key={i}><SourceLink src={src} /></li>
+                  ))}
+                </ul>
+              </div>
+            )}
           </div>
         )}
           </>

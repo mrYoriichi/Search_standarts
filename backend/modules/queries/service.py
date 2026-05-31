@@ -13,8 +13,9 @@ from sqlalchemy.orm import Session
 
 from ask import filter_library
 from indexing.bm25_index import build_bm25_index
-from pricing import answer_cost
-from search.hybrid import hybrid_search
+from pricing import answer_cost, vision_cost
+from search.expand import expand_query
+from search.hybrid import search_by_mode
 from search.answer import generate_answer
 
 from backend.core import library_cache
@@ -23,18 +24,18 @@ from backend.modules.queries.schemas import AskResponse, Source
 from backend.modules.telemetry.service import track_event
 
 
-# Тот же top_k, что и в CLI-сценарии ask.py
-TOP_K = 5
-
-
 def ask(
     question: str,
     document_ids: list[str] | None,
     db: Session,
+    mode: str = "hybrid",
+    answer_model: str = "gpt-5.4-mini",
 ) -> AskResponse:
     """Главная функция: вопрос → ответ + источники + id записи в QueryLog.
 
     document_ids=None — искать по всей библиотеке.
+    mode — режим поиска (hybrid / vector / keyword), см. search.hybrid.
+    answer_model — модель генерации ответа (gpt-5.4-mini / gpt-5.5).
     """
     started_at = time.perf_counter()
 
@@ -47,19 +48,25 @@ def ask(
             chunks, embeddings_index, set(document_ids)
         )
 
+    # Расширяем запрос для поиска (диакритика, термины, синонимы), но ответ
+    # генерим по ОРИГИНАЛЬНОМУ вопросу — чтобы отвечать на то, что спросил юзер.
+    search_query = expand_query(question)
+
     bm25 = build_bm25_index(chunks)
-    found = hybrid_search(bm25, embeddings_index, question, top_k=TOP_K)
+    found_ids = search_by_mode(bm25, embeddings_index, search_query, mode)
 
     chunks_by_id = {c["chunk_id"]: c for c in chunks}
-    top_chunks = [chunks_by_id[chunk_id] for chunk_id, _ in found]
+    top_chunks = [chunks_by_id[chunk_id] for chunk_id in found_ids]
 
-    result = generate_answer(question, top_chunks)
+    # Время генерации ответа меряем отдельно — чтобы сравнивать скорость моделей.
+    gen_start = time.perf_counter()
+    result = generate_answer(question, top_chunks, model=answer_model)
+    answer_ms = int((time.perf_counter() - gen_start) * 1000)
 
     # Стоимость считаем только по ответному LLM-вызову — он доминирует.
-    # Эмбеддинг запроса (~20-50 токенов) даёт ~$0.000005 за запрос, игнорируем.
-    cost_usd = answer_cost(
-        result["prompt_tokens"], result["completion_tokens"]
-    )
+    # Цена зависит от модели: gpt-5.5 — vision-цены ($5/$30), mini — $0.75/$4.50.
+    price = vision_cost if answer_model == "gpt-5.5" else answer_cost
+    cost_usd = price(result["prompt_tokens"], result["completion_tokens"])
     duration_ms = int((time.perf_counter() - started_at) * 1000)
 
     log = QueryLog(
@@ -78,6 +85,9 @@ def ask(
         duration_ms=duration_ms,
         cost_usd=cost_usd,
         scope="filtered" if document_ids else "all",
+        mode=mode,
+        answer_model=answer_model,
+        answer_ms=answer_ms,
         chunks_searched=len(chunks),
         sources_returned=len(result["sources"]),
     )
@@ -85,5 +95,9 @@ def ask(
     return AskResponse(
         answer=result["answer"],
         sources=[Source(**s) for s in result["sources"]],
+        related_sources=[Source(**s) for s in result["related_sources"]],
         query_log_id=log.id,
+        search_query=search_query,
+        answer_model=answer_model,
+        answer_ms=answer_ms,
     )

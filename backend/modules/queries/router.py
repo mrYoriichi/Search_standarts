@@ -25,4 +25,6 @@ def create_query(
         question=payload.question,
         document_ids=payload.document_ids,
         db=db,
+        mode=payload.mode,
+        answer_model=payload.answer_model,
     )

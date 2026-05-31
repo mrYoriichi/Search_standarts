@@ -69,3 +69,47 @@ def hybrid_search(
     return fused[:top_k]
 
 
+# Режимы поиска для приложения и сколько чанков уходит в модель в каждом.
+SEARCH_MODES = ("hybrid", "vector", "keyword")
+VECTOR_ONLY_K = 20   # режим "vector":  топ-20 векторного поиска
+KEYWORD_ONLY_K = 10  # режим "keyword": топ-10 BM25
+HYBRID_EACH = 7      # режим "hybrid":  по 7 из вектора и BM25, объединённые
+
+
+def search_by_mode(
+    bm25: tuple,
+    embeddings_index: dict,
+    query: str,
+    mode: str = "hybrid",
+) -> list[str]:
+    """
+    Возвращает список chunk_id для модели в зависимости от режима поиска.
+
+    - "vector":  топ-10 векторного поиска (по смыслу).
+    - "keyword": топ-10 BM25 (по словам).
+    - "hybrid":  топ-7 вектора + топ-7 BM25, объединённые с удалением дублей
+                 (вектор идёт первым). От 7 до 14 уникальных чанков.
+
+    В отличие от hybrid_search (RRF), здесь чанки не пересортировываются —
+    режимы созданы, чтобы сравнивать поведение поиска в UI.
+    """
+    bm25_index, bm25_chunk_ids = bm25
+
+    if mode == "vector":
+        results = search_embeddings(embeddings_index, query, top_k=VECTOR_ONLY_K)
+        return [chunk_id for chunk_id, _ in results]
+
+    if mode == "keyword":
+        results = search_bm25(bm25_index, bm25_chunk_ids, query, top_k=KEYWORD_ONLY_K)
+        return [chunk_id for chunk_id, _ in results]
+
+    # hybrid: объединяем две выдачи, дубли убираем, порядок сохраняем
+    vec = search_embeddings(embeddings_index, query, top_k=HYBRID_EACH)
+    kw = search_bm25(bm25_index, bm25_chunk_ids, query, top_k=HYBRID_EACH)
+    ordered: list[str] = []
+    for chunk_id, _ in [*vec, *kw]:
+        if chunk_id not in ordered:
+            ordered.append(chunk_id)
+    return ordered
+
+

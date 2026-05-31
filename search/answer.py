@@ -45,8 +45,12 @@ RESPONSE_SCHEMA = {
                 "type": "array",
                 "items": {"type": "string"},
             },
+            "related_chunk_ids": {
+                "type": "array",
+                "items": {"type": "string"},
+            },
         },
-        "required": ["answer", "used_chunk_ids"],
+        "required": ["answer", "used_chunk_ids", "related_chunk_ids"],
         "additionalProperties": False,
     },
 }
@@ -61,8 +65,10 @@ Rules:
 2. ALWAYS answer in Czech, regardless of the language of the question. The question may be in any language (Russian, English, Czech without diacritics) — your answer must always be in Czech.
 3. If the fragments do not contain the answer, say so honestly in Czech and return an empty used_chunk_ids.
 4. Preserve technical designations in their original form: standard codes (ČSN 73 6201), section numbers (7.12.6), section names in Czech.
-5. In used_chunk_ids list ONLY the fragments you actually used. If you used 2 of 5, return 2.
-6. Be brief and concrete."""
+5. Cite the source INLINE in the answer text: after each fact or claim, note in parentheses which section and page it comes from, using the fragment's "Раздел" and "Страницы" metadata — e.g. "(7.3 Založení propustků, s. 24)". If several facts come from the same fragment, you may cite it once. Cite only fragments you actually used.
+6. In used_chunk_ids list ONLY the fragments you directly based the answer on. If you used 2 of 5, return 2.
+7. In related_chunk_ids list other fragments that are relevant and useful to the question but that you did NOT directly use for the answer (e.g. related sections, drawings, or details worth checking). Do NOT include fragments that are off-topic. Do not repeat ids already in used_chunk_ids. If there are none, return an empty list.
+8. Be brief and concrete."""
 
 
 def format_chunk_for_prompt(chunk: dict) -> str:
@@ -92,9 +98,16 @@ def build_user_message(question: str, chunks: list[dict]) -> str:
     return f"Вопрос: {question}\n\nФрагменты:\n\n{formatted}"
 
 
-def generate_answer(question: str, chunks: list[dict]) -> dict:
+def generate_answer(
+    question: str,
+    chunks: list[dict],
+    model: str = ANSWER_MODEL,
+) -> dict:
     """
     Главная функция: вопрос + чанки → ответ + источники.
+
+    model — id модели для генерации (по умолчанию ANSWER_MODEL). Параметр нужен,
+    чтобы сравнивать модели (gpt-5.4-mini ↔ gpt-5.5) из UI.
 
     Один вызов LLM со structured output: модель возвращает текст ответа
     и список chunk_id, на которые реально опиралась. Источники собираем
@@ -116,7 +129,7 @@ def generate_answer(question: str, chunks: list[dict]) -> dict:
     client = OpenAI()
 
     response = client.chat.completions.create(
-        model=ANSWER_MODEL,
+        model=model,
         messages=[
             {"role": "system", "content": SYSTEM_PROMPT},
             {"role": "user", "content": build_user_message(question, chunks)},
@@ -129,23 +142,35 @@ def generate_answer(question: str, chunks: list[dict]) -> dict:
 
     parsed = json.loads(response.choices[0].message.content)
 
-    # Собираем источники по id, которые модель пометила как использованные
     chunks_by_id = {c["chunk_id"]: c for c in chunks}
-    sources = []
-    for chunk_id in parsed["used_chunk_ids"]:
-        chunk = chunks_by_id.get(chunk_id)
-        if chunk is None:
-            continue  # модель назвала id, которого мы не давали — игнорируем
-        sources.append({
-            "document": chunk.get("document_title", ""),
-            "slug": chunk.get("document_id", ""),
-            "section": chunk.get("section_title", ""),
-            "pages": chunk.get("pages", []),
-        })
+
+    def build_sources(chunk_ids: list[str], skip: set[str]) -> list[dict]:
+        """Собирает источники по id чанков, пропуская неизвестные и уже учтённые."""
+        result = []
+        for chunk_id in chunk_ids:
+            if chunk_id in skip:
+                continue
+            chunk = chunks_by_id.get(chunk_id)
+            if chunk is None:
+                continue  # модель назвала id, которого мы не давали — игнорируем
+            skip.add(chunk_id)
+            result.append({
+                "document": chunk.get("document_title", ""),
+                "slug": chunk.get("document_id", ""),
+                "section": chunk.get("section_title", ""),
+                "pages": chunk.get("pages", []),
+            })
+        return result
+
+    seen: set[str] = set()
+    sources = build_sources(parsed["used_chunk_ids"], seen)
+    # related — релевантные, но не использованные напрямую; дубли с used убраны
+    related = build_sources(parsed.get("related_chunk_ids", []), seen)
 
     return {
         "answer": parsed["answer"],
         "sources": sources,
+        "related_sources": related,
         "prompt_tokens": response.usage.prompt_tokens,
         "completion_tokens": response.usage.completion_tokens,
     }
