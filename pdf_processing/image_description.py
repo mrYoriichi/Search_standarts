@@ -29,7 +29,11 @@ def encode_image_to_base64(image_path: str | Path) -> str:
         return base64.b64encode(f.read()).decode("utf-8")
 
 
-def ask_vision(image_path: str | Path, prompt: str) -> tuple[str, int, int]:
+def ask_vision(
+    image_path: str | Path,
+    prompt: str,
+    model: str = VISION_MODEL,
+) -> tuple[str, int, int]:
     """
     Отправляет один запрос в vision LLM: картинка + текстовый промпт.
 
@@ -38,6 +42,8 @@ def ask_vision(image_path: str | Path, prompt: str) -> tuple[str, int, int]:
 
     image_path — путь к PNG-скриншоту страницы.
     prompt     — текстовая инструкция для модели.
+    model      — id модели; по умолчанию VISION_MODEL. Параметр нужен,
+                 чтобы сравнивать модели на одной картинке (VL-тест).
     """
     # Клиент сам найдёт ключ в переменной окружения OPENAI_API_KEY
     client = OpenAI()
@@ -48,7 +54,7 @@ def ask_vision(image_path: str | Path, prompt: str) -> tuple[str, int, int]:
     # Формируем запрос. content — это список из двух частей:
     # текстовая инструкция и картинка.
     response = client.chat.completions.create(
-        model=VISION_MODEL,
+        model=model,
         messages=[
             {
                 "role": "user",
