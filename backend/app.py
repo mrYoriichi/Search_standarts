@@ -58,6 +58,9 @@ async def lifespan(app: FastAPI):
     # в папке библиотеки юзера. Иначе старый upload-flow, путь по умолчанию.
     db = SessionLocal()
     try:
+        # Ключ OpenAI из БД (если задан) кладём в окружение до первых LLM-вызовов.
+        settings_service.apply_openai_key_to_env(db)
+
         library_path = settings_service.get_library_path(db)
         stuck = db.scalars(
             select(Document).where(Document.status == "processing")

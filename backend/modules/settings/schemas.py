@@ -13,3 +13,16 @@ class LibraryPathRequest(BaseModel):
     """Установить путь к папке библиотеки."""
 
     path: str
+
+
+class OpenAIKeyStatus(BaseModel):
+    """Статус ключа OpenAI. Полный ключ наружу не отдаём — только хвост."""
+
+    is_set: bool
+    masked: str | None
+
+
+class OpenAIKeyRequest(BaseModel):
+    """Установить ключ OpenAI."""
+
+    key: str

@@ -16,6 +16,28 @@ class LoginResponse(BaseModel):
     username: str
 
 
+class ProfileResponse(BaseModel):
+    """Профиль юзера (приходит с сервера лицензий). username — только чтение."""
+
+    username: str
+    email: str | None = None
+    full_name: str | None = None
+    company: str | None = None
+
+
+class ProfileUpdate(BaseModel):
+    """Редактируемые поля профиля."""
+
+    email: str | None = None
+    full_name: str | None = None
+    company: str | None = None
+
+
+class ChangePasswordRequest(BaseModel):
+    old_password: str
+    new_password: str
+
+
 class StatusResponse(BaseModel):
     """Текущее состояние авторизации.
 

@@ -123,6 +123,90 @@ def get_session(db: Session) -> AuthSession | None:
     return db.get(AuthSession, 1)
 
 
+class NotLoggedInError(Exception):
+    """Нет локальной сессии — нечего проксировать на сервер лицензий."""
+
+
+class ProfileError(Exception):
+    """Сервер лицензий ответил ошибкой на профиль/смену пароля.
+
+    status_code и message пробрасываем наружу, чтобы фронт показал текст
+    (например «неверный текущий пароль»).
+    """
+
+    def __init__(self, status_code: int, message: str):
+        self.status_code = status_code
+        self.message = message
+        super().__init__(message)
+
+
+def _auth_headers(token: str) -> dict[str, str]:
+    """Bearer-токен + версия клиента — общий набор для запросов профиля."""
+    return {"Authorization": f"Bearer {token}", **VERSION_HEADERS}
+
+
+def get_profile(db: Session) -> dict:
+    """Тянет профиль текущего юзера с сервера лицензий (GET /auth/me)."""
+    session = get_session(db)
+    if session is None:
+        raise NotLoggedInError()
+    try:
+        response = httpx.get(
+            f"{LICENSE_SERVER_URL}/auth/me",
+            headers=_auth_headers(session.token),
+            timeout=HTTP_TIMEOUT,
+        )
+    except httpx.HTTPError as exc:
+        raise LicenseServerUnavailable(str(exc)) from exc
+
+    if response.status_code != 200:
+        raise ProfileError(response.status_code, "Nepodařilo se načíst profil.")
+    return response.json()
+
+
+def update_profile(db: Session, fields: dict) -> dict:
+    """Обновляет профиль на сервере лицензий (PUT /auth/me)."""
+    session = get_session(db)
+    if session is None:
+        raise NotLoggedInError()
+    try:
+        response = httpx.put(
+            f"{LICENSE_SERVER_URL}/auth/me",
+            json=fields,
+            headers=_auth_headers(session.token),
+            timeout=HTTP_TIMEOUT,
+        )
+    except httpx.HTTPError as exc:
+        raise LicenseServerUnavailable(str(exc)) from exc
+
+    if response.status_code != 200:
+        raise ProfileError(response.status_code, "Nepodařilo se uložit profil.")
+    return response.json()
+
+
+def change_password(db: Session, old_password: str, new_password: str) -> None:
+    """Меняет пароль на сервере лицензий (POST /auth/change-password)."""
+    session = get_session(db)
+    if session is None:
+        raise NotLoggedInError()
+    try:
+        response = httpx.post(
+            f"{LICENSE_SERVER_URL}/auth/change-password",
+            json={"old_password": old_password, "new_password": new_password},
+            headers=_auth_headers(session.token),
+            timeout=HTTP_TIMEOUT,
+        )
+    except httpx.HTTPError as exc:
+        raise LicenseServerUnavailable(str(exc)) from exc
+
+    if response.status_code == 400:
+        # Серверный текст («неверный старый пароль» / «слишком короткий») — наружу.
+        detail = response.json().get("detail", "Změna hesla selhala.")
+        raise ProfileError(400, detail)
+    if response.status_code != 200:
+        raise ProfileError(response.status_code, "Změna hesla selhala.")
+
+
 def logout(db: Session) -> None:
     """Удаляет синглтон-строку — следующий старт UI покажет экран логина."""
     session = db.get(AuthSession, 1)

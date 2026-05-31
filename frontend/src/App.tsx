@@ -3,6 +3,7 @@ import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import LibraryPage from './LibraryPage'
 import LoginPage from './LoginPage'
+import SettingsPage from './SettingsPage'
 
 type AuthState =
   | { phase: 'loading' }
@@ -51,7 +52,7 @@ type LibraryResponse = {
   orphans: unknown[]
 }
 
-type View = 'search' | 'library'
+type View = 'search' | 'library' | 'settings'
 
 
 // Собирает slug'и всех индексированных (ready) PDF в папке, включая подпапки.
@@ -388,7 +389,16 @@ function App() {
         <div className="flex items-center justify-between gap-4">
           <h1 className="text-3xl font-bold">Search_standarts</h1>
           <div className="flex items-center gap-3 text-sm text-muted-foreground">
-            <span>👤 {auth.username}</span>
+            <button
+              onClick={() => setView('settings')}
+              className={
+                'hover:text-foreground hover:underline ' +
+                (view === 'settings' ? 'text-foreground font-medium' : '')
+              }
+              title="Nastavení"
+            >
+              👤 {auth.username}
+            </button>
             <button
               onClick={handleLogout}
               className="hover:text-foreground hover:underline"
@@ -424,6 +434,8 @@ function App() {
         </nav>
 
         {view === 'library' && <LibraryPage />}
+
+        {view === 'settings' && <SettingsPage />}
 
         {view === 'search' && (
           <>
