@@ -312,7 +312,7 @@ function FolderView({
         <p className="text-xs text-muted-foreground italic">пусто</p>
       )}
       {folder.folders.map((f) => (
-        <details key={f.path} open className="text-sm">
+        <details key={f.path} className="text-sm">
           <summary className="cursor-pointer font-medium">📁 {f.name}</summary>
           <div className="ml-5 mt-1">
             <FolderView folder={f} freshlyReady={freshlyReady} onChange={onChange} />
