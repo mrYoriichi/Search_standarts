@@ -2,8 +2,9 @@
 Этап 6, часть 2: генерация ответа по найденным чанкам.
 
 На входе: вопрос + список топ-чанков (от hybrid_search через сценарий).
-На выходе: краткий ответ на языке вопроса + источники (документ, раздел,
-страницы) только для тех чанков, на которые модель реально опиралась.
+На выходе: краткий ответ всегда на чешском (язык фиксирован, см. SYSTEM_PROMPT)
++ источники (документ, раздел, страницы) только для тех чанков, на которые
+модель реально опиралась.
 
 Модуль не лезет в файловую систему — чанки приходят аргументом.
 """
@@ -39,14 +40,13 @@ RESPONSE_SCHEMA = {
     "schema": {
         "type": "object",
         "properties": {
-            "question_language": {"type": "string"},
             "answer": {"type": "string"},
             "used_chunk_ids": {
                 "type": "array",
                 "items": {"type": "string"},
             },
         },
-        "required": ["question_language", "answer", "used_chunk_ids"],
+        "required": ["answer", "used_chunk_ids"],
         "additionalProperties": False,
     },
 }
@@ -58,8 +58,8 @@ Answer strictly based on the provided fragments.
 
 Rules:
 1. Use ONLY information from the fragments. Do not add outside knowledge.
-2. If the fragments do not contain the answer, say so honestly (in the question's language) and return an empty used_chunk_ids.
-3. First determine the language of the question and put it in question_language (e.g. "ru", "cs", "en"). Then answer in exactly that language. Czech without diacritics ("celo propustku" = "čelo propustku") is still Czech. If the language is ambiguous, default to Czech — the language of the documents.
+2. ALWAYS answer in Czech, regardless of the language of the question. The question may be in any language (Russian, English, Czech without diacritics) — your answer must always be in Czech.
+3. If the fragments do not contain the answer, say so honestly in Czech and return an empty used_chunk_ids.
 4. Preserve technical designations in their original form: standard codes (ČSN 73 6201), section numbers (7.12.6), section names in Czech.
 5. In used_chunk_ids list ONLY the fragments you actually used. If you used 2 of 5, return 2.
 6. Be brief and concrete."""

@@ -30,25 +30,25 @@ export default function LoginPage({ onLoggedIn }: Props) {
         return
       }
       if (res.status === 401) {
-        setError('Неверный логин или пароль')
+        setError('Nesprávné přihlašovací jméno nebo heslo')
         return
       }
       if (res.status === 403) {
-        setError('Доступ отозван. Обратитесь к администратору.')
+        setError('Přístup byl odebrán. Obraťte se na administrátora.')
         return
       }
       if (res.status === 503) {
-        setError('Сервер лицензий недоступен. Попробуйте позже.')
+        setError('Licenční server není dostupný. Zkuste to později.')
         return
       }
       if (!res.ok) {
-        setError(`Ошибка: ${res.status}`)
+        setError(`Chyba: ${res.status}`)
         return
       }
       const data = await res.json()
       onLoggedIn(data.username)
     } catch {
-      setError('Не удалось связаться с приложением.')
+      setError('Nepodařilo se spojit s aplikací.')
     } finally {
       setLoading(false)
     }
@@ -61,9 +61,9 @@ export default function LoginPage({ onLoggedIn }: Props) {
     return (
       <div className="min-h-screen bg-background text-foreground flex items-center justify-center px-6">
         <div className="w-full max-w-md flex flex-col gap-4 rounded-md border bg-card p-6">
-          <h1 className="text-2xl font-bold">Установите новую версию</h1>
+          <h1 className="text-2xl font-bold">Nainstalujte novou verzi</h1>
           <p className="text-sm text-muted-foreground">
-            Доступна обязательная версия приложения. Войти можно только после обновления.
+            Je dostupná povinná verze aplikace. Přihlásit se lze až po aktualizaci.
           </p>
           {updateRequired.downloadUrl ? (
             <a
@@ -72,11 +72,11 @@ export default function LoginPage({ onLoggedIn }: Props) {
               rel="noopener noreferrer"
               className="text-sm text-foreground underline self-start"
             >
-              Скачать обновление →
+              Stáhnout aktualizaci →
             </a>
           ) : (
             <p className="text-sm text-muted-foreground">
-              Ссылка пока недоступна. Обратитесь к администратору.
+              Odkaz zatím není dostupný. Obraťte se na administrátora.
             </p>
           )}
         </div>
@@ -92,11 +92,11 @@ export default function LoginPage({ onLoggedIn }: Props) {
       >
         <h1 className="text-2xl font-bold">Search_standarts</h1>
         <p className="text-sm text-muted-foreground">
-          Вход в приложение
+          Přihlášení do aplikace
         </p>
 
         <label className="flex flex-col gap-1 text-sm">
-          <span className="text-muted-foreground">Логин</span>
+          <span className="text-muted-foreground">Přihlašovací jméno</span>
           <input
             type="text"
             value={username}
@@ -108,7 +108,7 @@ export default function LoginPage({ onLoggedIn }: Props) {
         </label>
 
         <label className="flex flex-col gap-1 text-sm">
-          <span className="text-muted-foreground">Пароль</span>
+          <span className="text-muted-foreground">Heslo</span>
           <input
             type="password"
             value={password}
@@ -125,7 +125,7 @@ export default function LoginPage({ onLoggedIn }: Props) {
         )}
 
         <Button type="submit" disabled={!canSubmit}>
-          {loading ? 'Вхожу...' : 'Войти'}
+          {loading ? 'Přihlašuji...' : 'Přihlásit se'}
         </Button>
       </form>
     </div>

@@ -189,11 +189,11 @@ function App() {
       if (data.effective_status === 'blocked') {
         let reason: string
         if (data.status === 'revoked') {
-          reason = 'Доступ отозван администратором.'
+          reason = 'Přístup byl odebrán administrátorem.'
         } else if (data.status === 'update_required') {
-          reason = 'Доступна новая версия приложения. Установите её, чтобы продолжить работу.'
+          reason = 'Je dostupná nová verze aplikace. Nainstalujte ji, abyste mohli pokračovat.'
         } else {
-          reason = 'Нет связи с сервером лицензий более 1 дня. Подключитесь к интернету.'
+          reason = 'Spojení s licenčním serverem chybí déle než 1 den. Připojte se k internetu.'
         }
         setAuth({
           phase: 'blocked',
@@ -269,14 +269,21 @@ function App() {
   }
 
   async function handleAsk() {
+    // Снята «Вся база», но ничего не выбрано — раньше молча искали везде.
+    // Теперь требуем явный выбор области, иначе непонятно, где искали.
+    if (!searchAll && selectedSlugs.size === 0) {
+      setError('Vyberte, kde hledat — zaškrtněte „Celá databáze“ nebo vyberte dokumenty.')
+      return
+    }
+
     setLoading(true)
     setError(null)
     setResult(null)
     try {
-      // Если режим «во всех документах» или ничего не выбрано — не шлём
-      // document_ids, бэк ищет везде.
+      // «Вся база» → не шлём document_ids, бэк ищет везде.
+      // Иначе шлём выбранные slug'и (size > 0 гарантирован проверкой выше).
       const body: { question: string; document_ids?: string[] } = { question }
-      if (!searchAll && selectedSlugs.size > 0) {
+      if (!searchAll) {
         body.document_ids = Array.from(selectedSlugs)
       }
 
@@ -286,12 +293,12 @@ function App() {
         body: JSON.stringify(body),
       })
       if (!res.ok) {
-        throw new Error(`Сервер вернул ${res.status}`)
+        throw new Error(`Server vrátil ${res.status}`)
       }
       const data: AskResponse = await res.json()
       setResult(data)
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Неизвестная ошибка')
+      setError(e instanceof Error ? e.message : 'Neznámá chyba')
     } finally {
       setLoading(false)
     }
@@ -314,10 +321,10 @@ function App() {
     return (
       <div className="min-h-screen bg-background text-foreground flex items-center justify-center px-6">
         <div className="w-full max-w-md flex flex-col gap-4 rounded-md border bg-card p-6">
-          <h1 className="text-2xl font-bold">Доступ заблокирован</h1>
+          <h1 className="text-2xl font-bold">Přístup zablokován</h1>
           <p className="text-sm text-muted-foreground">{auth.reason}</p>
           <p className="text-sm text-muted-foreground">
-            Пользователь: <span className="text-foreground">{auth.username}</span>
+            Uživatel: <span className="text-foreground">{auth.username}</span>
           </p>
           {auth.downloadUrl && (
             <a
@@ -326,11 +333,11 @@ function App() {
               rel="noopener noreferrer"
               className="text-sm text-foreground underline self-start"
             >
-              Скачать обновление →
+              Stáhnout aktualizaci →
             </a>
           )}
           <Button onClick={handleLogout} className="self-start" variant="outline">
-            Выйти
+            Odhlásit se
           </Button>
         </div>
       </div>
@@ -348,7 +355,7 @@ function App() {
               onClick={handleLogout}
               className="hover:text-foreground hover:underline"
             >
-              Выйти
+              Odhlásit se
             </button>
           </div>
         </div>
@@ -363,7 +370,7 @@ function App() {
                 : 'border-transparent text-muted-foreground hover:text-foreground')
             }
           >
-            Поиск
+            Vyhledávání
           </button>
           <button
             onClick={() => setView('library')}
@@ -374,7 +381,7 @@ function App() {
                 : 'border-transparent text-muted-foreground hover:text-foreground')
             }
           >
-            Библиотека
+            Knihovna
           </button>
         </nav>
 
@@ -384,11 +391,11 @@ function App() {
           <>
         <div className="rounded-md border bg-card p-4 flex flex-col gap-2">
           <h2 className="text-sm font-semibold text-muted-foreground">
-            Где искать
+            Kde hledat
           </h2>
           {!library || collectReadySlugs(library.tree).length === 0 ? (
             <p className="text-sm text-muted-foreground">
-              Индексированных документов нет. Перейди в «Библиотеку» и нажми «Сканировать».
+              Žádné indexované dokumenty. Přejděte do „Knihovny“ a klikněte na „Skenovat“.
             </p>
           ) : (
             <>
@@ -399,7 +406,7 @@ function App() {
                   onChange={() => setSearchAll((v) => !v)}
                   className="h-4 w-4"
                 />
-                <span>Вся база</span>
+                <span>Celá databáze</span>
               </label>
               <div className="mt-1">
                 <FilterTree
@@ -416,7 +423,7 @@ function App() {
         </div>
 
         <Textarea
-          placeholder="Задайте вопрос по строительным нормам..."
+          placeholder="Zadejte dotaz ke stavebním normám..."
           value={question}
           onChange={(e) => setQuestion(e.target.value)}
           rows={4}
@@ -424,7 +431,7 @@ function App() {
         />
 
         <Button onClick={handleAsk} disabled={!canSubmit} className="self-start">
-          {loading ? 'Ищу...' : 'Спросить'}
+          {loading ? 'Hledám...' : 'Zeptat se'}
         </Button>
 
         {error && (
@@ -437,18 +444,18 @@ function App() {
           <div className="flex flex-col gap-4">
             <div className="rounded-md border bg-card p-4">
               <h2 className="text-sm font-semibold text-muted-foreground mb-2">
-                Ответ
+                Odpověď
               </h2>
               <p className="whitespace-pre-wrap">{result.answer}</p>
             </div>
 
             <div className="rounded-md border bg-card p-4">
               <h2 className="text-sm font-semibold text-muted-foreground mb-2">
-                Источники
+                Zdroje
               </h2>
               {result.sources.length === 0 ? (
                 <p className="text-sm text-muted-foreground">
-                  Модель не нашла ответа в фрагментах.
+                  Model nenašel odpověď v nalezených úryvcích.
                 </p>
               ) : (
                 <ul className="flex flex-col gap-2 text-sm">
@@ -464,12 +471,12 @@ function App() {
                           target="_blank"
                           rel="noopener noreferrer"
                           className="hover:underline"
-                          title="Открыть PDF на этой странице"
+                          title="Otevřít PDF na této stránce"
                         >
                           <span className="font-medium">{src.document}</span>
                           {' / '}
                           <span>{src.section}</span>
-                          {' / стр. '}
+                          {' / s. '}
                           <span>{src.pages.join(', ')}</span>
                         </a>
                       </li>

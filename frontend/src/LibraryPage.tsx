@@ -38,10 +38,10 @@ async function openFile(path: string): Promise<void> {
     })
     if (!res.ok) {
       const data = await res.json().catch(() => ({}))
-      alert(data.detail ?? 'Не удалось открыть файл')
+      alert(data.detail ?? 'Nepodařilo se otevřít soubor')
     }
   } catch {
-    alert('Не удалось открыть файл')
+    alert('Nepodařilo se otevřít soubor')
   }
 }
 
@@ -50,10 +50,10 @@ async function togglePin(slug: string): Promise<void> {
   try {
     const res = await fetch(`/api/documents/${slug}/pin`, { method: 'POST' })
     if (!res.ok) {
-      alert(`Не удалось переключить закрепление: ${res.status}`)
+      alert(`Nepodařilo se přepnout připnutí: ${res.status}`)
     }
   } catch {
-    alert('Ошибка сети')
+    alert('Chyba sítě')
   }
 }
 
@@ -62,21 +62,21 @@ async function reindexDocument(slug: string, title: string): Promise<boolean> {
   // Полная переобработка PDF: удаляет старые чанки/эмбеддинги и запускает pipeline заново.
   // Стоит как обычная обработка ($), занимает несколько минут.
   const ok = confirm(
-    `Переиндексировать «${title}»?\n\n` +
-      `Старые чанки и эмбеддинги будут удалены, документ обработается заново. ` +
-      `Это занимает 5–10 минут и стоит примерно $0.50–$1.50.`
+    `Přeindexovat „${title}“?\n\n` +
+      `Staré úryvky a embeddingy budou smazány a dokument se zpracuje znovu. ` +
+      `Trvá to 5–10 minut a stojí přibližně $0.50–$1.50.`
   )
   if (!ok) return false
   try {
     const res = await fetch(`/api/documents/${slug}/reindex`, { method: 'POST' })
     if (!res.ok) {
       const data = await res.json().catch(() => ({}))
-      alert(data.detail ?? `Ошибка ${res.status}`)
+      alert(data.detail ?? `Chyba ${res.status}`)
       return false
     }
     return true
   } catch {
-    alert('Ошибка сети')
+    alert('Chyba sítě')
     return false
   }
 }
@@ -86,20 +86,20 @@ async function deleteDocument(slug: string, title: string): Promise<boolean> {
   // Удаляем запись из БД + папку data/raw_data/{slug}/.
   // Сам PDF в библиотеке остаётся — программа файлы юзера не трогает.
   const ok = confirm(
-    `Убрать «${title}» из индекса?\n\nСам PDF в папке библиотеки останется. ` +
-      `Чанки и эмбеддинги будут удалены.`
+    `Odebrat „${title}“ z indexu?\n\nSamotné PDF ve složce knihovny zůstane. ` +
+      `Úryvky a embeddingy budou smazány.`
   )
   if (!ok) return false
   try {
     const res = await fetch(`/api/documents/${slug}`, { method: 'DELETE' })
     if (!res.ok) {
       const data = await res.json().catch(() => ({}))
-      alert(data.detail ?? `Ошибка ${res.status}`)
+      alert(data.detail ?? `Chyba ${res.status}`)
       return false
     }
     return true
   } catch {
-    alert('Ошибка сети')
+    alert('Chyba sítě')
     return false
   }
 }
@@ -156,12 +156,12 @@ function OrphanRow({
       })
       if (!res.ok) {
         const data = await res.json().catch(() => ({}))
-        alert(data.detail ?? `Ошибка ${res.status}`)
+        alert(data.detail ?? `Chyba ${res.status}`)
         return
       }
       onChange()
     } catch {
-      alert('Ошибка сети')
+      alert('Chyba sítě')
     }
   }
 
@@ -169,12 +169,12 @@ function OrphanRow({
     <div className="flex flex-col gap-1 text-sm border-l-2 border-red-500/60 pl-3 py-1">
       <div className="flex items-center gap-2">
         <span>📄 {orphan.title}</span>
-        <span className="text-xs text-red-600">файл удалён из папки</span>
+        <span className="text-xs text-red-600">soubor odstraněn ze složky</span>
         <button
           onClick={async () => {
             if (await deleteDocument(orphan.slug, orphan.title)) onChange()
           }}
-          title="Убрать из индекса"
+          title="Odebrat z indexu"
           className="text-base leading-none opacity-40 hover:opacity-100 ml-auto"
         >
           🗑
@@ -182,17 +182,17 @@ function OrphanRow({
       </div>
       {unindexed.length === 0 ? (
         <p className="text-xs text-muted-foreground">
-          Чтобы переименовать — положи новый файл в папку библиотеки.
+          Pro přejmenování vložte nový soubor do složky knihovny.
         </p>
       ) : (
         <div className="flex items-center gap-2 text-xs">
-          <span className="text-muted-foreground">Это переименование?</span>
+          <span className="text-muted-foreground">Je to přejmenování?</span>
           <select
             value={selectedSlug}
             onChange={(e) => setSelectedSlug(e.target.value)}
             className="border rounded px-1 py-0.5 text-xs flex-1"
           >
-            <option value="">— выбрать новое имя —</option>
+            <option value="">— vyberte nový název —</option>
             {unindexed.map((f) => (
               <option key={f.slug} value={f.slug}>{f.name}</option>
             ))}
@@ -202,7 +202,7 @@ function OrphanRow({
             disabled={!selectedSlug}
             className="border rounded px-2 py-0.5 text-xs disabled:opacity-40"
           >
-            Связать
+            Propojit
           </button>
         </div>
       )}
@@ -227,7 +227,7 @@ function FileRow({
           await togglePin(file.slug)
           onChange()
         }}
-        title={file.pinned ? 'Открепить' : 'Закрепить'}
+        title={file.pinned ? 'Odepnout' : 'Připnout'}
         className={
           file.pinned
             ? 'text-base leading-none'
@@ -239,7 +239,7 @@ function FileRow({
       <button
         onClick={() => openFile(file.path)}
         className="text-foreground hover:underline text-left flex-1"
-        title="Открыть в системном просмотрщике"
+        title="Otevřít v systémovém prohlížeči"
       >
         📄 {file.name}
       </button>
@@ -249,7 +249,7 @@ function FileRow({
           onClick={async () => {
             if (await reindexDocument(file.slug, file.name)) onChange()
           }}
-          title="Переиндексировать"
+          title="Přeindexovat"
           className="text-base leading-none opacity-25 hover:opacity-100"
         >
           🔄
@@ -260,7 +260,7 @@ function FileRow({
           onClick={async () => {
             if (await deleteDocument(file.slug, file.name)) onChange()
           }}
-          title="Убрать из индекса"
+          title="Odebrat z indexu"
           className="text-base leading-none opacity-25 hover:opacity-100"
         >
           🗑
@@ -279,18 +279,18 @@ function StatusLabel({
   freshlyReady: boolean
 }) {
   if (status === null) {
-    return <span className="text-xs text-muted-foreground">не индексирован</span>
+    return <span className="text-xs text-muted-foreground">neindexováno</span>
   }
   if (status === 'processing') {
-    return <span className="text-xs text-blue-600">обрабатывается…</span>
+    return <span className="text-xs text-blue-600">zpracovává se…</span>
   }
   if (status === 'failed') {
-    return <span className="text-xs text-red-600">ошибка</span>
+    return <span className="text-xs text-red-600">chyba</span>
   }
   // ready: показываем зелёную плашку только если документ только что
   // перешёл в этот статус в текущей сессии. После F5 плашка исчезает.
   if (freshlyReady) {
-    return <span className="text-xs text-green-600">готов</span>
+    return <span className="text-xs text-green-600">hotovo</span>
   }
   return null
 }
@@ -309,7 +309,7 @@ function FolderView({
   return (
     <div className="flex flex-col gap-1">
       {isEmpty && (
-        <p className="text-xs text-muted-foreground italic">пусто</p>
+        <p className="text-xs text-muted-foreground italic">prázdné</p>
       )}
       {folder.folders.map((f) => (
         <details key={f.path} className="text-sm">
@@ -360,14 +360,14 @@ function LibraryPage() {
           setLibrary(await libRes.json())
         } else {
           const errData = await libRes.json().catch(() => ({}))
-          setError(errData.detail ?? `Ошибка ${libRes.status}`)
+          setError(errData.detail ?? `Chyba ${libRes.status}`)
           setLibrary(null)
         }
       } else {
         setLibrary(null)
       }
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Не удалось загрузить библиотеку')
+      setError(e instanceof Error ? e.message : 'Nepodařilo se načíst knihovnu')
     } finally {
       setLoading(false)
     }
@@ -433,7 +433,7 @@ function LibraryPage() {
       const res = await fetch('/api/library/scan', { method: 'POST' })
       if (!res.ok) {
         const data = await res.json().catch(() => ({}))
-        alert(data.detail ?? `Ошибка ${res.status}`)
+        alert(data.detail ?? `Chyba ${res.status}`)
         return
       }
       const data: {
@@ -443,18 +443,18 @@ function LibraryPage() {
       } = await res.json()
       let msg =
         data.created === 0
-          ? `Новых PDF не найдено (уже в индексе: ${data.already_indexed}).`
-          : `Запущена обработка ${data.created} новых PDF.`
+          ? `Žádné nové PDF nenalezeny (již v indexu: ${data.already_indexed}).`
+          : `Spuštěno zpracování ${data.created} nových PDF.`
       if (data.duplicates && data.duplicates.length > 0) {
         msg +=
-          '\n\n⚠️ Пропущены файлы с одинаковыми именами — переименуйте, ' +
-          'чтобы их можно было различить:\n' +
+          '\n\n⚠️ Přeskočeny soubory se stejnými názvy — přejmenujte je, ' +
+          'aby je bylo možné rozlišit:\n' +
           data.duplicates.join('\n')
       }
       alert(msg)
       await loadAll()
     } catch {
-      alert('Ошибка сети')
+      alert('Chyba sítě')
     } finally {
       setScanning(false)
     }
@@ -472,7 +472,7 @@ function LibraryPage() {
       })
       if (!res.ok) {
         const data = await res.json().catch(() => ({}))
-        alert(data.detail ?? `Ошибка ${res.status}`)
+        alert(data.detail ?? `Chyba ${res.status}`)
         return
       }
       await loadAll()
@@ -482,17 +482,17 @@ function LibraryPage() {
   }
 
   if (loading) {
-    return <p className="text-sm text-muted-foreground">Загрузка…</p>
+    return <p className="text-sm text-muted-foreground">Načítání…</p>
   }
 
   return (
     <div className="flex flex-col gap-6">
       <div className="rounded-md border bg-card p-4 flex flex-col gap-2">
         <h2 className="text-sm font-semibold text-muted-foreground">
-          Папка библиотеки
+          Složka knihovny
         </h2>
         <p className="text-xs text-muted-foreground">
-          Все PDF из этой папки (и подпапок) появятся в библиотеке.
+          Všechna PDF z této složky (a podsložek) se objeví v knihovně.
         </p>
         <div className="flex gap-2">
           <input
@@ -506,7 +506,7 @@ function LibraryPage() {
             onClick={savePath}
             disabled={saving || !pathInput.trim() || pathInput === path}
           >
-            {saving ? 'Сохраняю…' : 'Сохранить'}
+            {saving ? 'Ukládám…' : 'Uložit'}
           </Button>
         </div>
       </div>
@@ -525,10 +525,10 @@ function LibraryPage() {
             {library.orphans.length > 0 && (
               <div className="rounded-md border border-red-500/30 bg-red-500/5 p-4">
                 <h2 className="text-sm font-semibold text-red-600 mb-2">
-                  Висячие документы
+                  Osiřelé dokumenty
                 </h2>
                 <p className="text-xs text-muted-foreground mb-3">
-                  Эти документы есть в индексе, но файлов в папке не нашлось. Возможно ты их переименовал или удалил.
+                  Tyto dokumenty jsou v indexu, ale soubory ve složce nebyly nalezeny. Možná jste je přejmenovali nebo smazali.
                 </p>
                 <div className="flex flex-col gap-2">
                   {library.orphans.map((orphan) => (
@@ -546,7 +546,7 @@ function LibraryPage() {
             {pinned.length > 0 && (
               <div className="rounded-md border bg-card p-4">
                 <h2 className="text-sm font-semibold text-muted-foreground mb-2">
-                  📌 Закреплённые
+                  📌 Připnuté
                 </h2>
                 <div className="flex flex-col gap-1">
                   {pinned.map((file) => (
@@ -564,7 +564,7 @@ function LibraryPage() {
             <div className="rounded-md border bg-card p-4">
               <div className="flex items-center justify-between mb-2">
                 <h2 className="text-sm font-semibold text-muted-foreground">
-                  Содержимое
+                  Obsah
                 </h2>
                 <Button
                   onClick={scan}
@@ -572,7 +572,7 @@ function LibraryPage() {
                   variant="outline"
                   size="sm"
                 >
-                  {scanning ? 'Сканирую…' : 'Сканировать'}
+                  {scanning ? 'Skenuji…' : 'Skenovat'}
                 </Button>
               </div>
               <FolderView
