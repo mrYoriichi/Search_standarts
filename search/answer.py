@@ -167,10 +167,25 @@ def generate_answer(
     # related — релевантные, но не использованные напрямую; дубли с used убраны
     related = build_sources(parsed.get("related_chunk_ids", []), seen)
 
+    # Полный текст использованных чанков — для отчётов «Nahlásit» (F7): по жалобе
+    # видно, что именно модель читала и почему могла промахнуться.
+    used_chunks = [
+        {
+            "chunk_id": cid,
+            "document": chunks_by_id[cid].get("document_title", ""),
+            "section": chunks_by_id[cid].get("section_title", ""),
+            "pages": chunks_by_id[cid].get("pages", []),
+            "text": chunks_by_id[cid].get("text", ""),
+        }
+        for cid in parsed["used_chunk_ids"]
+        if cid in chunks_by_id
+    ]
+
     return {
         "answer": parsed["answer"],
         "sources": sources,
         "related_sources": related,
+        "used_chunks": used_chunks,
         "prompt_tokens": response.usage.prompt_tokens,
         "completion_tokens": response.usage.completion_tokens,
     }

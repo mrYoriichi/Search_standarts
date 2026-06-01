@@ -9,7 +9,8 @@ from sqlalchemy.orm import Session
 
 from backend.core.database import get_session
 from backend.modules.queries import service
-from backend.modules.queries.schemas import AskRequest, AskResponse
+from backend.modules.queries.schemas import AskRequest, AskResponse, FlagRequest
+from backend.modules.telemetry.service import track_report
 
 
 router = APIRouter()
@@ -28,3 +29,20 @@ def create_query(
         mode=payload.mode,
         answer_model=payload.answer_model,
     )
+
+
+@router.post("/queries/flag")
+def flag_query(payload: FlagRequest) -> dict:
+    """Пометить ответ как неверный/ненайденный → положить отчёт в очередь (F7).
+
+    Sender отправит владельцу на сервер лицензий. Кладём в очередь, а не шлём
+    сразу, — чтобы работало офлайн и переживало недоступность сервера.
+    """
+    track_report(
+        payload.question,
+        payload.answer,
+        payload.answer_model,
+        payload.note,
+        [c.model_dump() for c in payload.used_chunks],
+    )
+    return {"ok": True}

@@ -23,10 +23,19 @@ type Source = {
   pages: number[]
 }
 
+type UsedChunk = {
+  chunk_id: string
+  document: string
+  section: string
+  pages: number[]
+  text: string
+}
+
 type AskResponse = {
   answer: string
   sources: Source[]
   related_sources: Source[]
+  used_chunks: UsedChunk[]
   query_log_id: number
   search_query: string
   answer_model: string
@@ -177,11 +186,97 @@ function SourceLink({ src }: { src: Source }) {
 }
 
 
+// Кнопка «Nahlásit» под ответом: юзер помечает неверный/ненайденный ответ.
+// Текст вопроса/ответа (+ необязательная заметка) уходит владельцу для разбора.
+function ReportAnswer({
+  question,
+  result,
+}: {
+  question: string
+  result: AskResponse
+}) {
+  const [open, setOpen] = useState(false)
+  const [note, setNote] = useState('')
+  const [sending, setSending] = useState(false)
+  const [sent, setSent] = useState(false)
+
+  async function submit() {
+    setSending(true)
+    try {
+      const res = await fetch('/api/queries/flag', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          question,
+          answer: result.answer,
+          answer_model: result.answer_model,
+          note: note.trim() || null,
+          used_chunks: result.used_chunks,
+        }),
+      })
+      if (res.ok) setSent(true)
+      else alert(`Chyba ${res.status}`)
+    } catch {
+      alert('Nepodařilo se odeslat hlášení.')
+    } finally {
+      setSending(false)
+    }
+  }
+
+  if (sent) {
+    return (
+      <p className="text-xs text-green-600">
+        Děkujeme, hlášení bylo odesláno.
+      </p>
+    )
+  }
+  if (!open) {
+    return (
+      <button
+        onClick={() => setOpen(true)}
+        className="text-xs text-muted-foreground underline self-start"
+      >
+        Odpověď nepomohla / nenašlo se to — nahlásit
+      </button>
+    )
+  }
+  return (
+    <div className="flex flex-col gap-2 rounded-md border bg-card p-3">
+      <p className="text-xs text-muted-foreground">
+        Co bylo špatně? (nepovinné — např. „mělo by být v MVL649, odd. 4“)
+      </p>
+      <Textarea
+        value={note}
+        onChange={(e) => setNote(e.target.value)}
+        rows={2}
+        disabled={sending}
+      />
+      <div className="flex gap-2">
+        <Button onClick={submit} disabled={sending} size="sm">
+          {sending ? 'Odesílám…' : 'Odeslat hlášení'}
+        </Button>
+        <Button
+          onClick={() => setOpen(false)}
+          disabled={sending}
+          size="sm"
+          variant="outline"
+        >
+          Zrušit
+        </Button>
+      </div>
+    </div>
+  )
+}
+
+
 function App() {
   const [auth, setAuth] = useState<AuthState>({ phase: 'loading' })
   const [view, setView] = useState<View>('search')
 
   const [question, setQuestion] = useState('')
+  // Вопрос, по которому реально получен текущий result — фиксируем на момент ответа,
+  // чтобы «Nahlásit» отправил именно его, даже если юзер уже правит поле ввода.
+  const [askedQuestion, setAskedQuestion] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [result, setResult] = useState<AskResponse | null>(null)
@@ -342,6 +437,7 @@ function App() {
       }
       const data: AskResponse = await res.json()
       setResult(data)
+      setAskedQuestion(question)
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Neznámá chyba')
     } finally {
@@ -632,6 +728,12 @@ function App() {
                 </ul>
               </div>
             )}
+
+            <ReportAnswer
+              key={result.query_log_id}
+              question={askedQuestion}
+              result={result}
+            />
           </div>
         )}
           </>

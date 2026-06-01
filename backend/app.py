@@ -24,13 +24,16 @@ from pathlib import Path
 # Загружаем .env как можно раньше — до импорта сервисов, читающих env-vars.
 load_dotenv()
 
-from backend.core.database import Base, SessionLocal, engine
+from backend.core.database import Base, SessionLocal, engine, ensure_columns
 from backend.modules.auth import service as auth_service
 from backend.modules.auth.deps import require_auth
 from backend.modules.auth.models import AuthSession  # noqa: F401 — для create_all
 from backend.modules.auth.router import router as auth_router
 from backend.modules.telemetry import service as telemetry_service
-from backend.modules.telemetry.models import PendingEvent  # noqa: F401 — для create_all
+from backend.modules.telemetry.models import (  # noqa: F401 — для create_all
+    PendingEvent,
+    PendingReport,
+)
 from backend.modules.documents.models import Document
 from backend.modules.documents.pipeline import run_pipeline
 from backend.modules.documents.router import router as documents_router
@@ -47,6 +50,8 @@ async def lifespan(app: FastAPI):
     """Старт/остановка приложения: БД, пул потоков, возобновление задач."""
     # Страховка для чистой машины: создаст таблицы, если их ещё нет.
     Base.metadata.create_all(engine)
+    # Дозаливаем недостающие колонки в таблицы, созданные прошлой версией.
+    ensure_columns()
 
     # Бассейн из 3 потоков — параллельно обрабатываем максимум 3 PDF.
     # Остальные ждут в очереди executor'а.

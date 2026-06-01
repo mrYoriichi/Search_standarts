@@ -24,7 +24,7 @@ from backend.modules.auth.service import (
     LICENSE_SERVER_URL,
     VERSION_HEADERS,
 )
-from backend.modules.telemetry.models import PendingEvent
+from backend.modules.telemetry.models import PendingEvent, PendingReport
 
 
 # Шлём раз в минуту. Чаще — лишний трафик, реже — отчёты «слепые» дольше.
@@ -50,8 +50,63 @@ def track_event(name: str, **props: Any) -> None:
         print(f"[telemetry] track_event({name}) failed: {exc}")
 
 
+def track_report(
+    question: str,
+    answer: str,
+    answer_model: str | None = None,
+    note: str | None = None,
+    chunks: list[dict] | None = None,
+) -> None:
+    """Кладёт помеченный ответ («Nahlásit») в очередь отчётов (F7).
+
+    Вызывается по явному действию юзера (кнопка под ответом), поэтому согласие
+    не проверяем — сам клик и есть согласие. chunks — использованные фрагменты с
+    текстом. Ошибки глотаем, как в track_event.
+    """
+    try:
+        db = SessionLocal()
+        try:
+            db.add(
+                PendingReport(
+                    question=question,
+                    answer=answer,
+                    answer_model=answer_model,
+                    note=note,
+                    chunks=chunks or None,
+                )
+            )
+            db.commit()
+        finally:
+            db.close()
+    except Exception as exc:  # pylint: disable=broad-except
+        print(f"[telemetry] track_report failed: {exc}")
+
+
+def _post_batch(endpoint: str, body: dict, token: str) -> bool:
+    """POST батча на сервер лицензий. True — сервер принял (200), очередь чистим.
+
+    На не-200 / сетевую ошибку возвращаем False: батч остаётся в очереди до
+    следующего тика. 401 (токен), 426 (устарел), 5xx — стратегия одна.
+    """
+    headers = {"Authorization": f"Bearer {token}", **VERSION_HEADERS}
+    try:
+        response = httpx.post(
+            f"{LICENSE_SERVER_URL}{endpoint}",
+            json=body,
+            headers=headers,
+            timeout=HTTP_TIMEOUT,
+        )
+    except httpx.HTTPError as exc:
+        print(f"[telemetry] network error on {endpoint}: {exc}")
+        return False
+    if response.status_code != 200:
+        print(f"[telemetry] {endpoint} returned {response.status_code}, keeping batch")
+        return False
+    return True
+
+
 def send_pending_batch() -> int:
-    """Шлёт один батч событий. Возвращает число отправленных.
+    """Шлёт один батч анонимных событий (Уровень 1). Возвращает число отправленных.
 
     Если юзер не залогинен — возвращает 0. Если сервер ответил не-200 —
     оставляет события в очереди.
@@ -78,28 +133,7 @@ def send_pending_batch() -> int:
                 for row in rows
             ]
         }
-        headers = {
-            "Authorization": f"Bearer {session.token}",
-            **VERSION_HEADERS,
-        }
-        try:
-            response = httpx.post(
-                f"{LICENSE_SERVER_URL}/telemetry/events",
-                json=body,
-                headers=headers,
-                timeout=HTTP_TIMEOUT,
-            )
-        except httpx.HTTPError as exc:
-            print(f"[telemetry] network error: {exc}")
-            return 0
-
-        if response.status_code != 200:
-            # 401 — токен битый (юзер перелогинится → новый токен → отправим).
-            # 426 — клиент устарел (verify_loop переведёт в blocked).
-            # 5xx — сервер. Везде стратегия одна: оставляем в очереди.
-            print(
-                f"[telemetry] server returned {response.status_code}, keeping batch"
-            )
+        if not _post_batch("/telemetry/events", body, session.token):
             return 0
 
         ids = [row.id for row in rows]
@@ -112,11 +146,55 @@ def send_pending_batch() -> int:
         db.close()
 
 
+def send_pending_report_batch() -> int:
+    """Шлёт один батч помеченных ответов (F7). Возвращает число отправленных.
+
+    Поведение как у send_pending_batch, но эндпоинт /telemetry/flagged и текст q/a.
+    """
+    db = SessionLocal()
+    try:
+        session = db.get(AuthSession, 1)
+        if session is None:
+            return 0
+
+        rows = db.scalars(
+            select(PendingReport).order_by(PendingReport.id).limit(BATCH_LIMIT)
+        ).all()
+        if not rows:
+            return 0
+
+        body = {
+            "events": [
+                {
+                    "question": row.question,
+                    "answer": row.answer,
+                    "answer_model": row.answer_model,
+                    "note": row.note,
+                    "chunks": row.chunks or [],
+                    "client_timestamp": row.client_timestamp.isoformat(),
+                }
+                for row in rows
+            ]
+        }
+        if not _post_batch("/telemetry/flagged", body, session.token):
+            return 0
+
+        ids = [row.id for row in rows]
+        db.query(PendingReport).filter(PendingReport.id.in_(ids)).delete(
+            synchronize_session=False
+        )
+        db.commit()
+        return len(ids)
+    finally:
+        db.close()
+
+
 async def run_telemetry_sender() -> None:
-    """Фоновая корутина: раз в минуту шлёт накопившиеся события."""
+    """Фоновая корутина: раз в минуту шлёт события и помеченные ответы."""
     while True:
         try:
             await asyncio.to_thread(send_pending_batch)
+            await asyncio.to_thread(send_pending_report_batch)
         except Exception as exc:  # pylint: disable=broad-except
             print(f"[telemetry] sender error: {exc}")
         await asyncio.sleep(SEND_INTERVAL_SECONDS)

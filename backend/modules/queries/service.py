@@ -20,7 +20,7 @@ from search.answer import generate_answer
 
 from backend.core import library_cache
 from backend.modules.queries.models import QueryLog
-from backend.modules.queries.schemas import AskResponse, Source
+from backend.modules.queries.schemas import AskResponse, Source, UsedChunk
 from backend.modules.telemetry.service import track_event
 
 
@@ -96,6 +96,7 @@ def ask(
         answer=result["answer"],
         sources=[Source(**s) for s in result["sources"]],
         related_sources=[Source(**s) for s in result["related_sources"]],
+        used_chunks=[UsedChunk(**c) for c in result["used_chunks"]],
         query_log_id=log.id,
         search_query=search_query,
         answer_model=answer_model,

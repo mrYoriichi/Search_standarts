@@ -49,3 +49,28 @@ def get_session() -> Generator[Session, None, None]:
         yield session
     finally:
         session.close()
+
+
+def ensure_columns() -> None:
+    """Дозаливает недостающие колонки в существующие таблицы (idempotent).
+
+    `Base.metadata.create_all` создаёт новые таблицы, но НЕ меняет существующие.
+    Когда добавляем поле в уже созданную таблицу (у юзера БД с прошлой версии),
+    его нужно долить через ALTER TABLE. SQLite поддерживает только ADD COLUMN —
+    хватает (новые поля nullable). Запускается на старте после create_all.
+    """
+    # {таблица: {колонка: тип}} — что должно быть. Чего нет — добавим.
+    wanted: dict[str, dict[str, str]] = {
+        "pending_reports": {"chunks": "JSON"},  # F7: текст использованных фрагментов
+    }
+    with engine.begin() as conn:
+        for table, columns in wanted.items():
+            rows = conn.exec_driver_sql(f"PRAGMA table_info({table})").fetchall()
+            existing = {row[1] for row in rows}  # row[1] — имя колонки
+            if not existing:
+                continue  # таблицы ещё нет — create_all создаст её сразу с полями
+            for name, col_type in columns.items():
+                if name not in existing:
+                    conn.exec_driver_sql(
+                        f"ALTER TABLE {table} ADD COLUMN {name} {col_type}"
+                    )
