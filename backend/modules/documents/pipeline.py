@@ -39,11 +39,17 @@ def run_pipeline(slug: str, pdf_path: str | None = None) -> None:
     import chunk as chunk_step
     import index as index_step
 
+    # Импорт здесь (не наверху) — избегаем цикла с модулем settings.
+    from backend.modules.settings import service as settings_service
+
     db = SessionLocal()
     try:
+        # Vision-модель — рычаг стоимости, юзер выбирает в «Knihovna». Читаем на
+        # старте обработки документа, чтобы применить актуальный выбор.
+        vision_model = settings_service.get_vision_model(db)
         try:
             parser_step.process(slug, pdf_path=pdf_path)
-            describe_step.process(slug)
+            describe_step.process(slug, vision_model=vision_model)
             chunk_step.process(slug)
             index_step.process(slug)
         except Exception as exc:

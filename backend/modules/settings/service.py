@@ -18,6 +18,11 @@ SHARED_LIBRARY_PATH_KEY = "shared_library_path"
 # Закреплённые документы общей базы. У них нет строки в documents (пул read-only),
 # поэтому пины храним отдельным списком slug'ов (JSON) здесь.
 SHARED_PINNED_KEY = "shared_pinned_slugs"
+# Vision-модель для обработки документов (рычаг стоимости: vision ~99% цены дока).
+# Дефолт совпадает с VISION_MODEL в pdf_processing/image_description.py.
+VISION_MODEL_KEY = "vision_model"
+VISION_MODELS = ("gpt-5.5", "gpt-5.4-mini")
+DEFAULT_VISION_MODEL = "gpt-5.4-mini"  # дешевле; gpt-5.5 — по выбору в «Knihovna»
 OPENAI_KEY_KEY = "openai_api_key"
 
 
@@ -102,6 +107,25 @@ def toggle_shared_pin(db: Session, slug: str) -> bool:
         setting.value = value
     db.commit()
     return now_pinned
+
+
+def get_vision_model(db: Session) -> str:
+    """Текущая vision-модель для обработки документов. Дефолт, если не задана."""
+    setting = db.scalar(select(Setting).where(Setting.key == VISION_MODEL_KEY))
+    return setting.value if setting else DEFAULT_VISION_MODEL
+
+
+def set_vision_model(db: Session, model: str) -> str:
+    """Сохраняет выбор vision-модели. Бросает ValueError на неизвестную модель."""
+    if model not in VISION_MODELS:
+        raise ValueError(f"Неизвестная vision-модель: {model}")
+    setting = db.scalar(select(Setting).where(Setting.key == VISION_MODEL_KEY))
+    if setting is None:
+        db.add(Setting(key=VISION_MODEL_KEY, value=model))
+    else:
+        setting.value = model
+    db.commit()
+    return model
 
 
 def get_openai_key(db: Session) -> str | None:

@@ -26,3 +26,9 @@ class OpenAIKeyRequest(BaseModel):
     """Установить ключ OpenAI."""
 
     key: str
+
+
+class VisionModelSetting(BaseModel):
+    """Vision-модель для обработки документов (рычаг стоимости)."""
+
+    model: str

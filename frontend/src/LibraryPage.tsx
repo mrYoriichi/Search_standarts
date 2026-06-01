@@ -332,6 +332,70 @@ function FolderView({
 }
 
 
+// Выбор vision-модели для обработки документов (применяется при «Skenovat»).
+// Vision — ~99% стоимости документа, поэтому это главный рычаг бюджета.
+const VISION_MODELS = ['gpt-5.5', 'gpt-5.4-mini'] as const
+
+function VisionModelCard() {
+  const [model, setModel] = useState<string | null>(null)
+  const [saving, setSaving] = useState(false)
+
+  useEffect(() => {
+    fetch('/api/settings/vision-model')
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d: { model: string } | null) => d && setModel(d.model))
+      .catch(() => {})
+  }, [])
+
+  async function choose(m: string) {
+    if (m === model || saving) return
+    setSaving(true)
+    try {
+      const res = await fetch('/api/settings/vision-model', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ model: m }),
+      })
+      if (res.ok) setModel((await res.json()).model)
+      else alert(`Chyba ${res.status}`)
+    } catch {
+      alert('Chyba sítě')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <div className="rounded-md border bg-card p-4 flex flex-col gap-2">
+      <h2 className="text-sm font-semibold text-muted-foreground">
+        Model pro zpracování (vision)
+      </h2>
+      <p className="text-xs text-muted-foreground">
+        Použije se při skenování dokumentů. Vision tvoří ~99 % ceny dokumentu —
+        „gpt-5.4-mini“ je výrazně levnější, „gpt-5.5“ kvalitnější.
+      </p>
+      <div className="flex gap-2">
+        {VISION_MODELS.map((m) => (
+          <button
+            key={m}
+            onClick={() => choose(m)}
+            disabled={saving}
+            className={
+              'px-3 py-1.5 text-sm rounded-md border ' +
+              (model === m
+                ? 'bg-foreground text-background font-medium'
+                : 'text-muted-foreground hover:text-foreground')
+            }
+          >
+            {m}
+          </button>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+
 function LibraryPage() {
   const [path, setPath] = useState<string | null>(null)
   const [pathInput, setPathInput] = useState('')
@@ -510,6 +574,8 @@ function LibraryPage() {
           </Button>
         </div>
       </div>
+
+      <VisionModelCard />
 
       {error && (
         <div className="rounded-md border border-destructive/40 bg-destructive/10 p-4 text-sm text-destructive">

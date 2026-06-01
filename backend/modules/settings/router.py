@@ -10,6 +10,7 @@ from backend.modules.settings.schemas import (
     LibraryPathResponse,
     OpenAIKeyRequest,
     OpenAIKeyStatus,
+    VisionModelSetting,
 )
 
 
@@ -54,6 +55,25 @@ def set_shared_library_path(
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return LibraryPathResponse(path=saved)
+
+
+@router.get("/settings/vision-model", response_model=VisionModelSetting)
+def get_vision_model(db: Session = Depends(get_session)) -> VisionModelSetting:
+    """Текущая vision-модель для обработки документов."""
+    return VisionModelSetting(model=service.get_vision_model(db))
+
+
+@router.put("/settings/vision-model", response_model=VisionModelSetting)
+def set_vision_model(
+    body: VisionModelSetting,
+    db: Session = Depends(get_session),
+) -> VisionModelSetting:
+    """Сохраняет выбор vision-модели. 400 на неизвестную модель."""
+    try:
+        saved = service.set_vision_model(db, body.model)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return VisionModelSetting(model=saved)
 
 
 @router.get("/settings/openai-key", response_model=OpenAIKeyStatus)

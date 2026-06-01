@@ -10,9 +10,9 @@ from pathlib import Path
 from openai import OpenAI
 
 
-# Модель для распознавания изображений.
-# Вынесена в константу — поменять модель = поменять одну строку.
-VISION_MODEL = "gpt-5.5"
+# Модель для распознавания изображений (дефолт). В приложении выбор перекрывается
+# настройкой vision_model («Knihovna»); эта константа — дефолт для CLI/функций.
+VISION_MODEL = "gpt-5.4-mini"
 
 
 def encode_image_to_base64(image_path: str | Path) -> str:
@@ -207,6 +207,7 @@ def describe_page_visuals(
     document: dict,
     page_number: int,
     image_path: str | Path,
+    model: str = VISION_MODEL,
 ) -> tuple[dict[str, str], int, int]:
     """
     Описывает все блоки figure/table на одной странице через vision LLM.
@@ -228,7 +229,9 @@ def describe_page_visuals(
     prompt = build_vision_prompt(page_context)
 
     # 3. Отправляем в модель — получаем ответ и счётчики токенов
-    raw_answer, prompt_tokens, completion_tokens = ask_vision(image_path, prompt)
+    raw_answer, prompt_tokens, completion_tokens = ask_vision(
+        image_path, prompt, model=model
+    )
 
     # 4. Разбираем ответ в список {block_id, description}
     descriptions = parse_vision_response(raw_answer)
@@ -244,7 +247,9 @@ def describe_page_visuals(
     return desc_by_id, prompt_tokens, completion_tokens
 
 
-def extract_document_metadata(image_path: str | Path) -> tuple[dict, int, int]:
+def extract_document_metadata(
+    image_path: str | Path, model: str = VISION_MODEL
+) -> tuple[dict, int, int]:
     """
     Извлекает название и краткое описание документа по его первой странице.
 
@@ -270,7 +275,9 @@ Příklad formátu:
 {"title": "MVL 649 Železobetonové trubní propustky", "summary": "Dokument stanovuje technické podmínky pro..."}
 """
 
-    raw_answer, prompt_tokens, completion_tokens = ask_vision(image_path, prompt)
+    raw_answer, prompt_tokens, completion_tokens = ask_vision(
+        image_path, prompt, model=model
+    )
 
     # Разбираем ответ. Здесь ожидаем не список, а один объект,
     # поэтому parse_vision_response не подходит — парсим отдельно.

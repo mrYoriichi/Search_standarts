@@ -19,7 +19,11 @@ from dotenv import load_dotenv
 # Загружаем .env (ключ OpenAI) ДО импорта модуля, который обращается к API
 load_dotenv()
 
-from pdf_processing.image_description import describe_page_visuals, extract_document_metadata
+from pdf_processing.image_description import (
+    VISION_MODEL,
+    describe_page_visuals,
+    extract_document_metadata,
+)
 from pdf_processing.parser import VISUAL_BLOCK_TYPES, make_document_id
 from pricing import vision_cost
 
@@ -51,10 +55,11 @@ def find_pages_with_visuals(document: dict) -> list[int]:
     return sorted(page_numbers)
 
 
-def process(pdf_name: str) -> None:
+def process(pdf_name: str, vision_model: str = VISION_MODEL) -> None:
     """
     Описывает схемы и метаданные документа, результат пишет в descriptions.json.
     pdf_name — то же имя, что передавалось в main.py (например, MVL649).
+    vision_model — модель vision LLM (рычаг стоимости; см. настройку vision_model).
     """
     doc_dir = Path("data/raw_data") / make_document_id(pdf_name)
     document_path = doc_dir / "document.json"
@@ -75,7 +80,9 @@ def process(pdf_name: str) -> None:
     first_page_image = doc_dir / "pages" / "p001.png"
     if first_page_image.exists():
         print("Извлекаю метаданные документа...")
-        meta, meta_in, meta_out = extract_document_metadata(first_page_image)
+        meta, meta_in, meta_out = extract_document_metadata(
+            first_page_image, model=vision_model
+        )
         document_title = meta["title"]
         document_summary = meta["summary"]
         print(f"  Название: {document_title}")
@@ -99,7 +106,7 @@ def process(pdf_name: str) -> None:
 
         print(f"[{i}/{len(pages)}] стр. {page_number}: запрос в LLM...")
         page_descriptions, in_tok, out_tok = describe_page_visuals(
-            document, page_number, image_path
+            document, page_number, image_path, model=vision_model
         )
         block_descriptions.update(page_descriptions)
         pages_in += in_tok
