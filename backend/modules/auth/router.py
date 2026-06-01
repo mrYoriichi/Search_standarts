@@ -19,6 +19,7 @@ from backend.modules.auth.schemas import (
     LoginResponse,
     ProfileResponse,
     ProfileUpdate,
+    RegisterRequest,
     StatusResponse,
 )
 
@@ -46,6 +47,31 @@ def login(
         raise HTTPException(status_code=exc.status_code, detail=exc.message) from exc
     except service.LicenseServerUnavailable as exc:
         # 503 — корректный код для «зависимый сервис не отвечает».
+        raise HTTPException(
+            status_code=503,
+            detail="Сервер лицензий недоступен. Попробуйте позже.",
+        ) from exc
+    return LoginResponse(username=session.username)
+
+
+@router.post("/auth/register", response_model=LoginResponse)
+def register(
+    body: RegisterRequest, db: Session = Depends(get_session)
+) -> LoginResponse:
+    try:
+        session = service.register(db, body.model_dump())
+    except service.UpdateRequiredError as exc:
+        raise HTTPException(
+            status_code=426,
+            detail={
+                "message": "Update required",
+                "download_url": exc.download_url,
+            },
+        ) from exc
+    except service.LoginError as exc:
+        # 409 — имя занято, 400 — короткий логин/пароль (текст с сервера лицензий).
+        raise HTTPException(status_code=exc.status_code, detail=exc.message) from exc
+    except service.LicenseServerUnavailable as exc:
         raise HTTPException(
             status_code=503,
             detail="Сервер лицензий недоступен. Попробуйте позже.",

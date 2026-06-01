@@ -95,8 +95,47 @@ def login(db: Session, username: str, password: str) -> AuthSession:
         detail = response.json().get("detail", "Login failed")
         raise LoginError(response.status_code, detail)
 
-    token = response.json()["token"]
+    return _persist_session(db, username, response.json()["token"])
 
+
+def register(db: Session, fields: dict) -> AuthSession:
+    """Создаёт аккаунт на сервере лицензий и сразу логинит (сохраняет токен).
+
+    `fields` — тело регистрации (email, password, full_name, company, position,
+    linkedin). Сервер возвращает тот же ответ, что и логин (token+username),
+    поэтому после успеха ничем не отличается от обычного входа.
+    """
+    try:
+        response = httpx.post(
+            f"{LICENSE_SERVER_URL}/auth/register",
+            json=fields,
+            headers=VERSION_HEADERS,
+            timeout=HTTP_TIMEOUT,
+        )
+    except httpx.HTTPError as exc:
+        raise LicenseServerUnavailable(str(exc)) from exc
+
+    if response.status_code == 426:
+        detail = response.json().get("detail", {})
+        raise UpdateRequiredError(detail.get("download_url", ""))
+
+    if response.status_code >= 500:
+        raise LicenseServerUnavailable(f"License server returned {response.status_code}")
+
+    if response.status_code != 200:
+        # 409 — email занят, 400 — невалидные/неполные данные. Текст пробрасываем.
+        detail = response.json().get("detail", "Registration failed")
+        raise LoginError(response.status_code, detail)
+
+    data = response.json()  # {token, username} — username == email
+    return _persist_session(db, data["username"], data["token"])
+
+
+def _persist_session(db: Session, username: str, token: str) -> AuthSession:
+    """Сохраняет JWT в синглтон-строку AuthSession (id=1). Общее для login/register.
+
+    Если строка уже есть (старый юзер) — перезаписываем.
+    """
     session = db.get(AuthSession, 1)
     if session is None:
         session = AuthSession(

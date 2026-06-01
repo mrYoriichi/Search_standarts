@@ -21,6 +21,8 @@ type Profile = {
   email: string | null
   full_name: string | null
   company: string | null
+  position: string | null
+  linkedin: string | null
 }
 
 function ProfileSection() {
@@ -28,6 +30,8 @@ function ProfileSection() {
   const [email, setEmail] = useState('')
   const [fullName, setFullName] = useState('')
   const [company, setCompany] = useState('')
+  const [position, setPosition] = useState('')
+  const [linkedin, setLinkedin] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [saved, setSaved] = useState(false)
   const [loading, setLoading] = useState(false)
@@ -41,6 +45,8 @@ function ProfileSection() {
         setEmail(data.email ?? '')
         setFullName(data.full_name ?? '')
         setCompany(data.company ?? '')
+        setPosition(data.position ?? '')
+        setLinkedin(data.linkedin ?? '')
       })
       .catch(() => setError('Profil se nepodařilo načíst.'))
   }, [])
@@ -50,10 +56,17 @@ function ProfileSection() {
     setSaved(false)
     setLoading(true)
     try {
+      // PUT — полная замена: шлём все поля, иначе сервер очистит пропущенные.
       const res = await fetch('/api/auth/profile', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, full_name: fullName, company }),
+        body: JSON.stringify({
+          email,
+          full_name: fullName,
+          company,
+          position,
+          linkedin,
+        }),
       })
       if (!res.ok) {
         const data = await res.json().catch(() => ({}))
@@ -111,6 +124,28 @@ function ProfileSection() {
           type="text"
           value={company}
           onChange={(e) => setCompany(e.target.value)}
+          disabled={loading}
+          className={inputClass}
+        />
+      </label>
+
+      <label className="flex flex-col gap-1 text-sm">
+        <span className="text-muted-foreground">Pozice</span>
+        <input
+          type="text"
+          value={position}
+          onChange={(e) => setPosition(e.target.value)}
+          disabled={loading}
+          className={inputClass}
+        />
+      </label>
+
+      <label className="flex flex-col gap-1 text-sm">
+        <span className="text-muted-foreground">LinkedIn (nepovinné)</span>
+        <input
+          type="text"
+          value={linkedin}
+          onChange={(e) => setLinkedin(e.target.value)}
           disabled={loading}
           className={inputClass}
         />

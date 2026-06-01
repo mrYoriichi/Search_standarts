@@ -16,6 +16,18 @@ class LoginResponse(BaseModel):
     username: str
 
 
+class RegisterRequest(BaseModel):
+    """Саморегистрация. Логином служит email. После успеха клиент сразу залогинен
+    (тот же LoginResponse). linkedin — единственное необязательное поле."""
+
+    email: str
+    password: str
+    full_name: str
+    company: str
+    position: str
+    linkedin: str | None = None
+
+
 class ProfileResponse(BaseModel):
     """Профиль юзера (приходит с сервера лицензий). username — только чтение."""
 
@@ -23,6 +35,8 @@ class ProfileResponse(BaseModel):
     email: str | None = None
     full_name: str | None = None
     company: str | None = None
+    position: str | None = None
+    linkedin: str | None = None
 
 
 class ProfileUpdate(BaseModel):
@@ -31,6 +45,8 @@ class ProfileUpdate(BaseModel):
     email: str | None = None
     full_name: str | None = None
     company: str | None = None
+    position: str | None = None
+    linkedin: str | None = None
 
 
 class ChangePasswordRequest(BaseModel):
