@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import LibraryPage from './LibraryPage'
+import SharedLibraryPage from './SharedLibraryPage'
 import LoginPage from './LoginPage'
 import SettingsPage from './SettingsPage'
 
@@ -52,7 +53,7 @@ type LibraryResponse = {
   orphans: unknown[]
 }
 
-type View = 'search' | 'library' | 'settings'
+type View = 'search' | 'library' | 'shared' | 'settings'
 
 
 // Собирает slug'и всех индексированных (ready) PDF в папке, включая подпапки.
@@ -74,7 +75,6 @@ function FilterTree({
   searchAll,
   onToggleFile,
   onToggleFolder,
-  isRoot = false,
 }: {
   folder: LibraryFolder
   selectedSlugs: Set<string>
@@ -83,7 +83,6 @@ function FilterTree({
   searchAll: boolean
   onToggleFile: (slug: string) => void
   onToggleFolder: (folder: LibraryFolder) => void
-  isRoot?: boolean
 }) {
   const readySlugs = collectReadySlugs(folder)
   // Папки без индексированных файлов скрываем — иначе много пустоты.
@@ -94,17 +93,15 @@ function FilterTree({
   return (
     <details className="text-sm">
       <summary className="cursor-pointer flex items-center gap-2">
-        {/* У root чекбокса нет — он дублировал бы «Вся база» сверху. */}
-        {!isRoot && (
-          <input
-            type="checkbox"
-            checked={allSelected}
-            disabled={searchAll}
-            onChange={() => onToggleFolder(folder)}
-            onClick={(e) => e.stopPropagation()}
-            className="h-4 w-4"
-          />
-        )}
+        {/* Чекбокс на каждой папке, включая корень — снять/выбрать весь пул. */}
+        <input
+          type="checkbox"
+          checked={allSelected}
+          disabled={searchAll}
+          onChange={() => onToggleFolder(folder)}
+          onClick={(e) => e.stopPropagation()}
+          className="h-4 w-4"
+        />
         <span className="font-medium">📁 {folder.name}</span>
       </summary>
       <div className="ml-5 mt-1 flex flex-col gap-1">
@@ -190,6 +187,8 @@ function App() {
   const [result, setResult] = useState<AskResponse | null>(null)
 
   const [library, setLibrary] = useState<LibraryResponse | null>(null)
+  // Общая база (read-only пул владельца). null — не задана или пуста.
+  const [sharedLibrary, setSharedLibrary] = useState<LibraryResponse | null>(null)
   const [selectedSlugs, setSelectedSlugs] = useState<Set<string>>(new Set())
   // По умолчанию ищем во всех — самый частый кейс. При снятии открывается дерево.
   const [searchAll, setSearchAll] = useState(true)
@@ -265,12 +264,19 @@ function App() {
       .then((res) => (res.ok ? res.json() : null))
       .then((data: LibraryResponse | null) => setLibrary(data))
       .catch(() => setLibrary(null))
+    // Общая база — отдельный пул для фильтра «Kde hledat». 400 (путь не задан)
+    // тихо игнорируем: секции просто не будет.
+    fetch('/api/library/shared')
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data: LibraryResponse | null) => setSharedLibrary(data))
+      .catch(() => setSharedLibrary(null))
   }, [auth.phase])
 
   async function handleLogout() {
     await fetch('/api/auth/logout', { method: 'POST' })
     setAuth({ phase: 'anonymous' })
     setLibrary(null)
+    setSharedLibrary(null)
     setResult(null)
   }
 
@@ -431,9 +437,22 @@ function App() {
           >
             Knihovna
           </button>
+          <button
+            onClick={() => setView('shared')}
+            className={
+              'px-4 py-2 text-sm border-b-2 -mb-px ' +
+              (view === 'shared'
+                ? 'border-foreground font-medium'
+                : 'border-transparent text-muted-foreground hover:text-foreground')
+            }
+          >
+            Knihovna obecná
+          </button>
         </nav>
 
         {view === 'library' && <LibraryPage />}
+
+        {view === 'shared' && <SharedLibraryPage />}
 
         {view === 'settings' && <SettingsPage />}
 
@@ -443,33 +462,62 @@ function App() {
           <h2 className="text-sm font-semibold text-muted-foreground">
             Kde hledat
           </h2>
-          {!library || collectReadySlugs(library.tree).length === 0 ? (
-            <p className="text-sm text-muted-foreground">
-              Žádné indexované dokumenty. Přejděte do „Knihovny“ a klikněte na „Skenovat“.
-            </p>
-          ) : (
-            <>
-              <label className="flex items-center gap-2 cursor-pointer text-sm">
-                <input
-                  type="checkbox"
-                  checked={searchAll}
-                  onChange={() => setSearchAll((v) => !v)}
-                  className="h-4 w-4"
-                />
-                <span>Celá databáze</span>
-              </label>
-              <div className="mt-1">
-                <FilterTree
-                  folder={library.tree}
-                  selectedSlugs={selectedSlugs}
-                  searchAll={searchAll}
-                  onToggleFile={toggleSlug}
-                  onToggleFolder={toggleFolder}
-                  isRoot
-                />
-              </div>
-            </>
-          )}
+          {(() => {
+            const userReady = library ? collectReadySlugs(library.tree).length : 0
+            const sharedReady = sharedLibrary
+              ? collectReadySlugs(sharedLibrary.tree).length
+              : 0
+            if (userReady + sharedReady === 0) {
+              return (
+                <p className="text-sm text-muted-foreground">
+                  Žádné indexované dokumenty. Přejděte do „Knihovny“ a klikněte na „Skenovat“.
+                </p>
+              )
+            }
+            return (
+              <>
+                <label className="flex items-center gap-2 cursor-pointer text-sm">
+                  <input
+                    type="checkbox"
+                    checked={searchAll}
+                    onChange={() => setSearchAll((v) => !v)}
+                    className="h-4 w-4"
+                  />
+                  <span>Celá databáze</span>
+                </label>
+                <div className="mt-1 flex flex-col sm:flex-row gap-8">
+                  {userReady > 0 && library && (
+                    <div className="flex-1">
+                      <p className="text-xs font-medium text-muted-foreground mb-1">
+                        Vlastní knihovna
+                      </p>
+                      <FilterTree
+                        folder={library.tree}
+                        selectedSlugs={selectedSlugs}
+                        searchAll={searchAll}
+                        onToggleFile={toggleSlug}
+                        onToggleFolder={toggleFolder}
+                      />
+                    </div>
+                  )}
+                  {sharedReady > 0 && sharedLibrary && (
+                    <div className="flex-1">
+                      <p className="text-xs font-medium text-muted-foreground mb-1">
+                        Obecná knihovna
+                      </p>
+                      <FilterTree
+                        folder={sharedLibrary.tree}
+                        selectedSlugs={selectedSlugs}
+                        searchAll={searchAll}
+                        onToggleFile={toggleSlug}
+                        onToggleFolder={toggleFolder}
+                      />
+                    </div>
+                  )}
+                </div>
+              </>
+            )
+          })()}
         </div>
 
         <div className="rounded-md border bg-card p-4 flex flex-col gap-2">

@@ -1,16 +1,47 @@
 """Бизнес-логика модуля settings."""
 
+import json
 import os
 from pathlib import Path
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from backend.core import library_cache
 from backend.modules.settings.models import Setting
 
 
 LIBRARY_PATH_KEY = "library_path"
+# Папка общей базы норм от владельца (read-only): индексы + оригиналы PDF.
+# Отдельный пул, не сканируется. См. «Два пула документов» в PROJECT_STATE.
+SHARED_LIBRARY_PATH_KEY = "shared_library_path"
+# Закреплённые документы общей базы. У них нет строки в documents (пул read-only),
+# поэтому пины храним отдельным списком slug'ов (JSON) здесь.
+SHARED_PINNED_KEY = "shared_pinned_slugs"
 OPENAI_KEY_KEY = "openai_api_key"
+
+
+def _set_path(db: Session, key: str, raw_path: str) -> str:
+    """Валидирует и сохраняет путь-папку под ключом key. Общее для обеих библиотек.
+
+    На вход — пользовательская строка (с `~` или относительная); нормализуем в
+    абсолютный путь через expanduser+resolve. Бросает ValueError, если путь не
+    существует или это не папка.
+    """
+    path = Path(raw_path).expanduser().resolve()
+    if not path.exists():
+        raise ValueError(f"Путь не существует: {path}")
+    if not path.is_dir():
+        raise ValueError(f"Это не папка: {path}")
+
+    setting = db.scalar(select(Setting).where(Setting.key == key))
+    if setting is None:
+        setting = Setting(key=key, value=str(path))
+        db.add(setting)
+    else:
+        setting.value = str(path)
+    db.commit()
+    return str(path)
 
 
 def get_library_path(db: Session) -> str | None:
@@ -20,26 +51,57 @@ def get_library_path(db: Session) -> str | None:
 
 
 def set_library_path(db: Session, raw_path: str) -> str:
-    """Сохраняет путь к папке библиотеки.
+    """Сохраняет путь к папке библиотеки юзера."""
+    return _set_path(db, LIBRARY_PATH_KEY, raw_path)
 
-    Валидирует, что путь существует и это папка. Бросает ValueError при ошибке.
-    На вход — пользовательская строка (например, с `~` или относительная);
-    нормализуем в абсолютный путь через expanduser+resolve.
+
+def get_shared_library_path(db: Session) -> str | None:
+    """Возвращает путь к папке общей базы или None, если не задан."""
+    setting = db.scalar(
+        select(Setting).where(Setting.key == SHARED_LIBRARY_PATH_KEY)
+    )
+    return setting.value if setting else None
+
+
+def set_shared_library_path(db: Session, raw_path: str) -> str:
+    """Сохраняет путь к папке общей базы.
+
+    Сбрасывает кеш библиотеки: в слитый пул поиска должны попасть индексы
+    из новой общей базы (см. library_cache).
     """
-    path = Path(raw_path).expanduser().resolve()
-    if not path.exists():
-        raise ValueError(f"Путь не существует: {path}")
-    if not path.is_dir():
-        raise ValueError(f"Это не папка: {path}")
+    path = _set_path(db, SHARED_LIBRARY_PATH_KEY, raw_path)
+    library_cache.invalidate()
+    return path
 
-    setting = db.scalar(select(Setting).where(Setting.key == LIBRARY_PATH_KEY))
-    if setting is None:
-        setting = Setting(key=LIBRARY_PATH_KEY, value=str(path))
-        db.add(setting)
+
+def get_shared_pinned_slugs(db: Session) -> set[str]:
+    """Множество slug'ов закреплённых документов общей базы."""
+    setting = db.scalar(select(Setting).where(Setting.key == SHARED_PINNED_KEY))
+    if not setting or not setting.value:
+        return set()
+    try:
+        return set(json.loads(setting.value))
+    except (ValueError, TypeError):
+        return set()  # битое значение трактуем как «пинов нет»
+
+
+def toggle_shared_pin(db: Session, slug: str) -> bool:
+    """Переключает закрепление документа общей базы. Возвращает новое состояние."""
+    pinned = get_shared_pinned_slugs(db)
+    now_pinned = slug not in pinned
+    if now_pinned:
+        pinned.add(slug)
     else:
-        setting.value = str(path)
+        pinned.discard(slug)
+
+    value = json.dumps(sorted(pinned))
+    setting = db.scalar(select(Setting).where(Setting.key == SHARED_PINNED_KEY))
+    if setting is None:
+        db.add(Setting(key=SHARED_PINNED_KEY, value=value))
+    else:
+        setting.value = value
     db.commit()
-    return str(path)
+    return now_pinned
 
 
 def get_openai_key(db: Session) -> str | None:

@@ -19,6 +19,7 @@ from pathlib import Path
 from ask import load_library
 
 
+# Пул юзера: индексы локально обработанных документов.
 DATA_ROOT = Path("data/raw_data")
 
 # Кеш и замок к нему. Запросы FastAPI и фоновый pipeline работают в разных
@@ -27,12 +28,69 @@ _lock = threading.Lock()
 _cache: tuple[list[dict], dict] | None = None
 
 
+def _shared_data_root() -> Path | None:
+    """Корень индексов общей базы (<shared>/raw_data) или None, если не задан.
+
+    Путь к общей базе живёт в настройках (БД). Импорт settings_service —
+    ленивый, чтобы не зациклить модули (settings импортирует этот модуль).
+    """
+    from backend.core.database import SessionLocal
+    from backend.modules.settings import service as settings_service
+
+    db = SessionLocal()
+    try:
+        shared_path = settings_service.get_shared_library_path(db)
+    finally:
+        db.close()
+    if not shared_path:
+        return None
+    root = Path(shared_path) / "raw_data"
+    return root if root.exists() else None
+
+
+def _load_merged() -> tuple[list[dict], dict]:
+    """Сливает пул юзера и общую базу в один (chunks, embeddings_index).
+
+    Оба пула обязаны быть на одной модели эмбеддингов — векторы из разных
+    моделей несравнимы. Пустой/отсутствующий пул тихо пропускаем; ошибка только
+    если готовых документов нет нигде.
+    """
+    roots = [DATA_ROOT]
+    shared = _shared_data_root()
+    if shared is not None:
+        roots.append(shared)
+
+    all_chunks: list[dict] = []
+    all_items: list[dict] = []
+    model: str | None = None
+    for root in roots:
+        if not root.exists():
+            continue
+        try:
+            chunks, index = load_library(root)
+        except RuntimeError:
+            continue  # в этом корне нет готовых документов — не страшно
+        if model is None:
+            model = index["model"]
+        elif model != index["model"]:
+            raise RuntimeError(
+                "Пул юзера и общая база построены разными моделями эмбеддингов "
+                f"({model} ≠ {index['model']}). Они несовместимы."
+            )
+        all_chunks.extend(chunks)
+        all_items.extend(index["items"])
+
+    if not all_chunks:
+        raise RuntimeError("Нет ни одного готового документа.")
+    return all_chunks, {"model": model, "items": all_items}
+
+
 def get_library() -> tuple[list[dict], dict]:
     """Возвращает (chunks, embeddings_index). При первом обращении читает диск."""
     global _cache
     with _lock:
         if _cache is None:
-            _cache = load_library(DATA_ROOT)
+            _cache = _load_merged()
         return _cache
 
 

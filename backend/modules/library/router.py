@@ -51,6 +51,46 @@ def open_library_file(
     return {"status": "ok"}
 
 
+@router.get("/library/shared", response_model=LibraryResponse)
+def get_shared_library(db: Session = Depends(get_session)) -> LibraryResponse:
+    """Дерево общей базы (read-only). Статус «ready» — по наличию индексов."""
+    shared = settings_service.get_shared_library_path(db)
+    if shared is None:
+        raise HTTPException(status_code=400, detail="Папка общей базы не задана")
+    pdfs_root = Path(shared) / "pdfs"
+    if not pdfs_root.exists():
+        raise HTTPException(
+            status_code=400, detail="В папке общей базы нет подпапки 'pdfs'"
+        )
+    return service.build_shared_library_response(
+        pdfs_root,
+        Path(shared) / "raw_data",
+        settings_service.get_shared_pinned_slugs(db),
+    )
+
+
+@router.post("/library/shared/{slug}/pin")
+def pin_shared_document(slug: str, db: Session = Depends(get_session)) -> dict:
+    """Переключает закрепление документа общей базы (пины в настройках)."""
+    return {"pinned": settings_service.toggle_shared_pin(db, slug)}
+
+
+@router.post("/library/shared/open")
+def open_shared_file(
+    body: OpenFileRequest,
+    db: Session = Depends(get_session),
+) -> dict:
+    """Открывает PDF из общей базы в системном просмотрщике."""
+    shared = settings_service.get_shared_library_path(db)
+    if shared is None:
+        raise HTTPException(status_code=400, detail="Папка общей базы не задана")
+    try:
+        service.open_file(Path(shared) / "pdfs", body.path)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"status": "ok"}
+
+
 @router.post("/library/scan", response_model=ScanSummary)
 def scan_library(
     request: Request,
@@ -66,17 +106,23 @@ def scan_library(
 
 @router.get("/library/pdf/{slug}")
 def get_pdf(slug: str, db: Session = Depends(get_session)) -> FileResponse:
-    """Отдаёт PDF из папки библиотеки по slug — для просмотра в браузере.
+    """Отдаёт PDF по slug — для просмотра в браузере. Ищет в обоих пулах.
 
-    Браузер сам поддерживает фрагмент URL `#page=N` — фронт строит такую
-    ссылку и юзер открывает PDF сразу на нужной странице.
+    Сначала папка юзера, потом общая база (`<shared>/pdfs`) — источник в ответе
+    может быть из любого пула. Браузер сам поддерживает фрагмент `#page=N`.
     """
     library_path = settings_service.get_library_path(db)
-    if library_path is None:
-        raise HTTPException(status_code=400, detail="Папка библиотеки не задана")
-    pdf_path = service.find_pdf_by_slug(Path(library_path), slug)
+    pdf_path = (
+        service.find_pdf_by_slug(Path(library_path), slug)
+        if library_path
+        else None
+    )
+    if pdf_path is None:
+        shared = settings_service.get_shared_library_path(db)
+        if shared is not None:
+            pdf_path = service.find_pdf_by_slug(Path(shared) / "pdfs", slug)
     if pdf_path is None:
         raise HTTPException(
-            status_code=404, detail=f"PDF для slug={slug} не найден в библиотеке"
+            status_code=404, detail=f"PDF для slug={slug} не найден"
         )
     return FileResponse(pdf_path, media_type="application/pdf")

@@ -9,6 +9,7 @@ import platform
 import subprocess
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
+from typing import Callable
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -25,10 +26,20 @@ from backend.modules.library.schemas import (
 from pdf_processing.parser import make_document_id
 
 
+# Резолвер статуса PDF по slug: (status, pinned). Различает пул юзера (статус из
+# БД) и общую базу (статус по наличию индексов). Так дерево строится одним _walk.
+StatusResolver = Callable[[str], tuple[str | None, bool]]
+
+
 def build_library_response(library_path: Path, db: Session) -> LibraryResponse:
-    """Возвращает дерево папки + список висячих документов (нет файла в папке)."""
+    """Возвращает дерево папки юзера + список висячих документов (нет файла в папке)."""
     docs_by_slug = {doc.slug: doc for doc in db.scalars(select(Document)).all()}
-    tree = _walk(library_path, docs_by_slug)
+
+    def resolve(slug: str) -> tuple[str | None, bool]:
+        doc = docs_by_slug.get(slug)
+        return (doc.status, doc.pinned) if doc else (None, False)
+
+    tree = _walk(library_path, resolve)
     # Собираем slug'и всех PDF, реально лежащих в папке (включая подпапки).
     seen_slugs: set[str] = set()
     _collect_slugs(tree, seen_slugs)
@@ -41,6 +52,30 @@ def build_library_response(library_path: Path, db: Session) -> LibraryResponse:
     return LibraryResponse(tree=tree, orphans=orphans)
 
 
+def build_shared_library_response(
+    pdfs_root: Path, data_root: Path, pinned_slugs: set[str] | None = None
+) -> LibraryResponse:
+    """Дерево общей базы из её папки с PDF (`<shared>/pdfs`).
+
+    Статус «ready» — если для slug есть индексы в `<shared>/raw_data/{slug}`.
+    Общая база read-only, в БД её нет, поэтому статус берём с диска, а пины —
+    из переданного множества (хранится в настройках). Висячих нет."""
+    pinned = pinned_slugs or set()
+
+    def resolve(slug: str) -> tuple[str | None, bool]:
+        doc_dir = data_root / slug
+        ready = (doc_dir / "chunks.json").exists() and (
+            doc_dir / "embeddings.json"
+        ).exists()
+        return ("ready" if ready else None, slug in pinned)
+
+    tree = _walk(pdfs_root, resolve)
+    # Корень _walk назвался бы «pdfs» (имя подпапки). Подменяем на имя бандла
+    # (например «SharedLibrary») — так дерево читабельнее в UI.
+    tree.name = pdfs_root.parent.name
+    return LibraryResponse(tree=tree, orphans=[])
+
+
 def _collect_slugs(folder: LibraryFolder, out: set[str]) -> None:
     for file in folder.files:
         out.add(file.slug)
@@ -48,7 +83,7 @@ def _collect_slugs(folder: LibraryFolder, out: set[str]) -> None:
         _collect_slugs(sub, out)
 
 
-def _walk(folder: Path, docs_by_slug: dict[str, Document]) -> LibraryFolder:
+def _walk(folder: Path, resolve: StatusResolver) -> LibraryFolder:
     folders: list[LibraryFolder] = []
     files: list[LibraryFile] = []
     for entry in sorted(folder.iterdir(), key=lambda p: p.name.lower()):
@@ -56,17 +91,17 @@ def _walk(folder: Path, docs_by_slug: dict[str, Document]) -> LibraryFolder:
         if entry.name.startswith("."):
             continue
         if entry.is_dir():
-            folders.append(_walk(entry, docs_by_slug))
+            folders.append(_walk(entry, resolve))
         elif entry.suffix.lower() == ".pdf":
             slug = make_document_id(entry.name)
-            doc = docs_by_slug.get(slug)
+            status, pinned = resolve(slug)
             files.append(
                 LibraryFile(
                     name=entry.name,
                     path=str(entry),
                     slug=slug,
-                    status=doc.status if doc else None,
-                    pinned=doc.pinned if doc else False,
+                    status=status,
+                    pinned=pinned,
                 )
             )
     return LibraryFolder(name=folder.name, path=str(folder), folders=folders, files=files)
