@@ -33,3 +33,13 @@ app.db
 
 # Сгенерированные тестовые артефакты VL-пайплайна (PNG, описания, JSON)
 vl_pipeline/test_output/
+
+# Артефакты сборки PyInstaller (блок E)
+/build/
+/dist/
+
+# Собранный фронтенд — генерируется `npm run build`, в git не нужен
+frontend/dist/
+
+# Модели docling — скачиваются `download_models.py`, большие, в git не нужны
+docling_models/

@@ -16,6 +16,8 @@ from docling.datamodel.base_models import InputFormat
 from docling.datamodel.pipeline_options import PdfPipelineOptions
 from docling.document_converter import DocumentConverter, PdfFormatOption
 
+from backend.core.paths import DOCLING_MODELS
+
 
 # Таблица перевода: метка Docling -> наш внутренний тип блока.
 # Если завтра захотим добавить новый тип — меняем только эту таблицу.
@@ -269,6 +271,10 @@ def parse_pdf(pdf_path: str) -> tuple[dict, dict]:
     pipeline_options = PdfPipelineOptions()
     pipeline_options.generate_page_images = True
     pipeline_options.images_scale = 2.0
+    # Если модели предзагружены в docling_models/ (сборка .exe) — берём их оттуда,
+    # docling ничего не качает. Иначе путь не задан → старое поведение (докачка).
+    if DOCLING_MODELS.exists():
+        pipeline_options.artifacts_path = str(DOCLING_MODELS)
     # MPS (Apple Silicon GPU) не поддерживает float64, на котором работают
     # модели Docling (RT-DETR). Принудительно используем CPU.
     pipeline_options.accelerator_options = AcceleratorOptions(device=AcceleratorDevice.CPU)

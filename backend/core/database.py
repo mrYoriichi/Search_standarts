@@ -5,10 +5,12 @@ from collections.abc import Generator
 from sqlalchemy import create_engine, event
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 
+from backend.core.paths import DB_PATH
 
-# Адрес БД. sqlite:/// — относительный путь от текущей рабочей директории.
-# Файл app.db появится в корне проекта при первом подключении.
-DATABASE_URL = "sqlite:///./app.db"
+
+# Адрес БД. Путь к файлу app.db даёт core/paths (в dev — корень проекта,
+# в .exe — системный user-data каталог, чтобы пережить обновление).
+DATABASE_URL = f"sqlite:///{DB_PATH}"
 
 
 # Engine — связь с конкретной БД. Один на всё приложение.

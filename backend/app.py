@@ -17,6 +17,7 @@ from contextlib import asynccontextmanager
 
 from dotenv import load_dotenv
 from fastapi import Depends, FastAPI
+from fastapi.staticfiles import StaticFiles
 from sqlalchemy import select
 
 from pathlib import Path
@@ -25,6 +26,7 @@ from pathlib import Path
 load_dotenv()
 
 from backend.core.database import Base, SessionLocal, engine, ensure_columns
+from backend.core.paths import FRONTEND_DIST
 from backend.modules.auth import service as auth_service
 from backend.modules.auth.deps import require_auth
 from backend.modules.auth.models import AuthSession  # noqa: F401 — для create_all
@@ -111,3 +113,9 @@ app.include_router(queries_router, prefix="/api", tags=["queries"], dependencies
 app.include_router(documents_router, prefix="/api", tags=["documents"], dependencies=protected)
 app.include_router(settings_router, prefix="/api", tags=["settings"], dependencies=protected)
 app.include_router(library_router, prefix="/api", tags=["library"], dependencies=protected)
+
+# Собранный фронтенд отдаём с корня — ПОСЛЕ всех /api-роутеров (mount на "/" ловит
+# всё остальное). html=True → index.html на "/". В dev без сборки папки нет —
+# фронт берётся из Vite (dev-прокси на /api), поэтому монтируем только если есть.
+if FRONTEND_DIST.exists():
+    app.mount("/", StaticFiles(directory=FRONTEND_DIST, html=True), name="frontend")
