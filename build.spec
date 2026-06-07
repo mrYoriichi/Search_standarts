@@ -77,9 +77,9 @@ exe = EXE(
     bootloader_ignore_signals=False,
     strip=False,
     upx=False,
-    # console=True для тестовой сборки: видно логи uvicorn и ошибки.
-    # В финальной (после успешного теста) поставим False.
-    console=True,
+    # console=False для релиза: у пользователя нет чёрного окна консоли.
+    # Для отладки сборки временно вернуть True (видно логи uvicorn и ошибки).
+    console=False,
     disable_windowed_traceback=False,
     argv_emulation=False,
     target_arch=None,

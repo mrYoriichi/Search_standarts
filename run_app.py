@@ -5,6 +5,19 @@
 В отличие от dev-запуска (`uvicorn --reload`) — без перезагрузки кода.
 """
 import os
+import sys
+
+# В сборке без консоли (.exe, console=False) sys.stdout/stderr == None. uvicorn при
+# старте дёргает sys.stdout.isatty(), а наш пайплайн пишет через print() — и то и
+# другое падает на None. Перенаправляем вывод в лог-файл в каталоге данных: краш
+# уходит, а логи остаются доступны для отладки (%APPDATA%\Search_standarts\app.log).
+if sys.stdout is None or sys.stderr is None:
+    from backend.core.paths import DATA_DIR
+
+    _log_file = open(DATA_DIR / "app.log", "a", encoding="utf-8", buffering=1)
+    sys.stdout = _log_file
+    sys.stderr = _log_file
+
 import socket
 import threading
 import time

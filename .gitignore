@@ -38,6 +38,9 @@ vl_pipeline/test_output/
 /build/
 /dist/
 
+# Собранный установщик Inno Setup (большой, в git не нужен)
+/installer/
+
 # Собранный фронтенд — генерируется `npm run build`, в git не нужен
 frontend/dist/
 
