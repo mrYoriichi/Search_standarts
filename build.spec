@@ -26,6 +26,7 @@ HEAVY_PACKAGES = [
     "tiktoken_ext",
     "rank_bm25",
     "uvicorn",
+    "rapidocr",
     "rapidocr_onnxruntime",
     "onnxruntime",
 ]

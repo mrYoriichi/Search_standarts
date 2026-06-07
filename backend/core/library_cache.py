@@ -17,10 +17,11 @@ import threading
 from pathlib import Path
 
 from ask import load_library
+from backend.core.paths import RAW_DATA_DIR
 
 
 # Пул юзера: индексы локально обработанных документов.
-DATA_ROOT = Path("data/raw_data")
+DATA_ROOT = RAW_DATA_DIR
 
 # Кеш и замок к нему. Запросы FastAPI и фоновый pipeline работают в разных
 # потоках — замок защищает от гонки при одновременной загрузке/сбросе.

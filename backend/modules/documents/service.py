@@ -10,19 +10,15 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from backend.core import library_cache
+from backend.core.paths import PDF_STORAGE_DIR, RAW_DATA_DIR
 from backend.modules.documents.models import Document
 from backend.modules.documents.pipeline import run_pipeline
 from backend.modules.documents.schemas import UploadItem
 from pdf_processing.parser import make_document_id
 
 
-# Корень обработанных артефактов: chunks.json, embeddings.json, pages/...
-RAW_DATA_DIR = Path("data/raw_data")
-
-
-# Папка, куда складываются загруженные PDF.
-# Именно тут main.py ищет файл при вызове process(pdf_name) -> data/pdfs/{pdf_name}.pdf
-PDF_STORAGE_DIR = Path("data/pdfs")
+# Пути к данным юзера (raw_data, pdfs) — единый источник в backend.core.paths.
+# main.py ищет загруженный PDF как PDF_STORAGE_DIR/{pdf_name}.pdf.
 
 
 def list_documents(db: Session) -> list[Document]:

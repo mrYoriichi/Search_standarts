@@ -6,12 +6,12 @@ FastAPI-зависимости здесь не работают.
 """
 import json
 import logging
-from pathlib import Path
 
 from sqlalchemy import select
 
 from backend.core import library_cache
 from backend.core.database import SessionLocal
+from backend.core.paths import RAW_DATA_DIR
 from backend.modules.documents.models import Document
 from backend.modules.telemetry.service import track_event
 
@@ -65,7 +65,7 @@ def run_pipeline(slug: str, pdf_path: str | None = None) -> None:
         # Берём настоящий заголовок документа из descriptions.json
         # (его проставил describe_step). При загрузке у нас был только
         # filename — теперь подменим на нормальное название.
-        descriptions_path = Path("data/raw_data") / slug / "descriptions.json"
+        descriptions_path = RAW_DATA_DIR / slug / "descriptions.json"
         with open(descriptions_path, encoding="utf-8") as f:
             real_title = json.load(f).get("document_title")
 
@@ -83,7 +83,7 @@ def run_pipeline(slug: str, pdf_path: str | None = None) -> None:
 
         # Считаем число чанков как косвенный размер документа — слать имя файла
         # нельзя (это уже Уровень 2 / персональные данные).
-        chunks_path = Path("data/raw_data") / slug / "chunks.json"
+        chunks_path = RAW_DATA_DIR / slug / "chunks.json"
         chunks_count: int | None = None
         try:
             with open(chunks_path, encoding="utf-8") as f:

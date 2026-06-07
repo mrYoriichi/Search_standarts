@@ -19,13 +19,14 @@ from dotenv import load_dotenv
 # Загружаем .env (ключ OpenAI) ДО импорта модуля, который обращается к API
 load_dotenv()
 
+from backend.core.paths import RAW_DATA_DIR
 from pdf_processing.image_description import (
     VISION_MODEL,
     describe_page_visuals,
     extract_document_metadata,
 )
 from pdf_processing.parser import VISUAL_BLOCK_TYPES, make_document_id
-from pricing import vision_cost
+from pricing import model_cost
 
 
 def load_document(json_path: Path) -> dict:
@@ -61,7 +62,7 @@ def process(pdf_name: str, vision_model: str = VISION_MODEL) -> None:
     pdf_name — то же имя, что передавалось в main.py (например, MVL649).
     vision_model — модель vision LLM (рычаг стоимости; см. настройку vision_model).
     """
-    doc_dir = Path("data/raw_data") / make_document_id(pdf_name)
+    doc_dir = RAW_DATA_DIR / make_document_id(pdf_name)
     document_path = doc_dir / "document.json"
     descriptions_path = doc_dir / "descriptions.json"
 
@@ -127,8 +128,8 @@ def process(pdf_name: str, vision_model: str = VISION_MODEL) -> None:
     print(f"  Файл сохранён:              {descriptions_path}")
 
     # ---- Сводка по стоимости ----
-    meta_usd = vision_cost(meta_in, meta_out)
-    pages_usd = vision_cost(pages_in, pages_out)
+    meta_usd = model_cost(vision_model, meta_in, meta_out)
+    pages_usd = model_cost(vision_model, pages_in, pages_out)
     total_usd = meta_usd + pages_usd
 
     print(f"\n=== Стоимость vision ===")

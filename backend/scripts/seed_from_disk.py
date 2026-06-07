@@ -18,10 +18,11 @@ from pathlib import Path
 from sqlalchemy import select
 
 from backend.core.database import Base, SessionLocal, engine
+from backend.core.paths import RAW_DATA_DIR
 from backend.modules.documents.models import Document
 
 
-DATA_ROOT = Path("data/raw_data")
+DATA_ROOT = RAW_DATA_DIR
 
 
 def seed() -> None:

@@ -24,12 +24,13 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+from backend.core.paths import RAW_DATA_DIR
 from indexing.embeddings_index import build_embeddings_index
 from pdf_processing.parser import make_document_id
-from pricing import answer_cost, embedding_cost
+from pricing import embedding_cost, model_cost
 from vl_pipeline.describe import describe_sheet, extract_document_metadata
 
-DATA_ROOT = Path("data/raw_data")
+DATA_ROOT = RAW_DATA_DIR
 RENDER_DPI = 200
 # Порог: страница с >= стольких непробельных символов считается текстовой.
 # Чертёжные листы дают ~0 символов текстового слоя — разрыв огромный.
@@ -156,7 +157,7 @@ def process(pdf_path: Path, doc_id: str | None = None, limit: int | None = None)
     meta, m_in, m_out = extract_document_metadata(front_text)
     doc_title = meta["title"]
     doc_summary = meta["summary"]
-    llm_cost = answer_cost(m_in, m_out)
+    llm_cost = model_cost("gpt-5.4-mini", m_in, m_out)
     print(f"Документ: {doc_title or '(без названия)'}")
 
     # 3. Собираем чанки: сначала текстовые, потом листы (в порядке страниц)
@@ -166,7 +167,7 @@ def process(pdf_path: Path, doc_id: str | None = None, limit: int | None = None)
         image_path = render_page(pdf_path, page, pages_dir)
         ocr_text = ocr_image(image_path)
         sheet_meta, s_in, s_out = describe_sheet(image_path)
-        llm_cost += answer_cost(s_in, s_out)
+        llm_cost += model_cost("gpt-5.4-mini", s_in, s_out)
         chunks.append(build_sheet_chunk(page, sheet_meta, ocr_text))
         print(f"  лист {n}/{len(sheet_pages)} (стр. {page}): "
               f"{sheet_meta.get('kod', '?')} — OCR {len(ocr_text)} симв")

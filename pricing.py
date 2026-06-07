@@ -13,43 +13,29 @@
 """
 
 # ---------- 1. Сырые цены за 1 миллион токенов (USD) ----------
-# Заполнить актуальными ценами OpenAI перед запуском describe.py / index.py.
-
-# gpt-5.5 (vision)
-VISION_INPUT_PRICE_PER_M: float | None = 5.0
-VISION_OUTPUT_PRICE_PER_M: float | None = 30
-
-# gpt-5.4-mini (генерация ответа в search/answer.py)
-ANSWER_INPUT_PRICE_PER_M: float | None = 0.75
-ANSWER_OUTPUT_PRICE_PER_M: float | None = 4.50
+# Цены за 1M токенов по моделям: (input, output). Источник: https://openai.com/pricing.
+# Если меняются цены/модели OpenAI — правим только эту таблицу.
+MODEL_PRICES_PER_M: dict[str, tuple[float, float]] = {
+    "gpt-5.5": (5.0, 30.0),
+    "gpt-5.4-mini": (0.75, 4.50),
+}
 
 # text-embedding-3-large
 EMBEDDING_PRICE_PER_M: float | None = 0.13
 
 
-def vision_cost(prompt_tokens: int, completion_tokens: int) -> float:
-    """USD за один vision-вызов по факту использованных токенов."""
-    if VISION_INPUT_PRICE_PER_M is None or VISION_OUTPUT_PRICE_PER_M is None:
+def model_cost(model: str, prompt_tokens: int, completion_tokens: int) -> float:
+    """USD за один LLM-вызов по факту использованных токенов и выбранной модели."""
+    prices = MODEL_PRICES_PER_M.get(model)
+    if prices is None:
         raise RuntimeError(
-            "В pricing.py не заданы VISION_INPUT_PRICE_PER_M / "
-            "VISION_OUTPUT_PRICE_PER_M. Заполни актуальными ценами OpenAI."
+            f"В pricing.py нет цен для модели {model!r}. "
+            f"Добавь её в MODEL_PRICES_PER_M."
         )
+    input_price, output_price = prices
     return (
-        prompt_tokens * VISION_INPUT_PRICE_PER_M / 1_000_000
-        + completion_tokens * VISION_OUTPUT_PRICE_PER_M / 1_000_000
-    )
-
-
-def answer_cost(prompt_tokens: int, completion_tokens: int) -> float:
-    """USD за один вызов модели ответа по факту использованных токенов."""
-    if ANSWER_INPUT_PRICE_PER_M is None or ANSWER_OUTPUT_PRICE_PER_M is None:
-        raise RuntimeError(
-            "В pricing.py не заданы ANSWER_INPUT_PRICE_PER_M / "
-            "ANSWER_OUTPUT_PRICE_PER_M. Заполни актуальными ценами OpenAI."
-        )
-    return (
-        prompt_tokens * ANSWER_INPUT_PRICE_PER_M / 1_000_000
-        + completion_tokens * ANSWER_OUTPUT_PRICE_PER_M / 1_000_000
+        prompt_tokens * input_price / 1_000_000
+        + completion_tokens * output_price / 1_000_000
     )
 
 

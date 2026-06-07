@@ -7,6 +7,7 @@ import json
 import sys
 from pathlib import Path
 
+from backend.core.paths import PDF_STORAGE_DIR, RAW_DATA_DIR
 from pdf_processing.parser import parse_pdf, collect_pages_to_save, enrich_visual_blocks
 
 
@@ -70,8 +71,8 @@ def process(pdf_name: str, pdf_path: str | None = None) -> None:
     передаёт сюда путь к PDF прямо из папки юзера.
     """
     if pdf_path is None:
-        pdf_path = f"data/pdfs/{pdf_name}.pdf"
-    output_root = Path("data/raw_data")
+        pdf_path = str(PDF_STORAGE_DIR / f"{pdf_name}.pdf")
+    output_root = RAW_DATA_DIR
 
     print(f"Читаю {pdf_path}, подожди...")
     document, page_images = parse_pdf(pdf_path)

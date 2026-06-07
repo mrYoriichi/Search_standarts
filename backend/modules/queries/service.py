@@ -13,7 +13,7 @@ from sqlalchemy.orm import Session
 
 from ask import filter_library
 from indexing.bm25_index import build_bm25_index
-from pricing import answer_cost, vision_cost
+from pricing import model_cost
 from search.expand import expand_query
 from search.hybrid import search_by_mode
 from search.answer import generate_answer
@@ -64,9 +64,10 @@ def ask(
     answer_ms = int((time.perf_counter() - gen_start) * 1000)
 
     # Стоимость считаем только по ответному LLM-вызову — он доминирует.
-    # Цена зависит от модели: gpt-5.5 — vision-цены ($5/$30), mini — $0.75/$4.50.
-    price = vision_cost if answer_model == "gpt-5.5" else answer_cost
-    cost_usd = price(result["prompt_tokens"], result["completion_tokens"])
+    # Цена берётся из таблицы по имени модели (pricing.MODEL_PRICES_PER_M).
+    cost_usd = model_cost(
+        answer_model, result["prompt_tokens"], result["completion_tokens"]
+    )
     duration_ms = int((time.perf_counter() - started_at) * 1000)
 
     log = QueryLog(

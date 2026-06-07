@@ -14,6 +14,7 @@ import json
 import sys
 from pathlib import Path
 
+from backend.core.paths import RAW_DATA_DIR
 from pdf_processing.chunker import build_chunks
 from pdf_processing.parser import make_document_id
 
@@ -54,7 +55,7 @@ def process(pdf_name: str) -> None:
     Нарезает документ на чанки и сохраняет chunks.json.
     pdf_name — то же имя, что передавалось в main.py (например, MVL649).
     """
-    doc_dir = Path("data/raw_data") / make_document_id(pdf_name)
+    doc_dir = RAW_DATA_DIR / make_document_id(pdf_name)
     document_path = doc_dir / "document.json"
     descriptions_path = doc_dir / "descriptions.json"
     chunks_path = doc_dir / "chunks.json"

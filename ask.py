@@ -16,6 +16,7 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+from backend.core.paths import RAW_DATA_DIR
 from indexing.bm25_index import build_bm25_index
 from search.hybrid import hybrid_search
 from search.answer import generate_answer
@@ -23,7 +24,7 @@ from search.answer import generate_answer
 
 # Сколько чанков подаём в LLM (договорились на 5)
 TOP_K = 5
-DATA_ROOT = Path("data/raw_data")
+DATA_ROOT = RAW_DATA_DIR
 
 
 def load_chunks(json_path: Path) -> list[dict]:
