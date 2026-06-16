@@ -30,12 +30,14 @@ def ask(
     db: Session,
     mode: str = "hybrid",
     answer_model: str = "gpt-5.4-mini",
+    expand: bool = True,
 ) -> AskResponse:
     """Главная функция: вопрос → ответ + источники + id записи в QueryLog.
 
     document_ids=None — искать по всей библиотеке.
     mode — режим поиска (hybrid / vector / keyword), см. search.hybrid.
     answer_model — модель генерации ответа (gpt-5.4-mini / gpt-5.5).
+    expand — расширять ли запрос через LLM перед поиском (диакритика/синонимы).
     """
     started_at = time.perf_counter()
 
@@ -51,7 +53,8 @@ def ask(
 
     # Расширяем запрос для поиска (диакритика, термины, синонимы), но ответ
     # генерим по ОРИГИНАЛЬНОМУ вопросу — чтобы отвечать на то, что спросил юзер.
-    search_query = expand_query(question)
+    # Расширение можно отключить галочкой (expand=False) — тогда ищем как есть.
+    search_query = expand_query(question) if expand else question
 
     # BM25 собираем из закешированных токенов текущего набора чанков (с учётом
     # фильтра) — IDF считается по этому же набору, как и раньше.

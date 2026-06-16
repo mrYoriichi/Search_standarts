@@ -25,6 +25,10 @@ class AskRequest(BaseModel):
         default="gpt-5.4-mini",
         description="Модель генерации ответа.",
     )
+    expand: bool = Field(
+        default=True,
+        description="Расширять ли запрос через LLM (диакритика/синонимы) перед поиском.",
+    )
 
 
 class UsedChunk(BaseModel):

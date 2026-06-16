@@ -28,6 +28,7 @@ def create_query(
         db=db,
         mode=payload.mode,
         answer_model=payload.answer_model,
+        expand=payload.expand,
     )
 
 

@@ -291,6 +291,8 @@ function App() {
   const [searchMode, setSearchMode] = useState<'hybrid' | 'vector' | 'keyword'>('hybrid')
   // Модель генерации ответа.
   const [answerModel, setAnswerModel] = useState<'gpt-5.4-mini' | 'gpt-5.5'>('gpt-5.4-mini')
+  // Расширять ли запрос через LLM перед поиском (диакритика/синонимы). По умолчанию да.
+  const [expandQuery, setExpandQuery] = useState(true)
 
   // Проверяем при старте + раз в минуту: есть ли активная локальная сессия и
   // не перешла ли она в blocked (revoked / grace period истёк). Если blocked —
@@ -418,10 +420,12 @@ function App() {
         document_ids?: string[]
         mode: string
         answer_model: string
+        expand: boolean
       } = {
         question,
         mode: searchMode,
         answer_model: answerModel,
+        expand: expandQuery,
       }
       if (!searchAll) {
         body.document_ids = Array.from(selectedSlugs)
@@ -664,6 +668,15 @@ function App() {
           </div>
         </div>
 
+        <label className="flex items-center gap-2 px-1 text-sm text-muted-foreground cursor-pointer select-none">
+          <input
+            type="checkbox"
+            checked={expandQuery}
+            onChange={(e) => setExpandQuery(e.target.checked)}
+          />
+          Rozšířit dotaz (diakritika, synonyma) před hledáním
+        </label>
+
         <Textarea
           placeholder="Zadejte dotaz ke stavebním normám..."
           value={question}
@@ -684,7 +697,7 @@ function App() {
 
         {result && (
           <div className="flex flex-col gap-4">
-            {result.search_query && (
+            {result.search_query && result.search_query !== askedQuestion && (
               <p className="text-xs text-muted-foreground">
                 Hledáno jako: <span className="italic">{result.search_query}</span>
               </p>
