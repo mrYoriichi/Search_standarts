@@ -6,8 +6,7 @@ Embeddings — превращение текста в вектор (список
 смысл. Поиск по смыслу: находит близкие по содержанию чанки,
 даже если слова разные. Дополняет BM25 (точные совпадения).
 """
-import math
-
+import numpy as np
 import tiktoken
 from openai import OpenAI
 
@@ -115,25 +114,36 @@ def build_embeddings_index(chunks: list[dict]) -> tuple[dict, int]:
     return index, tokens
 
 
-def cosine_similarity(vec_a: list[float], vec_b: list[float]) -> float:
+def build_matrix_index(items: list[dict], model: str) -> dict:
     """
-    Косинусное сходство двух векторов.
+    Превращает список items (с диска) в матричный индекс для быстрого поиска.
 
-    Возвращает число от -1 до 1: чем ближе к 1, тем более
-    похожи тексты по смыслу.
+    На диске эмбеддинги лежат как списки float ({chunk_id, embedding}). Держать
+    их так в памяти дорого (на 30к чанков — гигабайты) и медленно искать (цикл
+    на Python). Поэтому при загрузке складываем все векторы в одну float32-матрицу
+    (N, D) и нормируем каждую строку (делим на длину). Тогда косинусное сходство
+    с нормированным запросом — это просто скалярное произведение, а значит весь
+    поиск — одно матричное умножение.
+
+    Формат индекса в памяти:
+      {
+        "model": имя модели эмбеддингов,
+        "chunk_ids": [...],          # порядок совпадает со строками матрицы
+        "matrix": np.ndarray (N, D), # float32, строки нормированы (L2)
+      }
     """
-    # Скалярное произведение: сумма попарных произведений
-    dot = sum(a * b for a, b in zip(vec_a, vec_b))
+    chunk_ids = [item["chunk_id"] for item in items]
+    matrix = np.asarray([item["embedding"] for item in items], dtype=np.float32)
 
-    # Длина (норма) каждого вектора: корень из суммы квадратов
-    norm_a = math.sqrt(sum(a * a for a in vec_a))
-    norm_b = math.sqrt(sum(b * b for b in vec_b))
+    # Нормируем строки: делим каждый вектор на его длину. keepdims — чтобы
+    # форма (N, 1) транслировалась на (N, D). Нулевые векторы защищаем от
+    # деления на ноль (норму подменяем на 1 — вектор остаётся нулевым).
+    if matrix.size:
+        norms = np.linalg.norm(matrix, axis=1, keepdims=True)
+        norms[norms == 0] = 1.0
+        matrix /= norms
 
-    # Защита от деления на ноль
-    if norm_a == 0 or norm_b == 0:
-        return 0.0
-
-    return dot / (norm_a * norm_b)
+    return {"model": model, "chunk_ids": chunk_ids, "matrix": matrix}
 
 
 def search_embeddings(
@@ -142,27 +152,35 @@ def search_embeddings(
     top_k: int = 5,
 ) -> list[tuple[str, float]]:
     """
-    Ищет по векторному индексу.
+    Ищет по матричному индексу (результат build_matrix_index).
 
-    index — построенный индекс (результат build_embeddings_index);
+    index — индекс с нормированной матрицей и параллельным списком chunk_ids;
     query — поисковый запрос;
     top_k — сколько лучших результатов вернуть.
 
     Возвращает список пар (chunk_id, score), отсортированный
     по убыванию смысловой близости.
     """
-    # Получаем вектор запроса (get_embeddings принимает список,
-    # поэтому передаём [query] и берём [0]). Токены тут игнорируем —
-    # для поиска цена несущественна.
+    matrix = index["matrix"]
+    chunk_ids = index["chunk_ids"]
+    if matrix.shape[0] == 0:
+        return []
+
+    # Вектор запроса (get_embeddings принимает список — даём [query], берём [0]).
+    # Токены тут игнорируем: для поиска цена несущественна.
     vectors, _ = get_embeddings([query])
-    query_embedding = vectors[0]
+    query_vec = np.asarray(vectors[0], dtype=np.float32)
+    norm = np.linalg.norm(query_vec)
+    if norm != 0:
+        query_vec /= norm
 
-    # Считаем близость запроса к каждому чанку
-    scored = []
-    for item in index["items"]:
-        score = cosine_similarity(query_embedding, item["embedding"])
-        scored.append((item["chunk_id"], score))
+    # Строки матрицы и запрос нормированы → скалярное произведение = косинус.
+    # Одно умножение (N, D) @ (D,) даёт сразу все N оценок.
+    scores = matrix @ query_vec
 
-    # Сортируем по убыванию близости, берём top_k
-    scored.sort(key=lambda pair: pair[1], reverse=True)
-    return scored[:top_k]
+    # Берём top_k без полной сортировки всех N: argpartition выносит k лучших
+    # вперёд за O(N), затем сортируем только эти k.
+    k = min(top_k, scores.shape[0])
+    top_idx = np.argpartition(-scores, k - 1)[:k]
+    top_idx = top_idx[np.argsort(-scores[top_idx])]
+    return [(chunk_ids[i], float(scores[i])) for i in top_idx]

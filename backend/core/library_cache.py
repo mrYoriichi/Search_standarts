@@ -16,7 +16,11 @@
 import threading
 from pathlib import Path
 
+import numpy as np
+
 from ask import load_library
+from indexing.bm25_index import tokenize_chunk
+from indexing.embeddings_index import build_matrix_index
 from backend.core.paths import RAW_DATA_DIR
 
 
@@ -27,6 +31,9 @@ DATA_ROOT = RAW_DATA_DIR
 # потоках — замок защищает от гонки при одновременной загрузке/сбросе.
 _lock = threading.Lock()
 _cache: tuple[list[dict], dict] | None = None
+# Токены BM25 по chunk_id. Считаются один раз; на каждый вопрос строим BM25 из
+# них, а не токенизируем корпус заново. Сбрасывается вместе с _cache.
+_tokens_cache: dict[str, list[str]] | None = None
 
 
 def _shared_data_root() -> Path | None:
@@ -62,7 +69,8 @@ def _load_merged() -> tuple[list[dict], dict]:
         roots.append(shared)
 
     all_chunks: list[dict] = []
-    all_items: list[dict] = []
+    all_chunk_ids: list[str] = []
+    matrices: list[np.ndarray] = []
     model: str | None = None
     for root in roots:
         if not root.exists():
@@ -79,11 +87,15 @@ def _load_merged() -> tuple[list[dict], dict]:
                 f"({model} ≠ {index['model']}). Они несовместимы."
             )
         all_chunks.extend(chunks)
-        all_items.extend(index["items"])
+        all_chunk_ids.extend(index["chunk_ids"])
+        matrices.append(index["matrix"])
 
     if not all_chunks:
         raise RuntimeError("Нет ни одного готового документа.")
-    return all_chunks, {"model": model, "items": all_items}
+    # Матрицы пулов уже нормированы (build_matrix_index) — просто составляем их
+    # в одну. Порядок строк совпадает с порядком all_chunk_ids.
+    matrix = np.vstack(matrices)
+    return all_chunks, {"model": model, "chunk_ids": all_chunk_ids, "matrix": matrix}
 
 
 def get_library() -> tuple[list[dict], dict]:
@@ -95,8 +107,26 @@ def get_library() -> tuple[list[dict], dict]:
         return _cache
 
 
+def get_tokens() -> dict[str, list[str]]:
+    """Возвращает {chunk_id: токены BM25}. Считает один раз по чанкам кеша.
+
+    Запрашивается после get_library() — токенизируем тот же набор чанков. На
+    каждый вопрос BM25 собираем из этих токенов (build_bm25_from_tokens), не
+    прогоняя regex по всему корпусу заново.
+    """
+    global _cache, _tokens_cache
+    with _lock:
+        if _tokens_cache is None:
+            if _cache is None:
+                _cache = _load_merged()
+            chunks = _cache[0]
+            _tokens_cache = {c["chunk_id"]: tokenize_chunk(c) for c in chunks}
+        return _tokens_cache
+
+
 def invalidate() -> None:
-    """Сбрасывает кеш — следующий get_library() перечитает диск."""
-    global _cache
+    """Сбрасывает кеши — следующий get_library()/get_tokens() перечитает диск."""
+    global _cache, _tokens_cache
     with _lock:
         _cache = None
+        _tokens_cache = None

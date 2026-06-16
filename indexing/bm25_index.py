@@ -22,36 +22,52 @@ def tokenize(text: str) -> list[str]:
     return tokens
 
 
+def tokenize_chunk(chunk: dict) -> list[str]:
+    """
+    Токенизирует один чанк для BM25: «шапка» (название документа, заголовки) +
+    содержание. Так поиск находит и по содержанию, и по контексту раздела.
+
+    Вынесено отдельно, чтобы токены можно было посчитать один раз и закешировать
+    (см. backend/core/library_cache.py) — на каждый вопрос regex по всему корпусу
+    не гоняем.
+    """
+    searchable_text = " ".join([
+        chunk.get("document_title", ""),
+        chunk.get("parent_section", ""),
+        chunk.get("section_title", ""),
+        chunk.get("text", ""),
+    ])
+    return tokenize(searchable_text)
+
+
+def build_bm25_from_tokens(
+    tokenized_corpus: list[list[str]],
+    chunk_ids: list[str],
+) -> tuple[BM25Okapi, list[str]]:
+    """
+    Строит BM25-индекс из уже токенизированных чанков.
+
+    tokenized_corpus и chunk_ids идут в одном порядке. Сам BM25Okapi считает
+    статистику корпуса (IDF) по переданному набору — поэтому при поиске по
+    выбранным документам сюда передают токены только этих чанков.
+
+    Возвращает (BM25-индекс, список chunk_id в порядке индекса).
+    """
+    return BM25Okapi(tokenized_corpus), chunk_ids
+
+
 def build_bm25_index(chunks: list[dict]) -> tuple[BM25Okapi, list[str]]:
     """
-    Строит BM25-индекс по списку чанков.
+    Строит BM25-индекс по списку чанков (токенизация на месте).
 
-    Для индекса используем текст чанка вместе с его «шапкой»
-    (название документа, заголовки) — чтобы поиск находил
-    и по содержанию, и по контексту раздела.
+    Удобно для CLI/тестов, где кеша токенов нет. В backend используется путь
+    через build_bm25_from_tokens с закешированными токенами.
 
-    Возвращает кортеж:
-      - сам BM25-индекс;
-      - список chunk_id в том же порядке, что и документы в индексе
-        (нужен, чтобы по результату поиска понять, какой это чанк).
+    Возвращает (BM25-индекс, список chunk_id в порядке индекса).
     """
-    tokenized_corpus = []  # список токенизированных текстов
-    chunk_ids = []         # chunk_id в том же порядке
-
-    for chunk in chunks:
-        # Собираем текст для индексации: шапка + содержание
-        searchable_text = " ".join([
-            chunk.get("document_title", ""),
-            chunk.get("parent_section", ""),
-            chunk.get("section_title", ""),
-            chunk.get("text", ""),
-        ])
-        tokenized_corpus.append(tokenize(searchable_text))
-        chunk_ids.append(chunk["chunk_id"])
-
-    # BM25Okapi принимает список токенизированных документов
-    index = BM25Okapi(tokenized_corpus)
-    return index, chunk_ids
+    tokenized_corpus = [tokenize_chunk(chunk) for chunk in chunks]
+    chunk_ids = [chunk["chunk_id"] for chunk in chunks]
+    return build_bm25_from_tokens(tokenized_corpus, chunk_ids)
 
 
 def search_bm25(

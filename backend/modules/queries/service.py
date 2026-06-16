@@ -12,7 +12,7 @@ import time
 from sqlalchemy.orm import Session
 
 from ask import filter_library
-from indexing.bm25_index import build_bm25_index
+from indexing.bm25_index import build_bm25_from_tokens
 from pricing import model_cost
 from search.expand import expand_query
 from search.hybrid import search_by_mode
@@ -42,6 +42,7 @@ def ask(
     # Библиотека лежит в памяти (см. backend/core/library_cache.py) — с диска
     # читаем только при первом вопросе и после изменений библиотеки.
     chunks, embeddings_index = library_cache.get_library()
+    tokens_by_id = library_cache.get_tokens()
 
     if document_ids:
         chunks, embeddings_index = filter_library(
@@ -52,7 +53,11 @@ def ask(
     # генерим по ОРИГИНАЛЬНОМУ вопросу — чтобы отвечать на то, что спросил юзер.
     search_query = expand_query(question)
 
-    bm25 = build_bm25_index(chunks)
+    # BM25 собираем из закешированных токенов текущего набора чанков (с учётом
+    # фильтра) — IDF считается по этому же набору, как и раньше.
+    tokenized = [tokens_by_id[c["chunk_id"]] for c in chunks]
+    chunk_ids = [c["chunk_id"] for c in chunks]
+    bm25 = build_bm25_from_tokens(tokenized, chunk_ids)
     found_ids = search_by_mode(bm25, embeddings_index, search_query, mode)
 
     chunks_by_id = {c["chunk_id"]: c for c in chunks}

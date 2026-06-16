@@ -16,8 +16,11 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+import numpy as np
+
 from backend.core.paths import RAW_DATA_DIR
 from indexing.bm25_index import build_bm25_index
+from indexing.embeddings_index import build_matrix_index
 from search.hybrid import hybrid_search
 from search.answer import generate_answer
 
@@ -50,8 +53,9 @@ def load_library(data_root: Path) -> tuple[list[dict], dict]:
     векторы из разных моделей несравнимы. Если встретим разные модели,
     падаем с понятной ошибкой.
 
-    Возвращает (chunks, embeddings_index) — тот же формат, что и для одного
-    документа, чтобы остальной код (BM25, гибридный поиск) не менялся.
+    Возвращает (chunks, embeddings_index), где embeddings_index — матричный
+    индекс для поиска (см. build_matrix_index): векторы всех документов собраны
+    в одну нормированную float32-матрицу.
     """
     all_chunks: list[dict] = []
     all_items: list[dict] = []
@@ -84,7 +88,7 @@ def load_library(data_root: Path) -> tuple[list[dict], dict]:
     if not all_chunks:
         raise RuntimeError(f"В {data_root} нет ни одного готового документа.")
 
-    return all_chunks, {"model": model, "items": all_items}
+    return all_chunks, build_matrix_index(all_items, model)
 
 
 def filter_library(
@@ -96,13 +100,20 @@ def filter_library(
     Оставляет в библиотеке только чанки и эмбеддинги из выбранных документов.
     Формат входа/выхода тот же — дальше BM25 и гибридный поиск работают как раньше.
 
-    Items эмбеддингов не знают про document_id (там только chunk_id),
-    поэтому фильтруем их по chunk_id отобранных чанков.
+    Матрица эмбеддингов не знает про document_id (только порядок строк ↔
+    chunk_ids), поэтому строим булеву маску по chunk_id отобранных чанков и
+    режем ей и матрицу, и список chunk_ids одинаково.
     """
     chunks_f = [c for c in chunks if c["document_id"] in allowed_ids]
     allowed_chunk_ids = {c["chunk_id"] for c in chunks_f}
-    items_f = [it for it in embeddings_index["items"] if it["chunk_id"] in allowed_chunk_ids]
-    return chunks_f, {"model": embeddings_index["model"], "items": items_f}
+
+    chunk_ids = embeddings_index["chunk_ids"]
+    mask = np.array([cid in allowed_chunk_ids for cid in chunk_ids], dtype=bool)
+    return chunks_f, {
+        "model": embeddings_index["model"],
+        "chunk_ids": [cid for cid, keep in zip(chunk_ids, mask) if keep],
+        "matrix": embeddings_index["matrix"][mask],
+    }
 
 
 def select_scope(doc_ids: list[str]) -> set[str]:
