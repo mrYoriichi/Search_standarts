@@ -25,8 +25,9 @@ AppVersion={#MyAppVersion}
 AppPublisher={#MyAppPublisher}
 DefaultDirName={autopf}\{#MyAppName}
 DefaultGroupName={#MyAppName}
-; Ставим в Program Files → нужны права администратора.
-PrivilegesRequired=admin
+; Ставим для текущего пользователя (в %LOCALAPPDATA%\Programs) → права администратора НЕ нужны.
+; При lowest {autopf} автоматически = {localappdata}\Programs.
+PrivilegesRequired=lowest
 ; Приложение 64-битное (torch/docling) — ставим в 64-битный Program Files.
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
