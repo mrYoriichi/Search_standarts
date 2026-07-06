@@ -5,6 +5,7 @@
 документ ("text") — TZ, статический расчёт, seznam příloh и т.п.
 """
 
+import shutil
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -127,10 +128,16 @@ def scan_archive(root: Path) -> ArchiveScanResult:
 def sync_archive(db: Session, root: Path) -> ArchiveScanSummary:
     """Сканирует папку архива и синхронизирует таблицу project_documents.
 
-    Новые файлы — вставляем со статусом "pending" (индексация — этап 2).
+    Новые файлы — вставляем со статусом "pending".
     Существующие — обновляем путь/тип/страницы (файл мог переехать).
-    Пропавшие с диска — только считаем, из БД не удаляем (решает юзер).
+    Пропавшие с диска — удаляем из БД вместе с индексами (наши артефакты
+    в projects_data; файлы юзера не трогаем). Удалил проект из папки →
+    «Skenovat» → проект ушёл и из поиска. Повторная обработка — заново
+    за деньги, поэтому удаление папки = осознанное действие юзера.
     """
+    from backend.core import library_cache
+    from backend.core.paths import PROJECTS_DATA_DIR
+
     result = scan_archive(root)
 
     existing = {
@@ -159,8 +166,20 @@ def sync_archive(db: Session, root: Path) -> ArchiveScanSummary:
             doc.doc_type = found.doc_type
             doc.page_count = found.page_count
 
-    missing = len([slug for slug in existing if slug not in found_slugs])
+    removed = 0
+    for slug, doc in existing.items():
+        if slug in found_slugs:
+            continue
+        if doc.status == "processing":
+            continue  # обрабатывается прямо сейчас — не выдёргиваем из-под ног
+        shutil.rmtree(PROJECTS_DATA_DIR / slug, ignore_errors=True)
+        db.delete(doc)
+        removed += 1
+
     db.commit()
+    if removed:
+        library_cache.invalidate()
+    missing = removed
 
     return ArchiveScanSummary(
         found=len(result.documents),

@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
+import ArchivePage from './ArchivePage'
 import LibraryPage from './LibraryPage'
 import SharedLibraryPage from './SharedLibraryPage'
 import LoginPage from './LoginPage'
@@ -62,7 +63,67 @@ type LibraryResponse = {
   orphans: unknown[]
 }
 
-type View = 'search' | 'library' | 'shared' | 'settings'
+type ArchiveDocument = {
+  slug: string
+  project: string
+  relative_path: string
+  status: string
+}
+
+type ArchiveApiResponse = {
+  path: string | null
+  projects: { name: string; documents: ArchiveDocument[] }[]
+}
+
+// Превращает плоский ответ /api/projects в дерево формы LibraryFolder,
+// чтобы переиспользовать FilterTree без изменений. Вложенность строится
+// из relative_path (проект / подпапки раздела / файл).
+function buildArchiveTree(archive: ArchiveApiResponse): LibraryFolder {
+  const root: LibraryFolder = {
+    name: 'Archiv projektů',
+    path: '',
+    folders: [],
+    files: [],
+  }
+  function ensureFolder(
+    parent: LibraryFolder,
+    name: string,
+    path: string,
+  ): LibraryFolder {
+    let folder = parent.folders.find((f) => f.name === name)
+    if (!folder) {
+      folder = { name, path, folders: [], files: [] }
+      parent.folders.push(folder)
+    }
+    return folder
+  }
+  for (const project of archive.projects) {
+    for (const doc of project.documents) {
+      const parts = doc.relative_path.split('/')
+      let node = root
+      let accPath = ''
+      for (const part of parts.slice(0, -1)) {
+        accPath = accPath ? `${accPath}/${part}` : part
+        node = ensureFolder(node, part, accPath)
+      }
+      node.files.push({
+        name: parts[parts.length - 1],
+        path: doc.relative_path,
+        slug: doc.slug,
+        status:
+          doc.status === 'ready'
+            ? 'ready'
+            : doc.status === 'processing'
+              ? 'processing'
+              : null,
+        pinned: false,
+      })
+    }
+  }
+  return root
+}
+
+type View = 'search' | 'library' | 'shared' | 'archive' | 'settings'
 
 
 // Собирает slug'и всех индексированных (ready) PDF в папке, включая подпапки.
@@ -166,22 +227,38 @@ function FileCheckbox({
 
 
 function SourceLink({ src }: { src: Source }) {
-  const firstPage = src.pages[0]
-  const href = `/api/library/pdf/${src.slug}${firstPage ? `#page=${firstPage}` : ''}`
+  // Каждая страница — своя ссылка: чанк может покрывать диапазон страниц,
+  // и юзер прыгает сразу на нужную, вместо листания с первой.
+  const base = `/api/library/pdf/${src.slug}`
   return (
-    <a
-      href={href}
-      target="_blank"
-      rel="noopener noreferrer"
-      className="hover:underline"
-      title="Otevřít PDF na této stránce"
-    >
-      <span className="font-medium">{src.document}</span>
-      {' / '}
-      <span>{src.section}</span>
+    <span>
+      <a
+        href={`${base}${src.pages[0] ? `#page=${src.pages[0]}` : ''}`}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="hover:underline"
+        title="Otevřít PDF"
+      >
+        <span className="font-medium">{src.document}</span>
+        {' / '}
+        <span>{src.section}</span>
+      </a>
       {' / s. '}
-      <span>{src.pages.join(', ')}</span>
-    </a>
+      {src.pages.map((page, i) => (
+        <span key={page}>
+          {i > 0 && ', '}
+          <a
+            href={`${base}#page=${page}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="underline hover:no-underline"
+            title={`Otevřít PDF na straně ${page}`}
+          >
+            {page}
+          </a>
+        </span>
+      ))}
+    </span>
   )
 }
 
@@ -284,6 +361,8 @@ function App() {
   const [library, setLibrary] = useState<LibraryResponse | null>(null)
   // Общая база (read-only пул владельца). null — не задана или пуста.
   const [sharedLibrary, setSharedLibrary] = useState<LibraryResponse | null>(null)
+  // Архив проектов (дерево уже в форме LibraryFolder). null — не задан/пуст.
+  const [archiveTree, setArchiveTree] = useState<LibraryFolder | null>(null)
   const [selectedSlugs, setSelectedSlugs] = useState<Set<string>>(new Set())
   // По умолчанию ищем во всех — самый частый кейс. При снятии открывается дерево.
   const [searchAll, setSearchAll] = useState(true)
@@ -355,8 +434,11 @@ function App() {
 
   // Дерево библиотеки тянем только после логина — иначе бэк ответил бы 401
   // в защищённой версии, и форма «Где искать» всё равно бесполезна.
+  // Зависимость от view: возврат на «Vyhledávání» перечитывает деревья —
+  // фоновый скан мог дообработать документы, фильтр не должен устареть.
   useEffect(() => {
     if (auth.phase !== 'authenticated') return
+    if (view !== 'search') return
     fetch('/api/library')
       .then((res) => (res.ok ? res.json() : null))
       .then((data: LibraryResponse | null) => setLibrary(data))
@@ -367,13 +449,21 @@ function App() {
       .then((res) => (res.ok ? res.json() : null))
       .then((data: LibraryResponse | null) => setSharedLibrary(data))
       .catch(() => setSharedLibrary(null))
-  }, [auth.phase])
+    // Архив проектов — третий пул для фильтра.
+    fetch('/api/projects')
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data: ArchiveApiResponse | null) =>
+        setArchiveTree(data ? buildArchiveTree(data) : null),
+      )
+      .catch(() => setArchiveTree(null))
+  }, [auth.phase, view])
 
   async function handleLogout() {
     await fetch('/api/auth/logout', { method: 'POST' })
     setAuth({ phase: 'anonymous' })
     setLibrary(null)
     setSharedLibrary(null)
+    setArchiveTree(null)
     setResult(null)
   }
 
@@ -548,11 +638,24 @@ function App() {
           >
             Knihovna obecná
           </button>
+          <button
+            onClick={() => setView('archive')}
+            className={
+              'px-4 py-2 text-sm border-b-2 -mb-px ' +
+              (view === 'archive'
+                ? 'border-foreground font-medium'
+                : 'border-transparent text-muted-foreground hover:text-foreground')
+            }
+          >
+            Archiv projektů
+          </button>
         </nav>
 
         {view === 'library' && <LibraryPage />}
 
         {view === 'shared' && <SharedLibraryPage />}
+
+        {view === 'archive' && <ArchivePage />}
 
         {view === 'settings' && <SettingsPage />}
 
@@ -567,7 +670,10 @@ function App() {
             const sharedReady = sharedLibrary
               ? collectReadySlugs(sharedLibrary.tree).length
               : 0
-            if (userReady + sharedReady === 0) {
+            const archiveReady = archiveTree
+              ? collectReadySlugs(archiveTree).length
+              : 0
+            if (userReady + sharedReady + archiveReady === 0) {
               return (
                 <p className="text-sm text-muted-foreground">
                   Žádné indexované dokumenty. Přejděte do „Knihovny“ a klikněte na „Skenovat“.
@@ -607,6 +713,20 @@ function App() {
                       </p>
                       <FilterTree
                         folder={sharedLibrary.tree}
+                        selectedSlugs={selectedSlugs}
+                        searchAll={searchAll}
+                        onToggleFile={toggleSlug}
+                        onToggleFolder={toggleFolder}
+                      />
+                    </div>
+                  )}
+                  {archiveReady > 0 && archiveTree && (
+                    <div className="flex-1">
+                      <p className="text-xs font-medium text-muted-foreground mb-1">
+                        Archiv projektů
+                      </p>
+                      <FilterTree
+                        folder={archiveTree}
                         selectedSlugs={selectedSlugs}
                         searchAll={searchAll}
                         onToggleFile={toggleSlug}
