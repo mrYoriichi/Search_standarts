@@ -275,5 +275,11 @@ def run_project_pipeline(slug: str, pdf_path: str) -> None:
         doc.status = "ready"
         doc.error = None
         db.commit()
+
+        # Новые чанки/эмбеддинги на диске — сбрасываем кеш, чтобы следующий
+        # вопрос увидел свежий документ (пул архива влит в общий кеш поиска).
+        from backend.core import library_cache
+
+        library_cache.invalidate()
     finally:
         db.close()

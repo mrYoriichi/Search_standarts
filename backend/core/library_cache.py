@@ -21,7 +21,7 @@ import numpy as np
 from ask import load_library
 from indexing.bm25_index import tokenize_chunk
 from indexing.embeddings_index import build_matrix_index
-from backend.core.paths import RAW_DATA_DIR
+from backend.core.paths import PROJECTS_DATA_DIR, RAW_DATA_DIR
 
 
 # Пул юзера: индексы локально обработанных документов.
@@ -57,9 +57,10 @@ def _shared_data_root() -> Path | None:
 
 
 def _load_merged() -> tuple[list[dict], dict]:
-    """Сливает пул юзера и общую базу в один (chunks, embeddings_index).
+    """Сливает пулы в один (chunks, embeddings_index): нормы юзера,
+    общая база, архив проектов.
 
-    Оба пула обязаны быть на одной модели эмбеддингов — векторы из разных
+    Все пулы обязаны быть на одной модели эмбеддингов — векторы из разных
     моделей несравнимы. Пустой/отсутствующий пул тихо пропускаем; ошибка только
     если готовых документов нет нигде.
     """
@@ -67,6 +68,8 @@ def _load_merged() -> tuple[list[dict], dict]:
     shared = _shared_data_root()
     if shared is not None:
         roots.append(shared)
+    if PROJECTS_DATA_DIR.exists():
+        roots.append(PROJECTS_DATA_DIR)
 
     all_chunks: list[dict] = []
     all_chunk_ids: list[str] = []
@@ -83,7 +86,7 @@ def _load_merged() -> tuple[list[dict], dict]:
             model = index["model"]
         elif model != index["model"]:
             raise RuntimeError(
-                "Пул юзера и общая база построены разными моделями эмбеддингов "
+                "Пулы построены разными моделями эмбеддингов "
                 f"({model} ≠ {index['model']}). Они несовместимы."
             )
         all_chunks.extend(chunks)

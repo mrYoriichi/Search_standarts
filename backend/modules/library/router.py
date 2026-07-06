@@ -106,10 +106,10 @@ def scan_library(
 
 @router.get("/library/pdf/{slug}")
 def get_pdf(slug: str, db: Session = Depends(get_session)) -> FileResponse:
-    """Отдаёт PDF по slug — для просмотра в браузере. Ищет в обоих пулах.
+    """Отдаёт PDF по slug — для просмотра в браузере. Ищет во всех пулах.
 
-    Сначала папка юзера, потом общая база (`<shared>/pdfs`) — источник в ответе
-    может быть из любого пула. Браузер сам поддерживает фрагмент `#page=N`.
+    Папка юзера → общая база (`<shared>/pdfs`) → архив проектов — источник в
+    ответе может быть из любого пула. Браузер сам поддерживает `#page=N`.
     """
     library_path = settings_service.get_library_path(db)
     pdf_path = (
@@ -121,6 +121,19 @@ def get_pdf(slug: str, db: Session = Depends(get_session)) -> FileResponse:
         shared = settings_service.get_shared_library_path(db)
         if shared is not None:
             pdf_path = service.find_pdf_by_slug(Path(shared) / "pdfs", slug)
+    if pdf_path is None:
+        # Архив проектов: точный путь знает БД (slug уникален по архиву).
+        from backend.modules.projects.models import ProjectDocument
+        from sqlalchemy import select
+
+        projects_path = settings_service.get_projects_path(db)
+        pdoc = db.scalar(
+            select(ProjectDocument).where(ProjectDocument.slug == slug)
+        )
+        if projects_path and pdoc is not None:
+            candidate = Path(projects_path) / pdoc.relative_path
+            if candidate.exists():
+                pdf_path = candidate
     if pdf_path is None:
         raise HTTPException(
             status_code=404, detail=f"PDF для slug={slug} не найден"
