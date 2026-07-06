@@ -57,6 +57,25 @@ def set_shared_library_path(
     return LibraryPathResponse(path=saved)
 
 
+@router.get("/settings/projects", response_model=LibraryPathResponse)
+def get_projects_path(db: Session = Depends(get_session)) -> LibraryPathResponse:
+    """Возвращает путь к папке архива проектов. None — путь не задан."""
+    return LibraryPathResponse(path=service.get_projects_path(db))
+
+
+@router.put("/settings/projects", response_model=LibraryPathResponse)
+def set_projects_path(
+    body: LibraryPathRequest,
+    db: Session = Depends(get_session),
+) -> LibraryPathResponse:
+    """Сохраняет путь к папке архива проектов. Валидирует, что папка существует."""
+    try:
+        saved = service.set_projects_path(db, body.path)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return LibraryPathResponse(path=saved)
+
+
 @router.get("/settings/vision-model", response_model=VisionModelSetting)
 def get_vision_model(db: Session = Depends(get_session)) -> VisionModelSetting:
     """Текущая vision-модель для обработки документов."""

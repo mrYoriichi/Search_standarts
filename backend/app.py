@@ -40,6 +40,8 @@ from backend.modules.documents.models import Document
 from backend.modules.documents.pipeline import run_pipeline
 from backend.modules.documents.router import router as documents_router
 from backend.modules.health.router import router as health_router
+from backend.modules.projects.models import ProjectDocument  # noqa: F401 — для create_all
+from backend.modules.projects.router import router as projects_router
 from backend.modules.library.router import router as library_router
 from backend.modules.queries.router import router as queries_router
 from backend.modules.settings import service as settings_service
@@ -113,6 +115,7 @@ app.include_router(queries_router, prefix="/api", tags=["queries"], dependencies
 app.include_router(documents_router, prefix="/api", tags=["documents"], dependencies=protected)
 app.include_router(settings_router, prefix="/api", tags=["settings"], dependencies=protected)
 app.include_router(library_router, prefix="/api", tags=["library"], dependencies=protected)
+app.include_router(projects_router, prefix="/api", tags=["projects"], dependencies=protected)
 
 # Собранный фронтенд отдаём с корня — ПОСЛЕ всех /api-роутеров (mount на "/" ловит
 # всё остальное). html=True → index.html на "/". В dev без сборки папки нет —

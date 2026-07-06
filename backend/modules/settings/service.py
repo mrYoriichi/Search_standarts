@@ -18,6 +18,9 @@ SHARED_LIBRARY_PATH_KEY = "shared_library_path"
 # Закреплённые документы общей базы. У них нет строки в documents (пул read-only),
 # поэтому пины храним отдельным списком slug'ов (JSON) здесь.
 SHARED_PINNED_KEY = "shared_pinned_slugs"
+# Папка архива проектов юзера (личный пул). Структура: {проект}/.../файл.pdf,
+# проект = папка первого уровня. См. модуль projects.
+PROJECTS_PATH_KEY = "projects_library_path"
 # Vision-модель для обработки документов (рычаг стоимости: vision ~99% цены дока).
 # Дефолт совпадает с VISION_MODEL в pdf_processing/image_description.py.
 VISION_MODEL_KEY = "vision_model"
@@ -107,6 +110,17 @@ def toggle_shared_pin(db: Session, slug: str) -> bool:
         setting.value = value
     db.commit()
     return now_pinned
+
+
+def get_projects_path(db: Session) -> str | None:
+    """Возвращает путь к папке архива проектов или None, если не задан."""
+    setting = db.scalar(select(Setting).where(Setting.key == PROJECTS_PATH_KEY))
+    return setting.value if setting else None
+
+
+def set_projects_path(db: Session, raw_path: str) -> str:
+    """Сохраняет путь к папке архива проектов юзера."""
+    return _set_path(db, PROJECTS_PATH_KEY, raw_path)
 
 
 def get_vision_model(db: Session) -> str:
