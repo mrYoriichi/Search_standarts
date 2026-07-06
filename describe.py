@@ -56,13 +56,19 @@ def find_pages_with_visuals(document: dict) -> list[int]:
     return sorted(page_numbers)
 
 
-def process(pdf_name: str, vision_model: str = VISION_MODEL) -> None:
+def process(
+    pdf_name: str,
+    vision_model: str = VISION_MODEL,
+    doc_dir: Path | None = None,
+) -> None:
     """
     Описывает схемы и метаданные документа, результат пишет в descriptions.json.
     pdf_name — то же имя, что передавалось в main.py (например, MVL649).
     vision_model — модель vision LLM (рычаг стоимости; см. настройку vision_model).
+    doc_dir — папка документа; по умолчанию data/raw_data/<id> (нормы),
+    архив проектов передаёт свою (projects_data/<slug>).
     """
-    doc_dir = RAW_DATA_DIR / make_document_id(pdf_name)
+    doc_dir = doc_dir or (RAW_DATA_DIR / make_document_id(pdf_name))
     document_path = doc_dir / "document.json"
     descriptions_path = doc_dir / "descriptions.json"
 

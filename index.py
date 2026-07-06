@@ -1,3 +1,4 @@
+
 """
 Этап 4: построение векторного индекса по чанкам.
 
@@ -39,12 +40,14 @@ def save_index(index: dict, json_path: Path) -> None:
         json.dump(index, f, ensure_ascii=False, indent=2)
 
 
-def process(pdf_name: str) -> None:
+def process(pdf_name: str, doc_dir: Path | None = None) -> None:
     """
     Строит векторный индекс по chunks.json и сохраняет embeddings.json.
     pdf_name — то же имя, что передавалось в main.py (например, MVL649).
+    doc_dir — папка документа; по умолчанию data/raw_data/<id> (нормы),
+    архив проектов передаёт свою (projects_data/<slug>).
     """
-    doc_dir = RAW_DATA_DIR / make_document_id(pdf_name)
+    doc_dir = doc_dir or (RAW_DATA_DIR / make_document_id(pdf_name))
     chunks_path = doc_dir / "chunks.json"
     index_path = doc_dir / "embeddings.json"
     document_path = doc_dir / "document.json"

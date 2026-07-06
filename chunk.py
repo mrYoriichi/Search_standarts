@@ -50,12 +50,14 @@ def merge_descriptions(document: dict, descriptions: dict) -> None:
                 block["description"] = description
 
 
-def process(pdf_name: str) -> None:
+def process(pdf_name: str, doc_dir: Path | None = None) -> None:
     """
     Нарезает документ на чанки и сохраняет chunks.json.
     pdf_name — то же имя, что передавалось в main.py (например, MVL649).
+    doc_dir — папка документа; по умолчанию data/raw_data/<id> (нормы),
+    архив проектов передаёт свою (projects_data/<slug>).
     """
-    doc_dir = RAW_DATA_DIR / make_document_id(pdf_name)
+    doc_dir = doc_dir or (RAW_DATA_DIR / make_document_id(pdf_name))
     document_path = doc_dir / "document.json"
     descriptions_path = doc_dir / "descriptions.json"
     chunks_path = doc_dir / "chunks.json"

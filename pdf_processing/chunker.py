@@ -250,6 +250,30 @@ def build_chunks(document: dict) -> list[dict]:
 
     close_current()
 
+    # Фоллбек: документ без заголовков ур.1/2 (в архивах проектов — частое
+    # дело: seznam příloh, выписки). Нарезка выше дала 0 чанков, но контент
+    # есть — берём «страница = чанк», чтобы документ не потерялся молча.
+    if not chunks:
+        for page in document["pages"]:
+            useful = [b for b in page["blocks"] if is_block_useful(b)]
+            if not useful:
+                continue
+            first_heading = next(
+                (b["text"].strip() for b in useful if b["type"] == "heading"), ""
+            )
+            chunks.append({
+                "document_id": document_id,
+                "document_title": doc_title,
+                "document_summary": doc_summary,
+                "parent_section": "",
+                "section_number": "",
+                "section_title": first_heading,
+                "text": build_chunk_text(useful),
+                "pages": [page["page_number"]],
+                "related_blocks": [b["block_id"] for b in useful],
+                "_blocks": list(useful),
+            })
+
     # Дробим большие чанки
     result = []
     for chunk in chunks:

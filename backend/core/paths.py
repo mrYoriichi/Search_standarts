@@ -65,6 +65,8 @@ DATA_DIR = _resolve_data_dir()
 DB_PATH = DATA_DIR / "app.db"
 RAW_DATA_DIR = DATA_DIR / "data" / "raw_data"
 PDF_STORAGE_DIR = DATA_DIR / "data" / "pdfs"
+# Пул архива проектов: индексы по slug, отдельно от норм (raw_data).
+PROJECTS_DATA_DIR = DATA_DIR / "data" / "projects_data"
 
 # Собранный фронтенд (Vite кладёт сюда; в .exe попадает как bundled-ресурс).
 FRONTEND_DIST = _bundle_root() / "frontend" / "dist"

@@ -40,7 +40,8 @@ from backend.modules.documents.models import Document
 from backend.modules.documents.pipeline import run_pipeline
 from backend.modules.documents.router import router as documents_router
 from backend.modules.health.router import router as health_router
-from backend.modules.projects.models import ProjectDocument  # noqa: F401 — для create_all
+from backend.modules.projects.models import ProjectDocument
+from backend.modules.projects.pipeline import run_project_pipeline
 from backend.modules.projects.router import router as projects_router
 from backend.modules.library.router import router as library_router
 from backend.modules.queries.router import router as queries_router
@@ -80,6 +81,22 @@ async def lifespan(app: FastAPI):
                 pdf_path = str(Path(library_path) / doc.relative_path)
             executor.submit(run_pipeline, doc.slug, pdf_path)
             print(f"[startup] Возобновлён pipeline для {doc.slug}")
+
+        # То же для архива проектов: застрявшие в processing после падения.
+        projects_path = settings_service.get_projects_path(db)
+        if projects_path:
+            stuck_projects = db.scalars(
+                select(ProjectDocument).where(
+                    ProjectDocument.status == "processing"
+                )
+            ).all()
+            for pdoc in stuck_projects:
+                executor.submit(
+                    run_project_pipeline,
+                    pdoc.slug,
+                    str(Path(projects_path) / pdoc.relative_path),
+                )
+                print(f"[startup] Возобновлён pipeline архива для {pdoc.slug}")
     finally:
         db.close()
 

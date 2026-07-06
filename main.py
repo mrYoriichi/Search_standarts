@@ -62,23 +62,33 @@ def save_page_images(
     return saved_paths
 
 
-def process(pdf_name: str, pdf_path: str | None = None) -> None:
+def process(
+    pdf_name: str,
+    pdf_path: str | None = None,
+    doc_dir: Path | None = None,
+    document_id: str | None = None,
+) -> None:
     """
     Разбирает один PDF и сохраняет результат в data/raw_data/<document_id>/.
     pdf_name — имя файла БЕЗ расширения.
     pdf_path — полный путь к PDF. Если не задан, берётся data/pdfs/<pdf_name>.pdf
     (старое поведение для CLI и upload-flow). Сканирование папки библиотеки
     передаёт сюда путь к PDF прямо из папки юзера.
+    doc_dir — папка результатов. Если не задана — data/raw_data/<document_id>
+    (нормы). Архив проектов передаёт свой пул (projects_data/<slug>).
+    document_id — переопределяет id из имени файла. Архив проектов передаёт
+    slug вида {проект}__{файл} — имена файлов между проектами повторяются.
     """
     if pdf_path is None:
         pdf_path = str(PDF_STORAGE_DIR / f"{pdf_name}.pdf")
-    output_root = RAW_DATA_DIR
 
     print(f"Читаю {pdf_path}, подожди...")
     document, page_images = parse_pdf(pdf_path)
+    if document_id:
+        document["document_id"] = document_id
 
-    # Папка документа: data/raw_data/<document_id>/
-    doc_dir = output_root / document["document_id"]
+    # Папка документа: data/raw_data/<document_id>/ или переданный пул
+    doc_dir = doc_dir or (RAW_DATA_DIR / document["document_id"])
     doc_dir.mkdir(parents=True, exist_ok=True)
 
     # Решаем, какие страницы сохранять, и сохраняем их.
