@@ -73,7 +73,7 @@ def process(pdf_name: str, doc_dir: Path | None = None) -> None:
 
     # ---- Сводка по стоимости ----
     usd = embedding_cost(tokens)
-    print(f"\n=== Стоимость embeddings ===")
+    print("\n=== Стоимость embeddings ===")
     print(f"  Страниц в документе: {total_pages}")
     print(f"  Чанков:              {len(chunks)}")
     print(f"  Токены:              {tokens}")

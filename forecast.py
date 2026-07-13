@@ -89,7 +89,7 @@ def forecast_single(pdf_path: Path) -> None:
     print(f"PDF: {pdf_path.name}")
     print(f"  Страниц всего:    {total}")
     print(f"  С figure/table:   {visuals}")
-    print(f"  Прогноз стоимости:")
+    print("  Прогноз стоимости:")
     print(f"    vision:         ~${vision_cost:.4f}")
     print(f"    embeddings:     ~${emb_cost:.4f}")
     print(f"    ИТОГО:          ~${cost:.4f}")
@@ -122,7 +122,7 @@ def forecast_folder(folder: Path) -> None:
         total_visuals_all += visuals
         total_cost_all += cost
 
-    print(f"\n=== ИТОГ ===")
+    print("\n=== ИТОГ ===")
     print(f"  Обработано:               {len(pdfs) - failures} / {len(pdfs)}")
     if failures:
         print(f"  Ошибок:                   {failures}")

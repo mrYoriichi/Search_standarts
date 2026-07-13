@@ -100,7 +100,7 @@ def process(
 
     # Шаг 2: описываем схемы и таблицы — накапливаем в общий словарь
     print(f"\nСтраниц с figure/table: {len(pages)}")
-    print(f"Начинаю описание через vision LLM...\n")
+    print("Начинаю описание через vision LLM...\n")
 
     block_descriptions: dict[str, str] = {}
     for i, page_number in enumerate(pages, start=1):
@@ -129,7 +129,7 @@ def process(
     }
     save_descriptions(output, descriptions_path)
 
-    print(f"\nГотово!")
+    print("\nГотово!")
     print(f"  Всего описаний проставлено: {len(block_descriptions)}")
     print(f"  Файл сохранён:              {descriptions_path}")
 
@@ -138,7 +138,7 @@ def process(
     pages_usd = model_cost(vision_model, pages_in, pages_out)
     total_usd = meta_usd + pages_usd
 
-    print(f"\n=== Стоимость vision ===")
+    print("\n=== Стоимость vision ===")
     print(f"  Метаданные:           input={meta_in:>6}, output={meta_out:>5} → ${meta_usd:.4f}")
     print(f"  Страницы с figure/table ({pages_described_count} шт.):")
     print(f"                        input={pages_in:>6}, output={pages_out:>5} → ${pages_usd:.4f}")

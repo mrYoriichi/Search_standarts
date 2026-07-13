@@ -5,6 +5,7 @@
 изображённые на ней схемы/таблицы, возвращает ответ модели.
 """
 import base64
+import json
 from pathlib import Path
 
 from openai import OpenAI
@@ -107,9 +108,6 @@ def get_page_context(document: dict, page_number: int) -> dict:
         "prev_page_text": prev_page.get("page_text", ""),
         "next_page_text": next_page.get("page_text", ""),
     }
-
-
-import json
 
 
 def build_vision_prompt(page_context: dict) -> str:

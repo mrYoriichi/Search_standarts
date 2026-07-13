@@ -20,7 +20,6 @@ import numpy as np
 
 from ask import load_library
 from indexing.bm25_index import tokenize_chunk
-from indexing.embeddings_index import build_matrix_index
 from backend.core.paths import PROJECTS_DATA_DIR, RAW_DATA_DIR
 
 
