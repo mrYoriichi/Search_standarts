@@ -27,4 +27,7 @@ def classify_pipeline_error(exc: Exception) -> str:
             return "PDF je chráněno heslem — odemkněte ho a naskenujte znovu."
         return "Soubor se nepodařilo otevřít jako PDF."
 
+    if name == "ConversionError":
+        return "Soubor se nepodařilo přečíst jako PDF — je poškozený nebo to není PDF."
+
     return f"Neočekávaná chyba ({name}): {exc}"

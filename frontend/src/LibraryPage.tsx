@@ -8,6 +8,7 @@ type LibraryFile = {
   slug: string
   status: 'processing' | 'ready' | 'failed' | null
   pinned: boolean
+  error: string | null
 }
 
 type LibraryFolder = {
@@ -221,6 +222,7 @@ function FileRow({
   onChange: () => void
 }) {
   return (
+    <div>
     <div className="flex items-center gap-2 text-sm">
       <button
         onClick={async () => {
@@ -266,6 +268,10 @@ function FileRow({
           🗑
         </button>
       )}
+    </div>
+    {file.status === 'failed' && file.error && (
+      <div className="text-xs text-red-600 pl-7">{file.error}</div>
+    )}
     </div>
   )
 }

@@ -51,27 +51,30 @@ function DocumentRow({ doc }: { doc: ArchiveDocument }) {
   const label = statusLabel(doc)
   const icon = doc.doc_type === 'sheet' ? '📐' : '📄'
   return (
-    <div className="flex items-center gap-2 text-sm">
-      {doc.status === 'ready' ? (
-        <a
-          href={`/api/library/pdf/${doc.slug}`}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="text-foreground hover:underline flex-1"
-          title="Otevřít PDF v prohlížeči"
-        >
-          {icon} {insideProject}
-        </a>
-      ) : (
-        <span className="flex-1 text-muted-foreground" title={doc.error ?? undefined}>
-          {icon} {insideProject}
-        </span>
-      )}
-      <span className="text-xs text-muted-foreground">{doc.page_count} s.</span>
-      {label.text && (
-        <span className={`text-xs ${label.className}`} title={doc.error ?? undefined}>
-          {label.text}
-        </span>
+    <div>
+      <div className="flex items-center gap-2 text-sm">
+        {doc.status === 'ready' ? (
+          <a
+            href={`/api/library/pdf/${doc.slug}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-foreground hover:underline flex-1"
+            title="Otevřít PDF v prohlížeči"
+          >
+            {icon} {insideProject}
+          </a>
+        ) : (
+          <span className="flex-1 text-muted-foreground">
+            {icon} {insideProject}
+          </span>
+        )}
+        <span className="text-xs text-muted-foreground">{doc.page_count} s.</span>
+        {label.text && (
+          <span className={`text-xs ${label.className}`}>{label.text}</span>
+        )}
+      </div>
+      {doc.status === 'error' && doc.error && (
+        <div className="text-xs text-destructive pl-6">{doc.error}</div>
       )}
     </div>
   )

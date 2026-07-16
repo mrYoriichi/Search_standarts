@@ -18,6 +18,8 @@ class LibraryFile(BaseModel):
     # Иначе processing/ready/failed.
     status: str | None
     pinned: bool
+    # Человекочитаемая причина падения (только при status='failed').
+    error: str | None = None
 
 
 class LibraryFolder(BaseModel):

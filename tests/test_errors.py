@@ -45,6 +45,15 @@ def test_password_protected_pdf():
     assert "heslem" in classify_pipeline_error(exc)
 
 
+class ConversionError(Exception):
+    pass
+
+
+def test_docling_invalid_pdf():
+    exc = ConversionError("Input document test_broken.pdf is not valid.")
+    assert "poškozený" in classify_pipeline_error(exc)
+
+
 def test_unknown_error_keeps_details():
     msg = classify_pipeline_error(ValueError("something odd"))
     assert "ValueError" in msg
