@@ -78,7 +78,11 @@ def test_junk_blocks_filtered_out():
                     _heading("p1_b01", "1 Úvod", 1, "1"),
                     {"block_id": "p1_b02", "type": "header", "text": "kolontitul"},
                     {"block_id": "p1_b03", "type": "footer", "text": "strana 1"},
-                    {"block_id": "p1_b04", "type": "figure", "description": "Logo firmy"},
+                    {
+                        "block_id": "p1_b04",
+                        "type": "figure",
+                        "description": "Logo firmy",
+                    },
                     {"block_id": "p1_b05", "type": "figure", "description": None},
                     _para("p1_b06", "Užitečný text."),
                 ],
@@ -97,8 +101,16 @@ def test_figure_and_table_markers():
                 "page_number": 1,
                 "blocks": [
                     _heading("p1_b01", "2 Schémata", 1, "2"),
-                    {"block_id": "p1_b02", "type": "figure", "description": "řez mostem"},
-                    {"block_id": "p1_b03", "type": "table", "description": "součinitele"},
+                    {
+                        "block_id": "p1_b02",
+                        "type": "figure",
+                        "description": "řez mostem",
+                    },
+                    {
+                        "block_id": "p1_b03",
+                        "type": "table",
+                        "description": "součinitele",
+                    },
                 ],
             }
         ]
