@@ -156,7 +156,7 @@ function ProfileSection() {
       </Button>
 
       {error && <ErrorBox text={error} />}
-      {saved && <p className="text-sm text-green-600">Profil byl uložen.</p>}
+      {saved && <p className="text-sm text-green-600 dark:text-green-400">Profil byl uložen.</p>}
     </div>
   )
 }
@@ -230,7 +230,7 @@ function PasswordSection() {
       </Button>
 
       {error && <ErrorBox text={error} />}
-      {saved && <p className="text-sm text-green-600">Heslo bylo změněno.</p>}
+      {saved && <p className="text-sm text-green-600 dark:text-green-400">Heslo bylo změněno.</p>}
     </div>
   )
 }
@@ -314,7 +314,7 @@ function OpenAIKeySection() {
       </Button>
 
       {error && <ErrorBox text={error} />}
-      {saved && <p className="text-sm text-green-600">Klíč byl uložen.</p>}
+      {saved && <p className="text-sm text-green-600 dark:text-green-400">Klíč byl uložen.</p>}
     </div>
   )
 }

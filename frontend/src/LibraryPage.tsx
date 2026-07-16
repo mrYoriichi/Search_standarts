@@ -180,7 +180,7 @@ function OrphanRow({
     <div className="flex flex-col gap-1 text-sm border-l-2 border-red-500/60 pl-3 py-1">
       <div className="flex items-center gap-2">
         <span>📄 {orphan.title}</span>
-        <span className="text-xs text-red-600">soubor odstraněn ze složky</span>
+        <span className="text-xs text-red-600 dark:text-red-400">soubor odstraněn ze složky</span>
         <button
           onClick={async () => {
             if (await deleteDocument(orphan.slug, orphan.title)) onChange()
@@ -284,7 +284,7 @@ function FileRow({
       )}
     </div>
     {file.status === 'failed' && file.error && (
-      <div className="text-xs text-red-600 pl-7">{file.error}</div>
+      <div className="text-xs text-red-600 dark:text-red-400 pl-7">{file.error}</div>
     )}
     </div>
   )
@@ -304,20 +304,20 @@ function StatusLabel({
     return <span className="text-xs text-muted-foreground">neindexováno</span>
   }
   if (status === 'pending') {
-    return <span className="text-xs text-amber-600">čeká na indexaci</span>
+    return <span className="text-xs text-amber-600 dark:text-amber-400">čeká na indexaci</span>
   }
   if (status === 'processing') {
     return (
-      <span className="text-xs text-blue-600">{progress ?? 'zpracovává se…'}</span>
+      <span className="text-xs text-blue-600 dark:text-blue-400">{progress ?? 'zpracovává se…'}</span>
     )
   }
   if (status === 'failed') {
-    return <span className="text-xs text-red-600">chyba</span>
+    return <span className="text-xs text-red-600 dark:text-red-400">chyba</span>
   }
   // ready: показываем зелёную плашку только если документ только что
   // перешёл в этот статус в текущей сессии. После F5 плашка исчезает.
   if (freshlyReady) {
-    return <span className="text-xs text-green-600">hotovo</span>
+    return <span className="text-xs text-green-600 dark:text-green-400">hotovo</span>
   }
   return null
 }
@@ -636,7 +636,7 @@ function LibraryPage() {
           <>
             {library.orphans.length > 0 && (
               <div className="rounded-md border border-red-500/30 bg-red-500/5 p-4">
-                <h2 className="text-sm font-semibold text-red-600 mb-2">
+                <h2 className="text-sm font-semibold text-red-600 dark:text-red-400 mb-2">
                   Osiřelé dokumenty
                 </h2>
                 <p className="text-xs text-muted-foreground mb-3">

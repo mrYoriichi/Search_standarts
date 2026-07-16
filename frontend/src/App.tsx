@@ -302,7 +302,7 @@ function ReportAnswer({
 
   if (sent) {
     return (
-      <p className="text-xs text-green-600">
+      <p className="text-xs text-green-600 dark:text-green-400">
         Děkujeme, hlášení bylo odesláno.
       </p>
     )
@@ -346,9 +346,25 @@ function ReportAnswer({
 }
 
 
+// Тема при первом запуске: сохранённый выбор юзера, иначе системная настройка.
+function getInitialTheme(): 'light' | 'dark' {
+  const saved = localStorage.getItem('theme')
+  if (saved === 'light' || saved === 'dark') return saved
+  return window.matchMedia('(prefers-color-scheme: dark)').matches
+    ? 'dark'
+    : 'light'
+}
+
 function App() {
   const [auth, setAuth] = useState<AuthState>({ phase: 'loading' })
   const [view, setView] = useState<View>('search')
+  const [theme, setTheme] = useState<'light' | 'dark'>(getInitialTheme)
+
+  // Тёмная палитра включается классом .dark на <html> (см. index.css).
+  useEffect(() => {
+    document.documentElement.classList.toggle('dark', theme === 'dark')
+    localStorage.setItem('theme', theme)
+  }, [theme])
 
   const [question, setQuestion] = useState('')
   // Вопрос, по которому реально получен текущий result — фиксируем на момент ответа,
@@ -585,6 +601,13 @@ function App() {
         <div className="flex items-center justify-between gap-4">
           <h1 className="text-3xl font-bold">Search_standarts</h1>
           <div className="flex items-center gap-3 text-sm text-muted-foreground">
+            <button
+              onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
+              title={theme === 'dark' ? 'Světlý režim' : 'Tmavý režim'}
+              className="text-base leading-none"
+            >
+              {theme === 'dark' ? '☀️' : '🌙'}
+            </button>
             <button
               onClick={() => setView('settings')}
               className={

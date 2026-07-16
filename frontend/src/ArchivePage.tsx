@@ -40,7 +40,7 @@ function statusLabel(doc: ArchiveDocument): { text: string; className: string } 
     case 'processing':
       return {
         text: doc.progress ?? 'zpracovává se…',
-        className: 'text-amber-600',
+        className: 'text-amber-600 dark:text-amber-400',
       }
     case 'error':
       return { text: 'chyba', className: 'text-destructive' }
