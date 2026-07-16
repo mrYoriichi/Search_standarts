@@ -8,6 +8,7 @@ user-data каталог ОС. В dev (запуск из исходников) �
 Один источник правды для путей. Все потребители (database, pipeline, library)
 строят пути от DATA_DIR, а не от текущей рабочей директории.
 """
+
 import os
 import sys
 from pathlib import Path

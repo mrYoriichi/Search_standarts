@@ -88,7 +88,9 @@ def login(db: Session, username: str, password: str) -> AuthSession:
         raise UpdateRequiredError(detail.get("download_url", ""))
 
     if response.status_code >= 500:
-        raise LicenseServerUnavailable(f"License server returned {response.status_code}")
+        raise LicenseServerUnavailable(
+            f"License server returned {response.status_code}"
+        )
 
     if response.status_code != 200:
         # 401 — неверные данные, 403 — отозван. Сервер сам разделяет.
@@ -120,7 +122,9 @@ def register(db: Session, fields: dict) -> AuthSession:
         raise UpdateRequiredError(detail.get("download_url", ""))
 
     if response.status_code >= 500:
-        raise LicenseServerUnavailable(f"License server returned {response.status_code}")
+        raise LicenseServerUnavailable(
+            f"License server returned {response.status_code}"
+        )
 
     if response.status_code != 200:
         # 409 — email занят, 400 — невалидные/неполные данные. Текст пробрасываем.

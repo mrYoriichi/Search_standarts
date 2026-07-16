@@ -9,6 +9,7 @@ figure/table, умножает на средние цены из pricing.py (з�
     python forecast.py path/to/some.pdf      # прогноз для одного файла
     python forecast.py path/to/folder/       # суммарный прогноз по всем PDF в папке
 """
+
 import sys
 from pathlib import Path
 
@@ -55,8 +56,7 @@ def forecast_one(pdf_path: Path) -> tuple[int, int, float]:
     document = parse_for_forecast(str(pdf_path))
     total, visuals = count_pages_and_visuals(document)
     cost = (
-        visuals * AVG_VISION_COST_PER_IMAGE_PAGE
-        + total * AVG_EMBEDDING_COST_PER_PAGE
+        visuals * AVG_VISION_COST_PER_IMAGE_PAGE + total * AVG_EMBEDDING_COST_PER_PAGE
     )
     return total, visuals, cost
 

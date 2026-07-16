@@ -4,6 +4,7 @@
 Берёт скриншот страницы, отправляет в модель с просьбой описать
 изображённые на ней схемы/таблицы, возвращает ответ модели.
 """
+
 import base64
 import json
 from pathlib import Path
@@ -63,9 +64,7 @@ def ask_vision(
                     {"type": "text", "text": prompt},
                     {
                         "type": "image_url",
-                        "image_url": {
-                            "url": f"data:image/png;base64,{base64_image}"
-                        },
+                        "image_url": {"url": f"data:image/png;base64,{base64_image}"},
                     },
                 ],
             }
@@ -180,9 +179,9 @@ def parse_vision_response(raw_text: str) -> list[dict]:
     if text.startswith("```"):
         # Разбиваем по строкам, выкидываем первую (```json) и последнюю (```)
         lines = text.split("\n")
-        lines = lines[1:]          # убрать первую строку
+        lines = lines[1:]  # убрать первую строку
         if lines and lines[-1].strip() == "```":
-            lines = lines[:-1]     # убрать последнюю строку
+            lines = lines[:-1]  # убрать последнюю строку
         text = "\n".join(lines)
 
     # Пытаемся разобрать JSON

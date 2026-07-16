@@ -22,6 +22,4 @@ class QueryLog(Base):
     cost_usd: Mapped[float] = mapped_column(Float)
     # rating: 1 = 👍, -1 = 👎. None пока юзер не оценил.
     rating: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime, server_default=func.now()
-    )
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())

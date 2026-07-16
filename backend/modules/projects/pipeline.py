@@ -64,9 +64,7 @@ def _parse_json_object(raw: str) -> dict:
     return data if isinstance(data, dict) else {}
 
 
-def render_page_png(
-    doc: pdfium.PdfDocument, page_index: int, out_path: Path
-) -> Path:
+def render_page_png(doc: pdfium.PdfDocument, page_index: int, out_path: Path) -> Path:
     """Рендерит страницу PDF в PNG с ограничением длинной стороны."""
     page = doc[page_index]
     width, height = page.get_size()
@@ -214,9 +212,7 @@ def process_text_document(
     import index as index_step
 
     doc_dir = PROJECTS_DATA_DIR / slug
-    parser_step.process(
-        slug, pdf_path=str(pdf_path), doc_dir=doc_dir, document_id=slug
-    )
+    parser_step.process(slug, pdf_path=str(pdf_path), doc_dir=doc_dir, document_id=slug)
     describe_step.process(slug, vision_model=vision_model, doc_dir=doc_dir)
     chunk_step.process(slug, doc_dir=doc_dir)
     _prefix_project_context(doc_dir, project)
@@ -233,9 +229,7 @@ def run_project_pipeline(slug: str, pdf_path: str) -> None:
 
     db = SessionLocal()
     try:
-        doc = db.scalar(
-            select(ProjectDocument).where(ProjectDocument.slug == slug)
-        )
+        doc = db.scalar(select(ProjectDocument).where(ProjectDocument.slug == slug))
         if doc is None:
             logger.error("run_project_pipeline: slug %s не найден в БД", slug)
             return

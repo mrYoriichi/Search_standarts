@@ -6,6 +6,7 @@
 
     python download_models.py
 """
+
 from pathlib import Path
 
 from docling.utils.model_downloader import download_models

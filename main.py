@@ -3,6 +3,7 @@
 Разбирает PDF через pdf_processing.parser и сохраняет результат на диск.
 Когда переедем на БД, изменится только функция сохранения — парсер не трогаем.
 """
+
 import json
 import sys
 from pathlib import Path

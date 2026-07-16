@@ -11,6 +11,7 @@
   - http://localhost:8000/api/health  — проверка живости
   - http://localhost:8000/docs        — авто-документация (Swagger UI)
 """
+
 import asyncio
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import asynccontextmanager
@@ -86,9 +87,7 @@ async def lifespan(app: FastAPI):
         projects_path = settings_service.get_projects_path(db)
         if projects_path:
             stuck_projects = db.scalars(
-                select(ProjectDocument).where(
-                    ProjectDocument.status == "processing"
-                )
+                select(ProjectDocument).where(ProjectDocument.status == "processing")
             ).all()
             for pdoc in stuck_projects:
                 executor.submit(
@@ -128,11 +127,21 @@ app.include_router(health_router, prefix="/api", tags=["health"])
 app.include_router(auth_router, prefix="/api", tags=["auth"])
 
 protected = [Depends(require_auth)]
-app.include_router(queries_router, prefix="/api", tags=["queries"], dependencies=protected)
-app.include_router(documents_router, prefix="/api", tags=["documents"], dependencies=protected)
-app.include_router(settings_router, prefix="/api", tags=["settings"], dependencies=protected)
-app.include_router(library_router, prefix="/api", tags=["library"], dependencies=protected)
-app.include_router(projects_router, prefix="/api", tags=["projects"], dependencies=protected)
+app.include_router(
+    queries_router, prefix="/api", tags=["queries"], dependencies=protected
+)
+app.include_router(
+    documents_router, prefix="/api", tags=["documents"], dependencies=protected
+)
+app.include_router(
+    settings_router, prefix="/api", tags=["settings"], dependencies=protected
+)
+app.include_router(
+    library_router, prefix="/api", tags=["library"], dependencies=protected
+)
+app.include_router(
+    projects_router, prefix="/api", tags=["projects"], dependencies=protected
+)
 
 # Собранный фронтенд отдаём с корня — ПОСЛЕ всех /api-роутеров (mount на "/" ловит
 # всё остальное). html=True → index.html на "/". В dev без сборки папки нет —

@@ -28,9 +28,7 @@ router = APIRouter()
 
 
 @router.post("/auth/login", response_model=LoginResponse)
-def login(
-    body: LoginRequest, db: Session = Depends(get_session)
-) -> LoginResponse:
+def login(body: LoginRequest, db: Session = Depends(get_session)) -> LoginResponse:
     try:
         session = service.login(db, body.username, body.password)
     except service.UpdateRequiredError as exc:

@@ -154,12 +154,14 @@ def generate_answer(
             if chunk is None:
                 continue  # модель назвала id, которого мы не давали — игнорируем
             skip.add(chunk_id)
-            result.append({
-                "document": chunk.get("document_title", ""),
-                "slug": chunk.get("document_id", ""),
-                "section": chunk.get("section_title", ""),
-                "pages": chunk.get("pages", []),
-            })
+            result.append(
+                {
+                    "document": chunk.get("document_title", ""),
+                    "slug": chunk.get("document_id", ""),
+                    "section": chunk.get("section_title", ""),
+                    "pages": chunk.get("pages", []),
+                }
+            )
         return result
 
     seen: set[str] = set()

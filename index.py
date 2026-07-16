@@ -1,4 +1,3 @@
-
 """
 Этап 4: построение векторного индекса по чанкам.
 
@@ -14,6 +13,7 @@ BM25-индекс НЕ сохраняем — он строится из chunks.
     python chunk.py     # этап 3: нарезка на чанки
     python index.py     # этап 4: построение индекса
 """
+
 import json
 import sys
 from pathlib import Path
@@ -79,7 +79,9 @@ def process(pdf_name: str, doc_dir: Path | None = None) -> None:
     print(f"  Токены:              {tokens}")
     print(f"  ИТОГО embeddings:                                  ${usd:.4f}")
     if total_pages:
-        print(f"  $ на страницу (embeddings):                        ${usd/total_pages:.4f}")
+        print(
+            f"  $ на страницу (embeddings):                        ${usd / total_pages:.4f}"
+        )
 
 
 if __name__ == "__main__":

@@ -7,6 +7,7 @@
 Этот модуль НЕ знает, куда сохранять результат.
 Сохранение — забота того, кто вызывает (main.py, веб-сервер и т.д.).
 """
+
 import re
 import unicodedata
 from pathlib import Path
@@ -39,8 +40,13 @@ LABEL_MAP = {
 
 # Типы блоков, текст которых используется для построения page_text.
 TEXT_BLOCK_TYPES = {
-    "text", "heading", "header", "footer",
-    "caption", "list_item", "footnote",
+    "text",
+    "heading",
+    "header",
+    "footer",
+    "caption",
+    "list_item",
+    "footnote",
 }
 
 
@@ -277,7 +283,9 @@ def parse_pdf(pdf_path: str) -> tuple[dict, dict]:
         pipeline_options.artifacts_path = str(DOCLING_MODELS)
     # MPS (Apple Silicon GPU) не поддерживает float64, на котором работают
     # модели Docling (RT-DETR). Принудительно используем CPU.
-    pipeline_options.accelerator_options = AcceleratorOptions(device=AcceleratorDevice.CPU)
+    pipeline_options.accelerator_options = AcceleratorOptions(
+        device=AcceleratorDevice.CPU
+    )
 
     converter = DocumentConverter(
         format_options={

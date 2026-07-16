@@ -19,7 +19,7 @@ SKIP_BLOCK_TYPES = {"document_index", "header", "footer"}
 # поэтому матчим по подстроке без учёта регистра, а не точным равенством.
 NON_TECHNICAL_SUBSTRINGS = (
     "není technický obsah",  # каноническая метка из промпта
-    "bez technického",       # частая перефразировка модели
+    "bez technického",  # частая перефразировка модели
 )
 
 # Слово 'logo' проверяем отдельно — как целое слово (\b), а не подстроку:
@@ -105,9 +105,7 @@ def split_large_chunk(chunk: dict) -> list[dict]:
     if len(chunk["text"]) <= MAX_CHUNK_CHARS:
         return [chunk]
 
-    has_level3 = any(
-        b["type"] == "heading" and b.get("level") == 3 for b in blocks
-    )
+    has_level3 = any(b["type"] == "heading" and b.get("level") == 3 for b in blocks)
 
     # Накапливаем блоки в части. Режем у заголовков ур.3; если их нет —
     # по границам абзацев (тем же порогом), иначе гигантский раздел без
@@ -123,8 +121,7 @@ def split_large_chunk(chunk: dict) -> list[dict]:
         # бережём привязку под-чанков к подзаголовкам.
         hard_limit = HARD_SPLIT_CHARS if has_level3 else MAX_CHUNK_CHARS
         should_cut = current_blocks and (
-            (is_heading and current_len >= MAX_CHUNK_CHARS)
-            or current_len >= hard_limit
+            (is_heading and current_len >= MAX_CHUNK_CHARS) or current_len >= hard_limit
         )
 
         if should_cut:
@@ -147,17 +144,19 @@ def split_large_chunk(chunk: dict) -> list[dict]:
     for part_blocks in parts:
         part_pages = sorted({page_of_block(b) for b in part_blocks})
 
-        sub_chunks.append({
-            "document_id": chunk["document_id"],
-            "document_title": chunk["document_title"],
-            "document_summary": chunk["document_summary"],
-            "parent_section": chunk["parent_section"],
-            "section_number": chunk["section_number"],
-            "section_title": chunk["section_title"],
-            "text": build_chunk_text(part_blocks),
-            "pages": part_pages,
-            "related_blocks": [b["block_id"] for b in part_blocks],
-        })
+        sub_chunks.append(
+            {
+                "document_id": chunk["document_id"],
+                "document_title": chunk["document_title"],
+                "document_summary": chunk["document_summary"],
+                "parent_section": chunk["parent_section"],
+                "section_number": chunk["section_number"],
+                "section_title": chunk["section_title"],
+                "text": build_chunk_text(part_blocks),
+                "pages": part_pages,
+                "related_blocks": [b["block_id"] for b in part_blocks],
+            }
+        )
 
     return sub_chunks
 
@@ -189,18 +188,20 @@ def build_chunks(document: dict) -> list[dict]:
             return
         if not current["blocks"]:
             return
-        chunks.append({
-            "document_id": document_id,
-            "document_title": doc_title,
-            "document_summary": doc_summary,
-            "parent_section": current["parent_section"],
-            "section_number": current["section_number"],
-            "section_title": current["section_title"],
-            "text": build_chunk_text(current["blocks"]),
-            "pages": sorted(current["pages"]),
-            "related_blocks": [b["block_id"] for b in current["blocks"]],
-            "_blocks": list(current["blocks"]),
-        })
+        chunks.append(
+            {
+                "document_id": document_id,
+                "document_title": doc_title,
+                "document_summary": doc_summary,
+                "parent_section": current["parent_section"],
+                "section_number": current["section_number"],
+                "section_title": current["section_title"],
+                "text": build_chunk_text(current["blocks"]),
+                "pages": sorted(current["pages"]),
+                "related_blocks": [b["block_id"] for b in current["blocks"]],
+                "_blocks": list(current["blocks"]),
+            }
+        )
 
     def start_chunk(section_number, section_title, parent):
         """Создаёт новый пустой чанк-заготовку."""
@@ -215,7 +216,6 @@ def build_chunks(document: dict) -> list[dict]:
     for page in document["pages"]:
         page_num = page["page_number"]
         for block in page["blocks"]:
-
             if block["type"] == "heading":
                 level = block.get("level")
 
@@ -261,18 +261,20 @@ def build_chunks(document: dict) -> list[dict]:
             first_heading = next(
                 (b["text"].strip() for b in useful if b["type"] == "heading"), ""
             )
-            chunks.append({
-                "document_id": document_id,
-                "document_title": doc_title,
-                "document_summary": doc_summary,
-                "parent_section": "",
-                "section_number": "",
-                "section_title": first_heading,
-                "text": build_chunk_text(useful),
-                "pages": [page["page_number"]],
-                "related_blocks": [b["block_id"] for b in useful],
-                "_blocks": list(useful),
-            })
+            chunks.append(
+                {
+                    "document_id": document_id,
+                    "document_title": doc_title,
+                    "document_summary": doc_summary,
+                    "parent_section": "",
+                    "section_number": "",
+                    "section_title": first_heading,
+                    "text": build_chunk_text(useful),
+                    "pages": [page["page_number"]],
+                    "related_blocks": [b["block_id"] for b in useful],
+                    "_blocks": list(useful),
+                }
+            )
 
     # Дробим большие чанки
     result = []

@@ -161,7 +161,7 @@ def relink_document(db: Session, old_slug: str, new_slug: str) -> Document:
 def _replace_prefix(value: str, old: str, new: str) -> str:
     """Заменяет старый префикс на новый. Если префикса нет — возвращает как есть."""
     if value.startswith(old):
-        return new + value[len(old):]
+        return new + value[len(old) :]
     return value
 
 

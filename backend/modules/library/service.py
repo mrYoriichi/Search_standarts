@@ -104,7 +104,9 @@ def _walk(folder: Path, resolve: StatusResolver) -> LibraryFolder:
                     pinned=pinned,
                 )
             )
-    return LibraryFolder(name=folder.name, path=str(folder), folders=folders, files=files)
+    return LibraryFolder(
+        name=folder.name, path=str(folder), folders=folders, files=files
+    )
 
 
 def find_pdf_by_slug(library_path: Path, slug: str) -> Path | None:
@@ -144,8 +146,7 @@ def scan_library(
 
     # Все PDF библиотеки (без скрытых файлов).
     pdf_paths = [
-        p for p in sorted(library_path.rglob("*.pdf"))
-        if not p.name.startswith(".")
+        p for p in sorted(library_path.rglob("*.pdf")) if not p.name.startswith(".")
     ]
 
     # Первый проход: сколько файлов дают каждый slug. >1 — совпадение имён.

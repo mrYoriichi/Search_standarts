@@ -10,6 +10,7 @@ document.json НЕ меняется — это сознательно, чтоб�
     python main.py       # этап 1: парсинг PDF
     python describe.py   # этап 2: описание схем
 """
+
 import json
 import sys
 from pathlib import Path
@@ -139,12 +140,18 @@ def process(
     total_usd = meta_usd + pages_usd
 
     print("\n=== Стоимость vision ===")
-    print(f"  Метаданные:           input={meta_in:>6}, output={meta_out:>5} → ${meta_usd:.4f}")
+    print(
+        f"  Метаданные:           input={meta_in:>6}, output={meta_out:>5} → ${meta_usd:.4f}"
+    )
     print(f"  Страницы с figure/table ({pages_described_count} шт.):")
-    print(f"                        input={pages_in:>6}, output={pages_out:>5} → ${pages_usd:.4f}")
+    print(
+        f"                        input={pages_in:>6}, output={pages_out:>5} → ${pages_usd:.4f}"
+    )
     if pages_described_count:
         per_page_usd = pages_usd / pages_described_count
-        print(f"  $ на страницу с figure/table:                       ${per_page_usd:.4f}")
+        print(
+            f"  $ на страницу с figure/table:                       ${per_page_usd:.4f}"
+        )
     print(f"  ИТОГО vision:                                       ${total_usd:.4f}")
 
 

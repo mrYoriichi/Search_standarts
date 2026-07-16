@@ -65,9 +65,7 @@ def set_library_path(db: Session, raw_path: str) -> str:
 
 def get_shared_library_path(db: Session) -> str | None:
     """Возвращает путь к папке общей базы или None, если не задан."""
-    setting = db.scalar(
-        select(Setting).where(Setting.key == SHARED_LIBRARY_PATH_KEY)
-    )
+    setting = db.scalar(select(Setting).where(Setting.key == SHARED_LIBRARY_PATH_KEY))
     return setting.value if setting else None
 
 

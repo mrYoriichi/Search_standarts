@@ -140,9 +140,7 @@ def sync_archive(db: Session, root: Path) -> ArchiveScanSummary:
 
     result = scan_archive(root)
 
-    existing = {
-        doc.slug: doc for doc in db.scalars(select(ProjectDocument)).all()
-    }
+    existing = {doc.slug: doc for doc in db.scalars(select(ProjectDocument)).all()}
     found_slugs: set[str] = set()
     new_count = 0
 
@@ -208,7 +206,6 @@ def build_archive_response(db: Session, path: str | None) -> ArchiveResponse:
     return ArchiveResponse(
         path=path,
         projects=[
-            ProjectGroup(name=name, documents=items)
-            for name, items in groups.items()
+            ProjectGroup(name=name, documents=items) for name, items in groups.items()
         ],
     )

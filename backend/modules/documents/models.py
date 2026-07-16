@@ -28,6 +28,4 @@ class Document(Base):
     error_message: Mapped[str | None] = mapped_column(default=None)
     # Закреплён юзером — показывать в отдельной секции «Закреплённые» сверху.
     pinned: Mapped[bool] = mapped_column(default=False)
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime, server_default=func.now()
-    )
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())

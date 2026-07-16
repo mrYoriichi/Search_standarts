@@ -58,5 +58,5 @@ def embedding_cost(total_tokens: int) -> float:
 # Цены OpenAI: vision $5/$30 за 1M (in/out), embeddings $0.13 за 1M.
 # Весами при усреднении берём количества страниц.
 
-AVG_VISION_COST_PER_IMAGE_PAGE: float | None = 0.040    # $/страница с figure/table
-AVG_EMBEDDING_COST_PER_PAGE: float | None = 0.00014     # $/страница
+AVG_VISION_COST_PER_IMAGE_PAGE: float | None = 0.040  # $/страница с figure/table
+AVG_EMBEDDING_COST_PER_PAGE: float | None = 0.00014  # $/страница

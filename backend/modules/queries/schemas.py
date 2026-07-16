@@ -77,4 +77,4 @@ class AskResponse(BaseModel):
     query_log_id: int
     search_query: str  # расширенный запрос, которым реально искали (показываем юзеру)
     answer_model: str  # модель, сгенерировавшая ответ
-    answer_ms: int     # время генерации ответа, мс (для сравнения моделей)
+    answer_ms: int  # время генерации ответа, мс (для сравнения моделей)

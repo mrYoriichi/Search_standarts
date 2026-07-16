@@ -34,9 +34,9 @@ class ArchiveResponse(BaseModel):
 class ArchiveScanSummary(BaseModel):
     """Итог POST /projects/scan."""
 
-    found: int          # всего PDF в папке (без дублей и корневых)
-    new: int            # добавлено новых записей
-    missing: int        # удалено: файлов больше нет на диске (индексы вычищены)
-    duplicates: list[str]    # файлы-тёзки (slug занят) — не индексируются
+    found: int  # всего PDF в папке (без дублей и корневых)
+    new: int  # добавлено новых записей
+    missing: int  # удалено: файлов больше нет на диске (индексы вычищены)
+    duplicates: list[str]  # файлы-тёзки (slug занят) — не индексируются
     skipped_root: list[str]  # PDF в корне архива — вне проектов
-    errors: list[str]        # файлы, не открывшиеся как PDF
+    errors: list[str]  # файлы, не открывшиеся как PDF

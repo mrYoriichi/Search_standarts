@@ -13,6 +13,7 @@
 
 Параметры (PDF, страницы, модели) — константы ниже, правь под себя.
 """
+
 import json
 import subprocess
 import textwrap
@@ -86,10 +87,13 @@ def render_page(pdf_path: Path, page: int, out_dir: Path) -> Path:
     subprocess.run(
         [
             "pdftoppm",
-            "-f", str(page),
-            "-l", str(page),
+            "-f",
+            str(page),
+            "-l",
+            str(page),
             "-png",
-            "-r", str(RENDER_DPI),
+            "-r",
+            str(RENDER_DPI),
             str(pdf_path),
             str(prefix),
         ],
@@ -154,12 +158,12 @@ def pretty_description(raw_answer: str) -> str:
     return format_readable(data)
 
 
-def cost_usd(prompt_tokens: int, completion_tokens: int,
-             in_price: float, out_price: float) -> float:
+def cost_usd(
+    prompt_tokens: int, completion_tokens: int, in_price: float, out_price: float
+) -> float:
     """USD за один вызов по факту токенов и цен модели."""
     return (
-        prompt_tokens * in_price / 1_000_000
-        + completion_tokens * out_price / 1_000_000
+        prompt_tokens * in_price / 1_000_000 + completion_tokens * out_price / 1_000_000
     )
 
 

@@ -5,6 +5,7 @@
 Reciprocal Rank Fusion (RRF) — слияние по позициям в выдаче,
 а не по сырым score (они у двух методов в разных шкалах).
 """
+
 from indexing.bm25_index import search_bm25
 from indexing.embeddings_index import search_embeddings
 
@@ -63,7 +64,9 @@ def hybrid_search(
 
     # Берём из каждого поиска с запасом, чтобы у RRF был материал
     bm25_results = search_bm25(bm25_index, bm25_chunk_ids, query, top_k=RETRIEVAL_DEPTH)
-    embeddings_results = search_embeddings(embeddings_index, query, top_k=RETRIEVAL_DEPTH)
+    embeddings_results = search_embeddings(
+        embeddings_index, query, top_k=RETRIEVAL_DEPTH
+    )
 
     fused = reciprocal_rank_fusion([bm25_results, embeddings_results])
     return fused[:top_k]
@@ -71,9 +74,9 @@ def hybrid_search(
 
 # Режимы поиска для приложения и сколько чанков уходит в модель в каждом.
 SEARCH_MODES = ("hybrid", "vector", "keyword")
-VECTOR_ONLY_K = 20   # режим "vector":  топ-20 векторного поиска
+VECTOR_ONLY_K = 20  # режим "vector":  топ-20 векторного поиска
 KEYWORD_ONLY_K = 10  # режим "keyword": топ-10 BM25
-HYBRID_EACH = 7      # режим "hybrid":  по 7 из вектора и BM25, объединённые
+HYBRID_EACH = 7  # режим "hybrid":  по 7 из вектора и BM25, объединённые
 
 
 def search_by_mode(
@@ -111,5 +114,3 @@ def search_by_mode(
         if chunk_id not in ordered:
             ordered.append(chunk_id)
     return ordered
-
-

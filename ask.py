@@ -9,6 +9,7 @@
 пайплайн (main.py → describe.py → chunk.py → index.py):
     python ask.py
 """
+
 import json
 from pathlib import Path
 

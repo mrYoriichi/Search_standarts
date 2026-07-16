@@ -15,6 +15,7 @@
 
 --limit N — обработать только первые N чертёжных листов (для дешёвой проверки).
 """
+
 import argparse
 import json
 import subprocess
@@ -60,8 +61,18 @@ def render_page(pdf_path: Path, page: int, pages_dir: Path) -> Path:
     """Рендерит одну страницу PDF в PNG (pdftoppm). Возвращает путь к файлу."""
     prefix = pages_dir / f"p{page:03d}"
     subprocess.run(
-        ["pdftoppm", "-f", str(page), "-l", str(page), "-png",
-         "-r", str(RENDER_DPI), str(pdf_path), str(prefix)],
+        [
+            "pdftoppm",
+            "-f",
+            str(page),
+            "-l",
+            str(page),
+            "-png",
+            "-r",
+            str(RENDER_DPI),
+            str(pdf_path),
+            str(prefix),
+        ],
         check=True,
     )
     matches = sorted(pages_dir.glob(f"p{page:03d}*.png"))
@@ -74,7 +85,9 @@ def ocr_image(image_path: Path) -> str:
     """OCR картинки через Tesseract (чешский). Возвращает текст."""
     out = subprocess.run(
         ["tesseract", str(image_path), "stdout", "-l", "ces"],
-        capture_output=True, text=True, check=True,
+        capture_output=True,
+        text=True,
+        check=True,
     ).stdout
     return out.strip()
 
@@ -122,7 +135,9 @@ def build_sheet_chunk(page: int, meta: dict, ocr_text: str) -> dict:
     }
 
 
-def process(pdf_path: Path, doc_id: str | None = None, limit: int | None = None) -> None:
+def process(
+    pdf_path: Path, doc_id: str | None = None, limit: int | None = None
+) -> None:
     """Полный прогон: PDF → chunks.json + embeddings.json в data/raw_data/{doc_id}/."""
     if not pdf_path.exists():
         raise FileNotFoundError(f"PDF не найден: {pdf_path}")
@@ -149,8 +164,10 @@ def process(pdf_path: Path, doc_id: str | None = None, limit: int | None = None)
         sheet_pages = sheet_pages[:limit]
 
     print(f"Страниц всего: {total}")
-    print(f"  текстовых: {len(text_pages)}, чертёжных листов: {len(sheet_pages)}"
-          + (f" (ограничено --limit {limit})" if limit is not None else ""))
+    print(
+        f"  текстовых: {len(text_pages)}, чертёжных листов: {len(sheet_pages)}"
+        + (f" (ограничено --limit {limit})" if limit is not None else "")
+    )
 
     # 2. Метаданные документа из вводной части (один текстовый вызов)
     front_text = "\n".join(t for _, t in text_pages)
@@ -169,8 +186,10 @@ def process(pdf_path: Path, doc_id: str | None = None, limit: int | None = None)
         sheet_meta, s_in, s_out = describe_sheet(image_path)
         llm_cost += model_cost("gpt-5.4-mini", s_in, s_out)
         chunks.append(build_sheet_chunk(page, sheet_meta, ocr_text))
-        print(f"  лист {n}/{len(sheet_pages)} (стр. {page}): "
-              f"{sheet_meta.get('kod', '?')} — OCR {len(ocr_text)} симв")
+        print(
+            f"  лист {n}/{len(sheet_pages)} (стр. {page}): "
+            f"{sheet_meta.get('kod', '?')} — OCR {len(ocr_text)} симв"
+        )
 
     # 4. Общие поля + chunk_id финальным проходом (решение #19)
     for i, chunk in enumerate(chunks):
@@ -206,8 +225,12 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="VL-пайплайн (офлайн-инструмент)")
     parser.add_argument("pdf", type=Path, help="путь к VL-PDF")
     parser.add_argument("--id", dest="doc_id", default=None, help="id документа (slug)")
-    parser.add_argument("--limit", type=int, default=None,
-                        help="обработать только первые N листов (для проверки)")
+    parser.add_argument(
+        "--limit",
+        type=int,
+        default=None,
+        help="обработать только первые N листов (для проверки)",
+    )
     args = parser.parse_args()
     process(args.pdf, args.doc_id, args.limit)
 

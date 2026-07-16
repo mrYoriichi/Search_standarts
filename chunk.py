@@ -10,6 +10,7 @@
     python describe.py   # этап 2: описание схем
     python chunk.py      # этап 3: нарезка на чанки
 """
+
 import json
 import sys
 from pathlib import Path

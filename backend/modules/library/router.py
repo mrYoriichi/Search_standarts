@@ -27,9 +27,7 @@ def get_library(db: Session = Depends(get_session)) -> LibraryResponse:
     """Возвращает дерево папки библиотеки + список висячих документов."""
     library_path = settings_service.get_library_path(db)
     if library_path is None:
-        raise HTTPException(
-            status_code=400, detail="Папка библиотеки не задана"
-        )
+        raise HTTPException(status_code=400, detail="Папка библиотеки не задана")
     return service.build_library_response(Path(library_path), db)
 
 
@@ -41,9 +39,7 @@ def open_library_file(
     """Открывает PDF из библиотеки в системном просмотрщике."""
     library_path = settings_service.get_library_path(db)
     if library_path is None:
-        raise HTTPException(
-            status_code=400, detail="Папка библиотеки не задана"
-        )
+        raise HTTPException(status_code=400, detail="Папка библиотеки не задана")
     try:
         service.open_file(Path(library_path), body.path)
     except ValueError as exc:
@@ -113,9 +109,7 @@ def get_pdf(slug: str, db: Session = Depends(get_session)) -> FileResponse:
     """
     library_path = settings_service.get_library_path(db)
     pdf_path = (
-        service.find_pdf_by_slug(Path(library_path), slug)
-        if library_path
-        else None
+        service.find_pdf_by_slug(Path(library_path), slug) if library_path else None
     )
     if pdf_path is None:
         shared = settings_service.get_shared_library_path(db)
@@ -127,15 +121,11 @@ def get_pdf(slug: str, db: Session = Depends(get_session)) -> FileResponse:
         from sqlalchemy import select
 
         projects_path = settings_service.get_projects_path(db)
-        pdoc = db.scalar(
-            select(ProjectDocument).where(ProjectDocument.slug == slug)
-        )
+        pdoc = db.scalar(select(ProjectDocument).where(ProjectDocument.slug == slug))
         if projects_path and pdoc is not None:
             candidate = Path(projects_path) / pdoc.relative_path
             if candidate.exists():
                 pdf_path = candidate
     if pdf_path is None:
-        raise HTTPException(
-            status_code=404, detail=f"PDF для slug={slug} не найден"
-        )
+        raise HTTPException(status_code=404, detail=f"PDF для slug={slug} не найден")
     return FileResponse(pdf_path, media_type="application/pdf")

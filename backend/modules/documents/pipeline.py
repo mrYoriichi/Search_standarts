@@ -4,6 +4,7 @@
 Поэтому сессию БД открываем сами через SessionLocal() и закрываем в finally —
 FastAPI-зависимости здесь не работают.
 """
+
 import json
 import logging
 

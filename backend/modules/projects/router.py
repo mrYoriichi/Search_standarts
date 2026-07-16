@@ -20,9 +20,7 @@ router = APIRouter()
 @router.get("/projects", response_model=ArchiveResponse)
 def get_archive(db: Session = Depends(get_session)) -> ArchiveResponse:
     """Документы архива по проектам + текущий путь к папке."""
-    return service.build_archive_response(
-        db, settings_service.get_projects_path(db)
-    )
+    return service.build_archive_response(db, settings_service.get_projects_path(db))
 
 
 @router.post("/projects/scan", response_model=ArchiveScanSummary)

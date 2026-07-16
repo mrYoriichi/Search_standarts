@@ -6,6 +6,7 @@ Embeddings — превращение текста в вектор (список
 смысл. Поиск по смыслу: находит близкие по содержанию чанки,
 даже если слова разные. Дополняет BM25 (точные совпадения).
 """
+
 import numpy as np
 import tiktoken
 from openai import OpenAI
@@ -56,12 +57,14 @@ def build_searchable_text(chunk: dict) -> str:
     Та же логика, что в BM25 — вектор должен отражать
     и содержание раздела, и его контекст (документ, заголовки).
     """
-    return " ".join([
-        chunk.get("document_title", ""),
-        chunk.get("parent_section", ""),
-        chunk.get("section_title", ""),
-        chunk.get("text", ""),
-    ])
+    return " ".join(
+        [
+            chunk.get("document_title", ""),
+            chunk.get("parent_section", ""),
+            chunk.get("section_title", ""),
+            chunk.get("text", ""),
+        ]
+    )
 
 
 def build_embeddings_index(chunks: list[dict]) -> tuple[dict, int]:
@@ -102,10 +105,12 @@ def build_embeddings_index(chunks: list[dict]) -> tuple[dict, int]:
     # Связываем каждый вектор с его chunk_id
     items = []
     for chunk, embedding in zip(chunks, embeddings):
-        items.append({
-            "chunk_id": chunk["chunk_id"],
-            "embedding": embedding,
-        })
+        items.append(
+            {
+                "chunk_id": chunk["chunk_id"],
+                "embedding": embedding,
+            }
+        )
 
     index = {
         "model": EMBEDDING_MODEL,

@@ -4,6 +4,7 @@
 BM25 — классический алгоритм поиска по словам (точные совпадения:
 коды норм, числа, термины). Дополняет векторный поиск.
 """
+
 import re
 
 from rank_bm25 import BM25Okapi
@@ -31,12 +32,14 @@ def tokenize_chunk(chunk: dict) -> list[str]:
     (см. backend/core/library_cache.py) — на каждый вопрос regex по всему корпусу
     не гоняем.
     """
-    searchable_text = " ".join([
-        chunk.get("document_title", ""),
-        chunk.get("parent_section", ""),
-        chunk.get("section_title", ""),
-        chunk.get("text", ""),
-    ])
+    searchable_text = " ".join(
+        [
+            chunk.get("document_title", ""),
+            chunk.get("parent_section", ""),
+            chunk.get("section_title", ""),
+            chunk.get("text", ""),
+        ]
+    )
     return tokenize(searchable_text)
 
 
