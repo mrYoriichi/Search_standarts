@@ -12,6 +12,7 @@ from sqlalchemy import select
 
 from backend.core import library_cache
 from backend.core.database import SessionLocal
+from backend.core.errors import classify_pipeline_error
 from backend.core.paths import RAW_DATA_DIR
 from backend.modules.documents.models import Document
 from backend.modules.telemetry.service import track_event
@@ -58,7 +59,7 @@ def run_pipeline(slug: str, pdf_path: str | None = None) -> None:
             doc = db.scalar(select(Document).where(Document.slug == slug))
             if doc is not None:
                 doc.status = "failed"
-                doc.error_message = f"{type(exc).__name__}: {exc}"
+                doc.error_message = classify_pipeline_error(exc)
                 db.commit()
             track_event("pdf_failed", error_type=type(exc).__name__)
             return

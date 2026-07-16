@@ -16,6 +16,7 @@ import pypdfium2 as pdfium
 from sqlalchemy import select
 
 from backend.core.database import SessionLocal
+from backend.core.errors import classify_pipeline_error
 from backend.core.paths import PROJECTS_DATA_DIR
 from backend.modules.projects.models import ProjectDocument
 from indexing.embeddings_index import build_embeddings_index
@@ -262,7 +263,7 @@ def run_project_pipeline(slug: str, pdf_path: str) -> None:
         except Exception as exc:
             logger.exception("Пайплайн архива для %s упал", slug)
             doc.status = "error"
-            doc.error = f"{type(exc).__name__}: {exc}"
+            doc.error = classify_pipeline_error(exc)
             db.commit()
             return
 
