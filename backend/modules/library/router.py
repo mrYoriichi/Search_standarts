@@ -89,15 +89,27 @@ def open_shared_file(
 
 @router.post("/library/scan", response_model=ScanSummary)
 def scan_library(
-    request: Request,
     db: Session = Depends(get_session),
 ) -> ScanSummary:
-    """Сканирует папку библиотеки: новые PDF отправляет в pipeline в фон."""
+    """Сканирует папку библиотеки: новые PDF регистрирует как pending (čeká)."""
+    library_path = settings_service.get_library_path(db)
+    if library_path is None:
+        raise HTTPException(status_code=400, detail="Папка библиотеки не задана")
+    return service.scan_library(Path(library_path), db)
+
+
+@router.post("/library/index")
+def index_library(
+    request: Request,
+    db: Session = Depends(get_session),
+) -> dict:
+    """Отправляет обнаруженные (pending) PDF в обработку — платный шаг."""
     library_path = settings_service.get_library_path(db)
     if library_path is None:
         raise HTTPException(status_code=400, detail="Папка библиотеки не задана")
     executor = request.app.state.executor
-    return service.scan_library(Path(library_path), db, executor)
+    started = service.start_indexing(Path(library_path), db, executor)
+    return {"started": started}
 
 
 @router.get("/library/pdf/{slug}")

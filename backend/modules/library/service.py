@@ -133,15 +133,17 @@ def find_pdf_by_slug(library_path: Path, slug: str) -> Path | None:
 def scan_library(
     library_path: Path,
     db: Session,
-    executor: ThreadPoolExecutor,
 ) -> ScanSummary:
-    """Сканирует папку библиотеки и кидает в pipeline новые PDF.
+    """Сканирует папку библиотеки: НОВЫЕ PDF только регистрирует (pending).
+
+    Скан бесплатный (обнаружение), индексация платная (vision LLM) — поэтому
+    это два осознанных шага юзера: Skenovat → список «čeká» → Indexovat
+    (start_indexing).
 
     Для каждого PDF:
       - если запись в БД есть (по slug) — пропускаем, но дозаполняем
         relative_path, если он был пустой (миграция старых записей);
-      - если нет — создаём Document(status='processing') и отправляем
-        run_pipeline в фон через executor.
+      - если нет — создаём Document(status='pending'), в пайплайн НЕ шлём.
 
     Сам файл юзера НЕ копируем — pipeline прочитает PDF прямо из библиотеки.
 
@@ -189,18 +191,39 @@ def scan_library(
         doc = Document(
             slug=slug,
             title=title,
-            status="processing",
+            status="pending",
             relative_path=relative_path,
         )
         db.add(doc)
         db.commit()
-        executor.submit(run_pipeline, slug, str(pdf_path))
         created += 1
 
     db.commit()
     return ScanSummary(
         created=created, already_indexed=already_indexed, duplicates=duplicates
     )
+
+
+def start_indexing(
+    library_path: Path,
+    db: Session,
+    executor: ThreadPoolExecutor,
+) -> int:
+    """Отправляет все pending-документы библиотеки в пайплайн.
+
+    Статус сразу переводим в processing: повторный клик по «Indexovat» не
+    отправит те же документы второй раз (двойная трата на vision), а после
+    падения приложения их подхватит возобновление на старте.
+    Возвращает число отправленных.
+    """
+    pending = db.scalars(select(Document).where(Document.status == "pending")).all()
+    for doc in pending:
+        doc.status = "processing"
+    db.commit()
+    for doc in pending:
+        pdf_path = str(library_path / doc.relative_path) if doc.relative_path else None
+        executor.submit(run_pipeline, doc.slug, pdf_path)
+    return len(pending)
 
 
 def open_file(library_path: Path, file_path: str) -> None:

@@ -92,6 +92,7 @@ export default function ArchivePage() {
   const [error, setError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
   const [scanning, setScanning] = useState(false)
+  const [indexing, setIndexing] = useState(false)
   const [summary, setSummary] = useState<ScanSummary | null>(null)
 
   async function loadAll() {
@@ -123,6 +124,11 @@ export default function ArchivePage() {
   // Пока есть документы в обработке/очереди — раз в 3 с перечитываем статусы.
   const hasActive = (archive?.projects ?? []).some((p) =>
     p.documents.some((d) => d.status === 'pending' || d.status === 'processing'),
+  )
+  // Обнаруженные, но ещё не индексированные — для кнопки «Indexovat (N)».
+  const pendingCount = (archive?.projects ?? []).reduce(
+    (sum, p) => sum + p.documents.filter((d) => d.status === 'pending').length,
+    0,
   )
   useEffect(() => {
     if (!hasActive) return
@@ -168,6 +174,23 @@ export default function ArchivePage() {
     }
   }
 
+  async function startIndexing() {
+    setIndexing(true)
+    try {
+      const res = await fetch('/api/projects/index', { method: 'POST' })
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}))
+        alert(data.detail ?? `Chyba ${res.status}`)
+        return
+      }
+      await loadAll()
+    } catch {
+      alert('Chyba sítě')
+    } finally {
+      setIndexing(false)
+    }
+  }
+
   if (loading) {
     return <p className="text-sm text-muted-foreground">Načítání…</p>
   }
@@ -208,9 +231,14 @@ export default function ArchivePage() {
 
       {path && (
         <div className="flex items-center gap-3">
-          <Button onClick={scan} disabled={scanning}>
+          <Button onClick={scan} disabled={scanning} variant="outline">
             {scanning ? 'Skenuji…' : 'Skenovat'}
           </Button>
+          {pendingCount > 0 && (
+            <Button onClick={startIndexing} disabled={indexing}>
+              {indexing ? 'Spouštím…' : `Indexovat (${pendingCount})`}
+            </Button>
+          )}
           {summary && (
             <p className="text-xs text-muted-foreground">
               Nalezeno {summary.found}, nových {summary.new}

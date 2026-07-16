@@ -6,7 +6,7 @@ type LibraryFile = {
   name: string
   path: string
   slug: string
-  status: 'processing' | 'ready' | 'failed' | null
+  status: 'pending' | 'processing' | 'ready' | 'failed' | null
   pinned: boolean
   error: string | null
   progress: string | null
@@ -134,6 +134,15 @@ function collectUnindexed(folder: LibraryFolder): LibraryFile[] {
 function hasProcessing(folder: LibraryFolder): boolean {
   if (folder.files.some((f) => f.status === 'processing')) return true
   return folder.folders.some(hasProcessing)
+}
+
+
+function countPending(folder: LibraryFolder): number {
+  let count = folder.files.filter((f) => f.status === 'pending').length
+  for (const sub of folder.folders) {
+    count += countPending(sub)
+  }
+  return count
 }
 
 
@@ -294,6 +303,9 @@ function StatusLabel({
   if (status === null) {
     return <span className="text-xs text-muted-foreground">neindexováno</span>
   }
+  if (status === 'pending') {
+    return <span className="text-xs text-amber-600">čeká na indexaci</span>
+  }
   if (status === 'processing') {
     return (
       <span className="text-xs text-blue-600">{progress ?? 'zpracovává se…'}</span>
@@ -419,6 +431,7 @@ function LibraryPage() {
   const [error, setError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
   const [scanning, setScanning] = useState(false)
+  const [indexing, setIndexing] = useState(false)
   // Slug'и документов, которые в этой сессии только что перешли в 'ready'
   // (например, после Сканировать или Переиндексировать). На них показываем
   // зелёную плашку «готов». После F5 set сбрасывается → плашки пропадают.
@@ -523,7 +536,7 @@ function LibraryPage() {
       let msg =
         data.created === 0
           ? `Žádné nové PDF nenalezeny (již v indexu: ${data.already_indexed}).`
-          : `Spuštěno zpracování ${data.created} nových PDF.`
+          : `Nalezeno ${data.created} nových PDF — zkontrolujte seznam a spusťte tlačítkem „Indexovat“.`
       if (data.duplicates && data.duplicates.length > 0) {
         msg +=
           '\n\n⚠️ Přeskočeny soubory se stejnými názvy — přejmenujte je, ' +
@@ -536,6 +549,23 @@ function LibraryPage() {
       alert('Chyba sítě')
     } finally {
       setScanning(false)
+    }
+  }
+
+  async function startIndexing() {
+    setIndexing(true)
+    try {
+      const res = await fetch('/api/library/index', { method: 'POST' })
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}))
+        alert(data.detail ?? `Chyba ${res.status}`)
+        return
+      }
+      await loadAll()
+    } catch {
+      alert('Chyba sítě')
+    } finally {
+      setIndexing(false)
     }
   }
 
@@ -601,6 +631,7 @@ function LibraryPage() {
       {library && (() => {
         const pinned = collectPinned(library.tree)
         const unindexed = collectUnindexed(library.tree)
+        const pendingCount = countPending(library.tree)
         return (
           <>
             {library.orphans.length > 0 && (
@@ -647,14 +678,27 @@ function LibraryPage() {
                 <h2 className="text-sm font-semibold text-muted-foreground">
                   Obsah
                 </h2>
-                <Button
-                  onClick={scan}
-                  disabled={scanning}
-                  variant="outline"
-                  size="sm"
-                >
-                  {scanning ? 'Skenuji…' : 'Skenovat'}
-                </Button>
+                <div className="flex items-center gap-2">
+                  {pendingCount > 0 && (
+                    <Button
+                      onClick={startIndexing}
+                      disabled={indexing}
+                      size="sm"
+                    >
+                      {indexing
+                        ? 'Spouštím…'
+                        : `Indexovat (${pendingCount})`}
+                    </Button>
+                  )}
+                  <Button
+                    onClick={scan}
+                    disabled={scanning}
+                    variant="outline"
+                    size="sm"
+                  >
+                    {scanning ? 'Skenuji…' : 'Skenovat'}
+                  </Button>
+                </div>
               </div>
               <FolderView
                 folder={library.tree}
