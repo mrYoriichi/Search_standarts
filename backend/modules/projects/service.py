@@ -13,6 +13,7 @@ import pypdfium2 as pdfium
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from backend.core import progress
 from backend.modules.projects.models import ProjectDocument
 from backend.modules.projects.schemas import (
     ArchiveResponse,
@@ -199,9 +200,9 @@ def build_archive_response(db: Session, path: str | None) -> ArchiveResponse:
 
     groups: dict[str, list[ProjectDocumentOut]] = {}
     for doc in docs:
-        groups.setdefault(doc.project, []).append(
-            ProjectDocumentOut.model_validate(doc)
-        )
+        out = ProjectDocumentOut.model_validate(doc)
+        out.progress = progress.get_progress(doc.slug)
+        groups.setdefault(doc.project, []).append(out)
 
     return ArchiveResponse(
         path=path,

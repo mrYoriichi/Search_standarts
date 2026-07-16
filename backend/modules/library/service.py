@@ -14,6 +14,7 @@ from typing import Callable
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from backend.core import progress
 from backend.modules.documents.models import Document
 from backend.modules.documents.pipeline import run_pipeline
 from backend.modules.library.schemas import (
@@ -26,21 +27,22 @@ from backend.modules.library.schemas import (
 from pdf_processing.parser import make_document_id
 
 
-# Резолвер статуса PDF по slug: (status, pinned, error). Различает пул юзера
-# (статус из БД) и общую базу (статус по наличию индексов). Так дерево строится
-# одним _walk. error — причина падения (только у пула юзера, иначе None).
-StatusResolver = Callable[[str], tuple[str | None, bool, str | None]]
+# Резолвер статуса PDF по slug: (status, pinned, error, progress). Различает пул
+# юзера (статус из БД) и общую базу (статус по наличию индексов). Так дерево
+# строится одним _walk. error — причина падения, progress — текущая стадия
+# обработки (оба только у пула юзера, иначе None).
+StatusResolver = Callable[[str], tuple[str | None, bool, str | None, str | None]]
 
 
 def build_library_response(library_path: Path, db: Session) -> LibraryResponse:
     """Возвращает дерево папки юзера + список висячих документов (нет файла в папке)."""
     docs_by_slug = {doc.slug: doc for doc in db.scalars(select(Document)).all()}
 
-    def resolve(slug: str) -> tuple[str | None, bool, str | None]:
+    def resolve(slug: str) -> tuple[str | None, bool, str | None, str | None]:
         doc = docs_by_slug.get(slug)
-        return (
-            (doc.status, doc.pinned, doc.error_message) if doc else (None, False, None)
-        )
+        if doc is None:
+            return (None, False, None, None)
+        return (doc.status, doc.pinned, doc.error_message, progress.get_progress(slug))
 
     tree = _walk(library_path, resolve)
     # Собираем slug'и всех PDF, реально лежащих в папке (включая подпапки).
@@ -65,12 +67,12 @@ def build_shared_library_response(
     из переданного множества (хранится в настройках). Висячих нет."""
     pinned = pinned_slugs or set()
 
-    def resolve(slug: str) -> tuple[str | None, bool, str | None]:
+    def resolve(slug: str) -> tuple[str | None, bool, str | None, str | None]:
         doc_dir = data_root / slug
         ready = (doc_dir / "chunks.json").exists() and (
             doc_dir / "embeddings.json"
         ).exists()
-        return ("ready" if ready else None, slug in pinned, None)
+        return ("ready" if ready else None, slug in pinned, None, None)
 
     tree = _walk(pdfs_root, resolve)
     # Корень _walk назвался бы «pdfs» (имя подпапки). Подменяем на имя бандла
@@ -97,7 +99,7 @@ def _walk(folder: Path, resolve: StatusResolver) -> LibraryFolder:
             folders.append(_walk(entry, resolve))
         elif entry.suffix.lower() == ".pdf":
             slug = make_document_id(entry.name)
-            status, pinned, error = resolve(slug)
+            status, pinned, error, doc_progress = resolve(slug)
             files.append(
                 LibraryFile(
                     name=entry.name,
@@ -106,6 +108,7 @@ def _walk(folder: Path, resolve: StatusResolver) -> LibraryFolder:
                     status=status,
                     pinned=pinned,
                     error=error,
+                    progress=doc_progress,
                 )
             )
     return LibraryFolder(

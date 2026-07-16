@@ -14,6 +14,7 @@ document.json НЕ меняется — это сознательно, чтоб�
 import json
 import sys
 from pathlib import Path
+from typing import Callable
 
 from dotenv import load_dotenv
 
@@ -61,6 +62,7 @@ def process(
     pdf_name: str,
     vision_model: str = VISION_MODEL,
     doc_dir: Path | None = None,
+    on_progress: Callable[[int, int], None] | None = None,
 ) -> None:
     """
     Описывает схемы и метаданные документа, результат пишет в descriptions.json.
@@ -68,6 +70,8 @@ def process(
     vision_model — модель vision LLM (рычаг стоимости; см. настройку vision_model).
     doc_dir — папка документа; по умолчанию data/raw_data/<id> (нормы),
     архив проектов передаёт свою (projects_data/<slug>).
+    on_progress — необязательный колбэк (номер страницы по счёту, всего страниц):
+    бэкенд показывает прогресс в UI, CLI живёт без него.
     """
     doc_dir = doc_dir or (RAW_DATA_DIR / make_document_id(pdf_name))
     document_path = doc_dir / "document.json"
@@ -112,6 +116,8 @@ def process(
             print(f"[{i}/{len(pages)}] стр. {page_number}: скриншота нет, пропуск")
             continue
 
+        if on_progress is not None:
+            on_progress(i, len(pages))
         print(f"[{i}/{len(pages)}] стр. {page_number}: запрос в LLM...")
         page_descriptions, in_tok, out_tok = describe_page_visuals(
             document, page_number, image_path, model=vision_model

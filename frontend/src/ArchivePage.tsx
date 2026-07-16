@@ -13,6 +13,7 @@ type ArchiveDocument = {
   page_count: number
   status: string
   error: string | null
+  progress: string | null
 }
 
 type ArchiveResponse = {
@@ -37,7 +38,10 @@ function statusLabel(doc: ArchiveDocument): { text: string; className: string } 
     case 'pending':
       return { text: 'čeká', className: 'text-muted-foreground' }
     case 'processing':
-      return { text: 'zpracovává se…', className: 'text-amber-600' }
+      return {
+        text: doc.progress ?? 'zpracovává se…',
+        className: 'text-amber-600',
+      }
     case 'error':
       return { text: 'chyba', className: 'text-destructive' }
     default:

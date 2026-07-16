@@ -10,7 +10,7 @@ import logging
 
 from sqlalchemy import select
 
-from backend.core import library_cache
+from backend.core import library_cache, progress
 from backend.core.database import SessionLocal
 from backend.core.errors import classify_pipeline_error
 from backend.core.paths import RAW_DATA_DIR
@@ -50,9 +50,19 @@ def run_pipeline(slug: str, pdf_path: str | None = None) -> None:
         # старте обработки документа, чтобы применить актуальный выбор.
         vision_model = settings_service.get_vision_model(db)
         try:
+            progress.set_progress(slug, "čtení PDF…")
             parser_step.process(slug, pdf_path=pdf_path)
-            describe_step.process(slug, vision_model=vision_model)
+            progress.set_progress(slug, "popis obrázků…")
+            describe_step.process(
+                slug,
+                vision_model=vision_model,
+                on_progress=lambda done, total: progress.set_progress(
+                    slug, f"popis obrázků: strana {done}/{total}"
+                ),
+            )
+            progress.set_progress(slug, "řezání na části…")
             chunk_step.process(slug)
+            progress.set_progress(slug, "indexace…")
             index_step.process(slug)
         except Exception as exc:
             logger.exception("Pipeline для %s упал", slug)
@@ -94,4 +104,5 @@ def run_pipeline(slug: str, pdf_path: str | None = None) -> None:
             pass
         track_event("pdf_indexed", chunks_count=chunks_count)
     finally:
+        progress.clear_progress(slug)
         db.close()

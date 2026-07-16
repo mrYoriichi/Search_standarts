@@ -15,6 +15,7 @@ from pathlib import Path
 import pypdfium2 as pdfium
 from sqlalchemy import select
 
+from backend.core import progress
 from backend.core.database import SessionLocal
 from backend.core.errors import classify_pipeline_error
 from backend.core.paths import PROJECTS_DATA_DIR
@@ -144,8 +145,10 @@ def process_sheet_document(
     total_cost = 0.0
     doc = pdfium.PdfDocument(pdf_path)
     try:
-        for i in range(len(doc)):
+        total_pages = len(doc)
+        for i in range(total_pages):
             page_number = i + 1
+            progress.set_progress(slug, f"list {page_number}/{total_pages} (vision)…")
             image_path = render_page_png(
                 doc, i, pages_dir / f"page_{page_number:03d}.png"
             )
@@ -213,10 +216,21 @@ def process_text_document(
     import index as index_step
 
     doc_dir = PROJECTS_DATA_DIR / slug
+    progress.set_progress(slug, "čtení PDF…")
     parser_step.process(slug, pdf_path=str(pdf_path), doc_dir=doc_dir, document_id=slug)
-    describe_step.process(slug, vision_model=vision_model, doc_dir=doc_dir)
+    progress.set_progress(slug, "popis obrázků…")
+    describe_step.process(
+        slug,
+        vision_model=vision_model,
+        doc_dir=doc_dir,
+        on_progress=lambda done, total: progress.set_progress(
+            slug, f"popis obrázků: strana {done}/{total}"
+        ),
+    )
+    progress.set_progress(slug, "řezání na části…")
     chunk_step.process(slug, doc_dir=doc_dir)
     _prefix_project_context(doc_dir, project)
+    progress.set_progress(slug, "indexace…")
     index_step.process(slug, doc_dir=doc_dir)
 
 
@@ -277,4 +291,5 @@ def run_project_pipeline(slug: str, pdf_path: str) -> None:
 
         library_cache.invalidate()
     finally:
+        progress.clear_progress(slug)
         db.close()

@@ -20,6 +20,9 @@ class LibraryFile(BaseModel):
     pinned: bool
     # Человекочитаемая причина падения (только при status='failed').
     error: str | None = None
+    # Текущая стадия обработки (только при status='processing'), напр.
+    # "popis obrázků: strana 12/47". Эфемерное, из backend.core.progress.
+    progress: str | None = None
 
 
 class LibraryFolder(BaseModel):

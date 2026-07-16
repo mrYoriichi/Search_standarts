@@ -15,6 +15,9 @@ class ProjectDocumentOut(BaseModel):
     page_count: int
     status: str
     error: str | None = None
+    # Текущая стадия обработки (только при status='processing'), эфемерное —
+    # заполняется из backend.core.progress, в БД его нет.
+    progress: str | None = None
 
 
 class ProjectGroup(BaseModel):

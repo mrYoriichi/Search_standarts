@@ -9,6 +9,7 @@ type LibraryFile = {
   status: 'processing' | 'ready' | 'failed' | null
   pinned: boolean
   error: string | null
+  progress: string | null
 }
 
 type LibraryFolder = {
@@ -245,7 +246,11 @@ function FileRow({
       >
         📄 {file.name}
       </button>
-      <StatusLabel status={file.status} freshlyReady={freshlyReady.has(file.slug)} />
+      <StatusLabel
+        status={file.status}
+        progress={file.progress}
+        freshlyReady={freshlyReady.has(file.slug)}
+      />
       {(file.status === 'ready' || file.status === 'failed') && (
         <button
           onClick={async () => {
@@ -279,16 +284,20 @@ function FileRow({
 
 function StatusLabel({
   status,
+  progress,
   freshlyReady,
 }: {
   status: LibraryFile['status']
+  progress: string | null
   freshlyReady: boolean
 }) {
   if (status === null) {
     return <span className="text-xs text-muted-foreground">neindexováno</span>
   }
   if (status === 'processing') {
-    return <span className="text-xs text-blue-600">zpracovává se…</span>
+    return (
+      <span className="text-xs text-blue-600">{progress ?? 'zpracovává se…'}</span>
+    )
   }
   if (status === 'failed') {
     return <span className="text-xs text-red-600">chyba</span>
