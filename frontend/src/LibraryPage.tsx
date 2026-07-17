@@ -531,12 +531,16 @@ function LibraryPage() {
       const data: {
         created: number
         already_indexed: number
+        adopted?: number
         duplicates?: string[]
       } = await res.json()
       let msg =
         data.created === 0
           ? `Žádné nové PDF nenalezeny (již v indexu: ${data.already_indexed}).`
           : `Nalezeno ${data.created} nových PDF — zkontrolujte seznam a spusťte tlačítkem „Indexovat“.`
+      if (data.adopted && data.adopted > 0) {
+        msg += `\n\nPřevzato ${data.adopted} hotových indexů ze složky (bez indexace, zdarma).`
+      }
       if (data.duplicates && data.duplicates.length > 0) {
         msg +=
           '\n\n⚠️ Přeskočeny soubory se stejnými názvy — přejmenujte je, ' +

@@ -5,6 +5,7 @@
 с проверкой, что путь находится внутри библиотеки.
 """
 
+import json
 import platform
 import subprocess
 from concurrent.futures import ThreadPoolExecutor
@@ -14,7 +15,7 @@ from typing import Callable
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from backend.core import index_store, progress
+from backend.core import index_store, library_cache, progress
 from backend.modules.documents.models import Document
 from backend.modules.documents.pipeline import run_pipeline
 from backend.modules.library.schemas import (
@@ -143,7 +144,10 @@ def scan_library(
     Для каждого PDF:
       - если запись в БД есть (по slug) — пропускаем, но дозаполняем
         relative_path, если он был пустой (миграция старых записей);
-      - если нет — создаём Document(status='pending'), в пайплайн НЕ шлём.
+      - если записи нет, но в <папка>/.search_index/{slug} лежит полный
+        индекс на нашей модели эмбеддингов — «усыновляем»: документ сразу
+        ready, без трат (папку уже проиндексировал кто-то другой);
+      - иначе — создаём Document(status='pending'), в пайплайн НЕ шлём.
 
     Сам файл юзера НЕ копируем — pipeline прочитает PDF прямо из библиотеки.
 
@@ -164,8 +168,17 @@ def scan_library(
         slug = make_document_id(p.name)
         slug_counts[slug] = slug_counts.get(slug, 0) + 1
 
+    # Ленивый импорт: embeddings_index тянет openai/tiktoken.
+    from indexing.embeddings_index import EMBEDDING_MODEL
+
+    # Усыновлять чужие индексы можно только на нашей модели эмбеддингов —
+    # векторы разных моделей несравнимы.
+    meta = index_store.read_meta(library_path)
+    can_adopt = meta is not None and meta.get("embedding_model") == EMBEDDING_MODEL
+
     created = 0
     already_indexed = 0
+    adopted = 0
     duplicates: list[str] = []
 
     for pdf_path in pdf_paths:
@@ -187,6 +200,18 @@ def scan_library(
             already_indexed += 1
             continue
 
+        if can_adopt and index_store.has_complete_index(library_path, slug):
+            doc = Document(
+                slug=slug,
+                title=_adopted_title(library_path, slug) or pdf_path.stem,
+                status="ready",
+                relative_path=relative_path,
+            )
+            db.add(doc)
+            db.commit()
+            adopted += 1
+            continue
+
         title = pdf_path.stem  # имя без расширения; реальный title подменит pipeline
         doc = Document(
             slug=slug,
@@ -199,9 +224,26 @@ def scan_library(
         created += 1
 
     db.commit()
+    if adopted:
+        # В пуле появились готовые документы без прогона пайплайна —
+        # следующий вопрос должен их увидеть.
+        library_cache.invalidate()
     return ScanSummary(
-        created=created, already_indexed=already_indexed, duplicates=duplicates
+        created=created,
+        already_indexed=already_indexed,
+        adopted=adopted,
+        duplicates=duplicates,
     )
+
+
+def _adopted_title(library_path: Path, slug: str) -> str | None:
+    """Название усыновляемого документа из descriptions.json, если оно там есть."""
+    path = index_store.doc_dir(library_path, slug) / "descriptions.json"
+    try:
+        with open(path, encoding="utf-8") as f:
+            return json.load(f).get("document_title") or None
+    except (OSError, json.JSONDecodeError):
+        return None
 
 
 def start_indexing(
