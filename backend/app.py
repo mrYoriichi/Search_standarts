@@ -26,6 +26,7 @@ from pathlib import Path
 # Загружаем .env как можно раньше — до импорта сервисов, читающих env-vars.
 load_dotenv()
 
+from backend.core import index_store
 from backend.core.database import Base, SessionLocal, engine, ensure_columns
 from backend.core.paths import FRONTEND_DIST
 from backend.modules.auth import service as auth_service
@@ -78,9 +79,11 @@ async def lifespan(app: FastAPI):
         ).all()
         for doc in stuck:
             pdf_path: str | None = None
+            doc_dir: Path | None = None
             if doc.relative_path and library_path:
                 pdf_path = str(Path(library_path) / doc.relative_path)
-            executor.submit(run_pipeline, doc.slug, pdf_path)
+                doc_dir = index_store.doc_dir(Path(library_path), doc.slug)
+            executor.submit(run_pipeline, doc.slug, pdf_path, doc_dir)
             print(f"[startup] Возобновлён pipeline для {doc.slug}")
 
         # То же для архива проектов: застрявшие в processing после падения.

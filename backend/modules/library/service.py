@@ -14,7 +14,7 @@ from typing import Callable
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from backend.core import progress
+from backend.core import index_store, progress
 from backend.modules.documents.models import Document
 from backend.modules.documents.pipeline import run_pipeline
 from backend.modules.library.schemas import (
@@ -214,15 +214,28 @@ def start_indexing(
     Статус сразу переводим в processing: повторный клик по «Indexovat» не
     отправит те же документы второй раз (двойная трата на vision), а после
     падения приложения их подхватит возобновление на старте.
+    Артефакты пишутся в <папка>/.search_index/{slug} (паспорт папки —
+    meta.json — создаём здесь при первой индексации).
     Возвращает число отправленных.
     """
+    # Ленивый импорт: embeddings_index тянет openai/tiktoken, а start_indexing
+    # зовётся редко — не грузим их при импорте модуля.
+    from indexing.embeddings_index import EMBEDDING_MODEL
+
     pending = db.scalars(select(Document).where(Document.status == "pending")).all()
+    if pending:
+        index_store.ensure_meta(library_path, EMBEDDING_MODEL)
     for doc in pending:
         doc.status = "processing"
     db.commit()
     for doc in pending:
         pdf_path = str(library_path / doc.relative_path) if doc.relative_path else None
-        executor.submit(run_pipeline, doc.slug, pdf_path)
+        executor.submit(
+            run_pipeline,
+            doc.slug,
+            pdf_path,
+            index_store.doc_dir(library_path, doc.slug),
+        )
     return len(pending)
 
 

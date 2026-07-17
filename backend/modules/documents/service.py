@@ -9,7 +9,7 @@ from fastapi import UploadFile
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from backend.core import library_cache
+from backend.core import index_store, library_cache
 from backend.core.paths import PDF_STORAGE_DIR, RAW_DATA_DIR
 from backend.modules.documents.models import Document
 from backend.modules.documents.pipeline import run_pipeline
@@ -19,6 +19,16 @@ from pdf_processing.parser import make_document_id
 
 # Пути к данным юзера (raw_data, pdfs) — единый источник в backend.core.paths.
 # main.py ищет загруженный PDF как PDF_STORAGE_DIR/{pdf_name}.pdf.
+
+
+def _artifact_dirs(slug: str, library_path: Path | None) -> list[Path]:
+    """Кандидаты на папку артефактов документа: новый пул .search_index
+    (если папка библиотеки известна) и легаси-пул data/raw_data."""
+    dirs: list[Path] = []
+    if library_path is not None:
+        dirs.append(index_store.doc_dir(library_path, slug))
+    dirs.append(RAW_DATA_DIR / slug)
+    return dirs
 
 
 def list_documents(db: Session) -> list[Document]:
@@ -51,9 +61,11 @@ def reindex_document(
     if not pdf_path.exists():
         raise ValueError(f"PDF не найден в библиотеке: {pdf_path}")
 
-    artifacts_dir = RAW_DATA_DIR / slug
-    if artifacts_dir.exists():
-        shutil.rmtree(artifacts_dir)
+    # Сносим старые артефакты в обоих пулах (легаси data/raw_data и
+    # .search_index) — новые лягут в .search_index.
+    for artifacts_dir in _artifact_dirs(slug, library_path):
+        if artifacts_dir.exists():
+            shutil.rmtree(artifacts_dir)
 
     doc.status = "processing"
     doc.error_message = None
@@ -63,23 +75,30 @@ def reindex_document(
     # конца переобработки (pipeline сбросит кеш ещё раз, когда документ снова готов).
     library_cache.invalidate()
 
-    executor.submit(run_pipeline, slug, str(pdf_path))
+    # Ленивый импорт: embeddings_index тянет openai/tiktoken.
+    from indexing.embeddings_index import EMBEDDING_MODEL
+
+    index_store.ensure_meta(library_path, EMBEDDING_MODEL)
+    executor.submit(
+        run_pipeline, slug, str(pdf_path), index_store.doc_dir(library_path, slug)
+    )
     return doc
 
 
-def delete_document(db: Session, slug: str) -> None:
+def delete_document(db: Session, slug: str, library_path: Path | None = None) -> None:
     """Убирает документ из индекса: удаляет запись и наши артефакты.
 
     PDF в папке юзера НЕ трогаем — программа никогда не модифицирует
-    файлы пользователя (см. PROJECT_STATE.md, принцип 16).
+    файлы пользователя (см. PROJECT_STATE.md, принцип 16). Пишем только
+    внутрь своей подпапки .search_index (и легаси data/raw_data).
     """
     doc = db.scalar(select(Document).where(Document.slug == slug))
     if doc is None:
         raise ValueError(f"Документ {slug} не найден")
 
-    artifacts_dir = RAW_DATA_DIR / slug
-    if artifacts_dir.exists():
-        shutil.rmtree(artifacts_dir)
+    for artifacts_dir in _artifact_dirs(slug, library_path):
+        if artifacts_dir.exists():
+            shutil.rmtree(artifacts_dir)
 
     db.delete(doc)
     db.commit()
@@ -96,7 +115,9 @@ def toggle_pin(db: Session, slug: str) -> Document:
     return doc
 
 
-def relink_document(db: Session, old_slug: str, new_slug: str) -> Document:
+def relink_document(
+    db: Session, old_slug: str, new_slug: str, library_path: Path | None = None
+) -> Document:
     """Переносит существующий индекс со старого slug на новый — для переименования файла.
 
     Юзер переименовал PDF в папке библиотеки. Чтобы не платить за повторный
@@ -104,7 +125,8 @@ def relink_document(db: Session, old_slug: str, new_slug: str) -> Document:
     эмбеддинги на новое имя.
 
     Шаги:
-    1. Переименовать data/raw_data/{old_slug}/ -> {new_slug}/
+    1. Переименовать папку артефактов {old_slug}/ -> {new_slug}/ в том пуле,
+       где она лежит (.search_index или легаси data/raw_data)
     2. В chunks.json заменить document_id и префикс chunk_id со старого на новый
     3. В embeddings.json заменить префикс chunk_id
     4. Обновить Document.slug в БД
@@ -120,10 +142,13 @@ def relink_document(db: Session, old_slug: str, new_slug: str) -> Document:
     if conflicting is not None:
         raise ValueError(f"Документ с slug {new_slug} уже существует")
 
-    old_dir = RAW_DATA_DIR / old_slug
-    new_dir = RAW_DATA_DIR / new_slug
-    if not old_dir.exists():
-        raise ValueError(f"Папка {old_dir} не найдена на диске")
+    # Индекс переносим внутри того пула, где он реально лежит.
+    old_dir = next(
+        (d for d in _artifact_dirs(old_slug, library_path) if d.exists()), None
+    )
+    if old_dir is None:
+        raise ValueError(f"Папка артефактов {old_slug} не найдена на диске")
+    new_dir = old_dir.parent / new_slug
     if new_dir.exists():
         raise ValueError(f"Папка {new_dir} уже существует — конфликт")
 

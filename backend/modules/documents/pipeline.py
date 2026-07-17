@@ -7,6 +7,8 @@ FastAPI-зависимости здесь не работают.
 
 import json
 import logging
+import tempfile
+from pathlib import Path
 
 from sqlalchemy import select
 
@@ -21,13 +23,20 @@ from backend.modules.telemetry.service import track_event
 logger = logging.getLogger(__name__)
 
 
-def run_pipeline(slug: str, pdf_path: str | None = None) -> None:
+def run_pipeline(
+    slug: str, pdf_path: str | None = None, doc_dir: Path | None = None
+) -> None:
     """Прогоняет полный пайплайн для одного документа.
 
-    slug — id документа, совпадает с именем папки в data/raw_data/{slug}/.
+    slug — id документа, совпадает с именем папки артефактов.
     pdf_path — полный путь к PDF. Если не задан, main.py возьмёт по старой
     логике из data/pdfs/{slug}.pdf (upload-flow). Сканирование папки
     библиотеки передаёт сюда путь к PDF прямо из папки юзера.
+    doc_dir — папка артефактов. Библиотека передаёт
+    <папка>/.search_index/{slug}; без него — старый пул data/raw_data/{slug}.
+
+    Скриншоты страниц живут во ВРЕМЕННОЙ локальной папке: нужны только
+    vision-шагу, в артефактах не хранятся (и не ездят на сетевой диск).
 
     На любой ошибке: status='failed' + текст ошибки в Document.error_message.
     На успехе: status='ready', error_message=None.
@@ -45,25 +54,32 @@ def run_pipeline(slug: str, pdf_path: str | None = None) -> None:
     from backend.modules.settings import service as settings_service
 
     db = SessionLocal()
+    doc_dir = doc_dir or (RAW_DATA_DIR / slug)
     try:
         # Vision-модель — рычаг стоимости, юзер выбирает в «Knihovna». Читаем на
         # старте обработки документа, чтобы применить актуальный выбор.
         vision_model = settings_service.get_vision_model(db)
         try:
-            progress.set_progress(slug, "čtení PDF…")
-            parser_step.process(slug, pdf_path=pdf_path)
-            progress.set_progress(slug, "popis obrázků…")
-            describe_step.process(
-                slug,
-                vision_model=vision_model,
-                on_progress=lambda done, total: progress.set_progress(
-                    slug, f"popis obrázků: strana {done}/{total}"
-                ),
-            )
+            with tempfile.TemporaryDirectory(prefix=f"ss_pages_{slug}_") as tmp:
+                pages_dir = Path(tmp)
+                progress.set_progress(slug, "čtení PDF…")
+                parser_step.process(
+                    slug, pdf_path=pdf_path, doc_dir=doc_dir, pages_dir=pages_dir
+                )
+                progress.set_progress(slug, "popis obrázků…")
+                describe_step.process(
+                    slug,
+                    vision_model=vision_model,
+                    doc_dir=doc_dir,
+                    pages_dir=pages_dir,
+                    on_progress=lambda done, total: progress.set_progress(
+                        slug, f"popis obrázků: strana {done}/{total}"
+                    ),
+                )
             progress.set_progress(slug, "řezání na části…")
-            chunk_step.process(slug)
+            chunk_step.process(slug, doc_dir=doc_dir)
             progress.set_progress(slug, "indexace…")
-            index_step.process(slug)
+            index_step.process(slug, doc_dir=doc_dir)
         except Exception as exc:
             logger.exception("Pipeline для %s упал", slug)
             doc = db.scalar(select(Document).where(Document.slug == slug))
@@ -77,7 +93,7 @@ def run_pipeline(slug: str, pdf_path: str | None = None) -> None:
         # Берём настоящий заголовок документа из descriptions.json
         # (его проставил describe_step). При загрузке у нас был только
         # filename — теперь подменим на нормальное название.
-        descriptions_path = RAW_DATA_DIR / slug / "descriptions.json"
+        descriptions_path = doc_dir / "descriptions.json"
         with open(descriptions_path, encoding="utf-8") as f:
             real_title = json.load(f).get("document_title")
 
@@ -95,7 +111,7 @@ def run_pipeline(slug: str, pdf_path: str | None = None) -> None:
 
         # Считаем число чанков как косвенный размер документа — слать имя файла
         # нельзя (это уже Уровень 2 / персональные данные).
-        chunks_path = RAW_DATA_DIR / slug / "chunks.json"
+        chunks_path = doc_dir / "chunks.json"
         chunks_count: int | None = None
         try:
             with open(chunks_path, encoding="utf-8") as f:
