@@ -426,6 +426,9 @@ function VisionModelCard() {
 function LibraryPage() {
   const [paths, setPaths] = useState<string[]>([])
   const [pathInput, setPathInput] = useState('')
+  // Какую папку сейчас правим (её путь) и текущий текст правки. null — не правим.
+  const [editingPath, setEditingPath] = useState<string | null>(null)
+  const [editValue, setEditValue] = useState('')
   const [library, setLibrary] = useState<LibraryResponse | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -610,6 +613,37 @@ function LibraryPage() {
     await loadAll()
   }
 
+  function startEdit(target: string) {
+    setEditingPath(target)
+    setEditValue(target)
+  }
+
+  async function savePathEdit() {
+    const value = editValue.trim()
+    if (!value || editingPath === null) return
+    if (value === editingPath) {
+      setEditingPath(null)
+      return
+    }
+    setSaving(true)
+    try {
+      const res = await fetch('/api/settings/libraries', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ old_path: editingPath, new_path: value }),
+      })
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}))
+        alert(data.detail ?? `Chyba ${res.status}`)
+        return
+      }
+      setEditingPath(null)
+      await loadAll()
+    } finally {
+      setSaving(false)
+    }
+  }
+
   if (loading) {
     return <p className="text-sm text-muted-foreground">Načítání…</p>
   }
@@ -631,14 +665,54 @@ function LibraryPage() {
                 key={p}
                 className="flex items-center gap-2 text-sm font-mono bg-muted/40 rounded px-2 py-1"
               >
-                <span className="flex-1 break-all">{p}</span>
-                <button
-                  onClick={() => removePath(p)}
-                  className="text-muted-foreground hover:text-destructive shrink-0"
-                  title="Odpojit složku"
-                >
-                  ✕
-                </button>
+                {editingPath === p ? (
+                  <>
+                    <input
+                      type="text"
+                      value={editValue}
+                      onChange={(e) => setEditValue(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') savePathEdit()
+                        if (e.key === 'Escape') setEditingPath(null)
+                      }}
+                      autoFocus
+                      className="flex-1 border rounded px-2 py-0.5 text-sm font-mono"
+                    />
+                    <button
+                      onClick={savePathEdit}
+                      disabled={saving || !editValue.trim()}
+                      className="text-muted-foreground hover:text-foreground shrink-0"
+                      title="Uložit"
+                    >
+                      ✓
+                    </button>
+                    <button
+                      onClick={() => setEditingPath(null)}
+                      className="text-muted-foreground hover:text-foreground shrink-0"
+                      title="Zrušit"
+                    >
+                      ✕
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <span className="flex-1 break-all">{p}</span>
+                    <button
+                      onClick={() => startEdit(p)}
+                      className="text-muted-foreground hover:text-foreground shrink-0"
+                      title="Upravit cestu"
+                    >
+                      ✎
+                    </button>
+                    <button
+                      onClick={() => removePath(p)}
+                      className="text-muted-foreground hover:text-destructive shrink-0"
+                      title="Odpojit složku"
+                    >
+                      🗑
+                    </button>
+                  </>
+                )}
               </li>
             ))}
           </ul>

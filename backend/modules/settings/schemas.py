@@ -21,6 +21,13 @@ class LibraryPathsResponse(BaseModel):
     paths: list[str]
 
 
+class LibraryPathUpdate(BaseModel):
+    """Заменить папку в списке: старый путь → новый (правка)."""
+
+    old_path: str
+    new_path: str
+
+
 class OpenAIKeyStatus(BaseModel):
     """Статус ключа OpenAI. Полный ключ наружу не отдаём — только хвост."""
 

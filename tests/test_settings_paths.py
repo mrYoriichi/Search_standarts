@@ -45,6 +45,39 @@ def test_add_rejects_missing_dir(db, tmp_path):
         service.add_library_path(db, str(tmp_path / "nope"))
 
 
+def test_update_replaces_in_place(db, tmp_path):
+    a = tmp_path / "a"
+    b = tmp_path / "b"
+    c = tmp_path / "c"
+    for d in (a, b, c):
+        d.mkdir()
+    service.add_library_path(db, str(a))
+    service.add_library_path(db, str(b))
+    # Правим первую папку a → c, порядок сохраняется.
+    result = service.update_library_path(db, str(a), str(c))
+    assert result == [str(c), str(b)]
+
+
+def test_update_rejects_missing_new_dir(db, tmp_path):
+    a = tmp_path / "a"
+    a.mkdir()
+    service.add_library_path(db, str(a))
+    with pytest.raises(ValueError):
+        service.update_library_path(db, str(a), str(tmp_path / "nope"))
+
+
+def test_update_dedups_when_new_already_present(db, tmp_path):
+    a = tmp_path / "a"
+    b = tmp_path / "b"
+    a.mkdir()
+    b.mkdir()
+    service.add_library_path(db, str(a))
+    service.add_library_path(db, str(b))
+    # Правим a → b, хотя b уже есть: остаётся один b.
+    result = service.update_library_path(db, str(a), str(b))
+    assert result == [str(b)]
+
+
 def test_migrates_legacy_single_path(db, tmp_path):
     lib = tmp_path / "Normy"
     lib.mkdir()

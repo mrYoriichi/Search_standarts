@@ -9,6 +9,7 @@ from backend.modules.settings.schemas import (
     LibraryPathRequest,
     LibraryPathResponse,
     LibraryPathsResponse,
+    LibraryPathUpdate,
     OpenAIKeyRequest,
     OpenAIKeyStatus,
     VisionModelSetting,
@@ -51,6 +52,19 @@ def add_library_path(
     """Добавляет папку в список библиотеки. 400, если папки нет на диске."""
     try:
         paths = service.add_library_path(db, body.path)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return LibraryPathsResponse(paths=paths)
+
+
+@router.put("/settings/libraries", response_model=LibraryPathsResponse)
+def update_library_path(
+    body: LibraryPathUpdate,
+    db: Session = Depends(get_session),
+) -> LibraryPathsResponse:
+    """Правит путь папки в списке. 400, если новой папки нет на диске."""
+    try:
+        paths = service.update_library_path(db, body.old_path, body.new_path)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return LibraryPathsResponse(paths=paths)

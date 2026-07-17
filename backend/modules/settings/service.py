@@ -135,6 +135,35 @@ def remove_library_path(db: Session, raw_path: str) -> list[str]:
     return paths
 
 
+def update_library_path(db: Session, old_raw: str, new_raw: str) -> list[str]:
+    """Заменяет папку в списке на новую (правка пути), сохраняя её позицию.
+
+    Валидирует, что новая папка существует. Если старого пути в списке нет —
+    просто добавляет новый (idempotent). Документы привязаны к метке папки
+    (folder_id из meta.json), а не к строке пути, поэтому если новый путь
+    указывает на ту же физическую папку — индексы переподключатся сами.
+    """
+    new_path = str(_validate_dir(new_raw))
+    old_path = str(Path(old_raw).expanduser().resolve())
+
+    result: list[str] = []
+    seen: set[str] = set()
+    replaced = False
+    for p in get_library_paths(db):
+        candidate = new_path if p == old_path else p
+        if p == old_path:
+            replaced = True
+        if candidate not in seen:  # дедуп, если new уже был в списке
+            result.append(candidate)
+            seen.add(candidate)
+    if not replaced and new_path not in seen:
+        result.append(new_path)
+
+    _save_library_paths(db, result)
+    library_cache.invalidate()
+    return result
+
+
 def get_shared_library_path(db: Session) -> str | None:
     """Возвращает путь к папке общей базы или None, если не задан."""
     setting = db.scalar(select(Setting).where(Setting.key == SHARED_LIBRARY_PATH_KEY))
