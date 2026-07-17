@@ -37,22 +37,24 @@ StatusResolver = Callable[[str], tuple[str | None, bool, str | None, str | None]
 SlugOf = Callable[[str], str]
 
 
-def _folder_id(library_path: Path) -> str | None:
-    """Постоянная метка папки из meta.json; создаёт паспорт, если папка новая.
+def _folder_ids(paths: list[Path]) -> dict[Path, str | None]:
+    """Метки всех папок, гарантированно уникальные между собой.
 
-    Метка нужна, чтобы строить id документа `{folder_id}__{файл}` (различать
-    одноимённые файлы из разных папок). read-only папка без meta.json (её не
-    индексировали) → None, id тогда строится по-старому (только имя файла).
+    Если папку скопировали вместе с `.search_index` (одинаковый folder_id),
+    коллизию чиним: второй папке метка перевыдаётся (см.
+    index_store.ensure_unique_folder_id). Персистим в meta.json, чтобы все
+    читатели (дерево, resolve_folder, кеш) видели уже исправленные метки.
     """
-    meta = index_store.read_meta(library_path)
-    if meta is not None:
-        return meta.get("folder_id")
     from indexing.embeddings_index import EMBEDDING_MODEL
 
-    try:
-        return index_store.ensure_meta(library_path, EMBEDDING_MODEL)["folder_id"]
-    except OSError:
-        return None  # папка только для чтения — паспорт не создать
+    ids: dict[Path, str | None] = {}
+    taken: set[str] = set()
+    for lib in paths:
+        fid = index_store.ensure_unique_folder_id(lib, taken, EMBEDDING_MODEL)
+        ids[lib] = fid
+        if fid:
+            taken.add(fid)
+    return ids
 
 
 def _slug_fn(folder_id: str | None) -> SlugOf:
@@ -80,7 +82,8 @@ def build_library_response(paths: list[Path], db: Session) -> LibraryResponse:
             return (None, False, None, None)
         return (doc.status, doc.pinned, doc.error_message, progress.get_progress(slug))
 
-    subtrees = [_walk(lib, resolve, _slug_fn(_folder_id(lib))) for lib in paths]
+    folder_ids = _folder_ids(paths)
+    subtrees = [_walk(lib, resolve, _slug_fn(folder_ids[lib])) for lib in paths]
     if len(subtrees) == 1:
         root = subtrees[0]
     else:
@@ -204,9 +207,10 @@ def scan_library(paths: list[Path], db: Session) -> ScanSummary:
     docs_by_slug = {doc.slug: doc for doc in db.scalars(select(Document)).all()}
     summary = ScanSummary(created=0, already_indexed=0, adopted=0, duplicates=[])
     any_adopted = False
+    folder_ids = _folder_ids(paths)
 
     for library_path in paths:
-        folder_id = _folder_id(library_path)
+        folder_id = folder_ids[library_path]
         slug_of = _slug_fn(folder_id)
         # Усыновлять чужие индексы можно только на нашей модели эмбеддингов.
         meta = index_store.read_meta(library_path)

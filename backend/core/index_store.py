@@ -98,6 +98,39 @@ def resolve_folder(paths: list[Path], slug: str) -> Path | None:
     return None
 
 
+def ensure_unique_folder_id(
+    library_path: Path, taken: set[str], embedding_model: str
+) -> str | None:
+    """Метка папки, гарантированно не совпадающая с taken (уже занятыми).
+
+    Если папку скопировали вместе со скрытой `.search_index` (meta.json тоже
+    скопировался), у двух папок окажется одинаковый folder_id — метка должна
+    быть уникальной, иначе документы одной папки полезут искать PDF в другой.
+    В таком случае перевыдаём метку и переписываем meta.json.
+
+    read-only папка без возможности записать meta.json → None (метку не
+    выдать; такая папка не индексируется).
+    """
+    meta = read_meta(library_path)
+    if meta is None:
+        try:
+            meta = ensure_meta(library_path, embedding_model)
+        except OSError:
+            return None
+    fid = meta.get("folder_id")
+    if not fid or fid in taken:
+        fid = uuid.uuid4().hex
+        meta["folder_id"] = fid
+        try:
+            with open(
+                index_root(library_path) / META_FILENAME, "w", encoding="utf-8"
+            ) as f:
+                json.dump(meta, f, ensure_ascii=False, indent=2)
+        except OSError:
+            return None  # папка только для чтения — коллизию не починить
+    return fid
+
+
 def has_complete_index(library_path: Path, slug: str) -> bool:
     """Есть ли у документа полный индекс (нужный поиску минимум).
 

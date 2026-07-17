@@ -1,6 +1,7 @@
 """Тесты скана библиотеки: регистрация pending и усыновление готовых индексов."""
 
 import json
+import shutil
 
 import pytest
 from sqlalchemy import create_engine, select
@@ -102,6 +103,35 @@ def test_same_filename_in_two_folders_are_distinct_docs(db, tmp_path):
     assert summary.duplicates == []
     slugs = {d.slug for d in db.scalars(select(Document)).all()}
     assert slugs == {_slug(lib_a, "most"), _slug(lib_b, "most")}
+
+
+def test_copied_folder_gets_fresh_id(db, tmp_path):
+    # Папку скопировали вместе с .search_index → одинаковый folder_id.
+    # Скан обязан перевыдать метку второй папке, иначе документы спутаются.
+    from indexing.embeddings_index import EMBEDDING_MODEL
+
+    lib_a = _make_library(tmp_path / "A", "most.pdf")
+    index_store.ensure_meta(lib_a, EMBEDDING_MODEL)
+    lib_b = _make_library(tmp_path / "B", "jiny.pdf")
+    # Копируем meta.json из A в B (симулируем копирование папки).
+    (index_store.index_root(lib_b)).mkdir(parents=True, exist_ok=True)
+    shutil.copy(
+        index_store.index_root(lib_a) / "meta.json",
+        index_store.index_root(lib_b) / "meta.json",
+    )
+    assert (
+        index_store.read_meta(lib_a)["folder_id"]
+        == index_store.read_meta(lib_b)["folder_id"]
+    )
+
+    scan_library([lib_a, lib_b], db)
+    # После скана метки разные, а документы не спутаны.
+    assert (
+        index_store.read_meta(lib_a)["folder_id"]
+        != index_store.read_meta(lib_b)["folder_id"]
+    )
+    slugs = {d.slug for d in db.scalars(select(Document)).all()}
+    assert len(slugs) == 2
 
 
 def test_duplicate_within_one_folder_is_reported(db, tmp_path):
