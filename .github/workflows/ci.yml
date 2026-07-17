@@ -1,0 +1,33 @@
+# CI: линтер + формат + тесты на каждый push/PR в main.
+# Ставим полный requirements.txt: тесты импортируют parser.py, который тянет
+# docling/torch на уровне модуля. Кеш pip смягчает (первый прогон ~10 мин,
+# дальше быстрее). Ускорение (ленивый импорт docling) — при разборе корня.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt -r requirements-dev.txt
+
+      - name: Ruff lint
+        run: ruff check .
+
+      - name: Ruff format
+        run: ruff format --check .
+
+      - name: Tests
+        run: pytest
