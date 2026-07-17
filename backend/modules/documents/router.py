@@ -48,12 +48,12 @@ def reindex_document(
     db: Session = Depends(get_session),
 ) -> DocumentResponse:
     """Полная переобработка документа: старые чанки удаляем, pipeline запускаем заново."""
-    library_path = settings_service.get_library_path(db)
-    if library_path is None:
+    paths = [Path(p) for p in settings_service.get_library_paths(db)]
+    if not paths:
         raise HTTPException(status_code=400, detail="Папка библиотеки не задана")
     executor = request.app.state.executor
     try:
-        return service.reindex_document(db, slug, Path(library_path), executor)
+        return service.reindex_document(db, slug, paths, executor)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
@@ -61,9 +61,9 @@ def reindex_document(
 @router.delete("/documents/{slug}")
 def delete_document(slug: str, db: Session = Depends(get_session)) -> dict:
     """Убирает документ из индекса. Файл PDF в библиотеке остаётся на месте."""
-    library_path = settings_service.get_library_path(db)
+    paths = [Path(p) for p in settings_service.get_library_paths(db)]
     try:
-        service.delete_document(db, slug, Path(library_path) if library_path else None)
+        service.delete_document(db, slug, paths)
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     return {"status": "ok"}
@@ -84,13 +84,8 @@ def relink_document(
     db: Session = Depends(get_session),
 ) -> DocumentResponse:
     """Переносит индекс со старого slug на новый — для переименования файла."""
-    library_path = settings_service.get_library_path(db)
+    paths = [Path(p) for p in settings_service.get_library_paths(db)]
     try:
-        return service.relink_document(
-            db,
-            body.old_slug,
-            body.new_slug,
-            Path(library_path) if library_path else None,
-        )
+        return service.relink_document(db, body.old_slug, body.new_slug, paths)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc

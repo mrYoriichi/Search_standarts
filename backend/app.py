@@ -73,16 +73,17 @@ async def lifespan(app: FastAPI):
         # Ключ OpenAI из БД (если задан) кладём в окружение до первых LLM-вызовов.
         settings_service.apply_openai_key_to_env(db)
 
-        library_path = settings_service.get_library_path(db)
+        library_paths = [Path(p) for p in settings_service.get_library_paths(db)]
         stuck = db.scalars(
             select(Document).where(Document.status == "processing")
         ).all()
         for doc in stuck:
             pdf_path: str | None = None
             doc_dir: Path | None = None
-            if doc.relative_path and library_path:
-                pdf_path = str(Path(library_path) / doc.relative_path)
-                doc_dir = index_store.doc_dir(Path(library_path), doc.slug)
+            folder = index_store.resolve_folder(library_paths, doc.slug)
+            if doc.relative_path and folder is not None:
+                pdf_path = str(folder / doc.relative_path)
+                doc_dir = index_store.doc_dir(folder, doc.slug)
             executor.submit(run_pipeline, doc.slug, pdf_path, doc_dir)
             print(f"[startup] Возобновлён pipeline для {doc.slug}")
 

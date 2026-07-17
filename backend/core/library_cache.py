@@ -56,23 +56,27 @@ def _shared_data_root() -> Path | None:
     return root if root.exists() else None
 
 
-def _library_index_root() -> Path | None:
-    """Корень .search_index папки библиотеки или None, если папка не задана.
+def _library_index_roots() -> list[Path]:
+    """Корни .search_index всех папок библиотеки (существующие).
 
     Новый пул (этап 4): индексы лежат рядом с PDF юзера, не в data/raw_data.
+    chunk_id несёт метку папки (`{folder_id}__…`), поэтому чанки разных папок
+    не сталкиваются в слитом пуле.
     """
     from backend.core.database import SessionLocal
     from backend.modules.settings import service as settings_service
 
     db = SessionLocal()
     try:
-        library_path = settings_service.get_library_path(db)
+        library_paths = settings_service.get_library_paths(db)
     finally:
         db.close()
-    if not library_path:
-        return None
-    root = index_store.index_root(Path(library_path))
-    return root if root.exists() else None
+    roots = []
+    for library_path in library_paths:
+        root = index_store.index_root(Path(library_path))
+        if root.exists():
+            roots.append(root)
+    return roots
 
 
 def _load_merged() -> tuple[list[dict], dict]:
@@ -84,9 +88,7 @@ def _load_merged() -> tuple[list[dict], dict]:
     если готовых документов нет нигде.
     """
     roots = [DATA_ROOT]
-    library_index = _library_index_root()
-    if library_index is not None:
-        roots.append(library_index)
+    roots.extend(_library_index_roots())
     shared = _shared_data_root()
     if shared is not None:
         roots.append(shared)

@@ -82,6 +82,22 @@ def folder_id_of(slug: str) -> str | None:
     return folder_id if sep else None
 
 
+def resolve_folder(paths: list[Path], slug: str) -> Path | None:
+    """Находит папку из списка, которой принадлежит документ (по метке в slug).
+
+    slug = `{folder_id}__{файл}`; folder_id сверяем с meta.json каждой папки.
+    None — папка отключена или slug легаси (без метки).
+    """
+    fid = folder_id_of(slug)
+    if fid is None:
+        return None
+    for lib in paths:
+        meta = read_meta(lib)
+        if meta and meta.get("folder_id") == fid:
+            return lib
+    return None
+
+
 def has_complete_index(library_path: Path, slug: str) -> bool:
     """Есть ли у документа полный индекс (нужный поиску минимум).
 

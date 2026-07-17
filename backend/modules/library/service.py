@@ -65,21 +65,6 @@ def _slug_fn(folder_id: str | None) -> SlugOf:
     return slug_of
 
 
-def resolve_library_folder(paths: list[Path], slug: str) -> Path | None:
-    """Находит папку библиотеки, которой принадлежит документ (по метке в slug).
-
-    slug = `{folder_id}__{файл}`; folder_id сверяем с meta.json каждой папки.
-    None — папка отключена или slug легаси (без метки)."""
-    fid = index_store.folder_id_of(slug)
-    if fid is None:
-        return None
-    for lib in paths:
-        meta = index_store.read_meta(lib)
-        if meta and meta.get("folder_id") == fid:
-            return lib
-    return None
-
-
 def build_library_response(paths: list[Path], db: Session) -> LibraryResponse:
     """Дерево всех папок библиотеки + список висячих документов (файла нет).
 
@@ -173,11 +158,11 @@ def _walk(folder: Path, resolve: StatusResolver, slug_of: SlugOf) -> LibraryFold
 def find_pdf_by_slug(paths: list[Path], slug: str) -> Path | None:
     """Ищет по папкам библиотеки PDF, чей id документа совпадает со slug.
 
-    Метку папки из slug сводим к конкретной папке (resolve_library_folder),
+    Метку папки из slug сводим к конкретной папке (index_store.resolve_folder),
     ищем только в ней — одноимённые файлы из других папок не спутаем. Если
     метки нет (легаси-slug), ищем во всех папках по имени файла.
     """
-    folder = resolve_library_folder(paths, slug)
+    folder = index_store.resolve_folder(paths, slug)
     if folder is not None:
         fid = index_store.folder_id_of(slug)
         for entry in folder.rglob("*.pdf"):
@@ -307,7 +292,7 @@ def start_indexing(
     pending = db.scalars(select(Document).where(Document.status == "pending")).all()
     submitted = 0
     for doc in pending:
-        library_path = resolve_library_folder(paths, doc.slug)
+        library_path = index_store.resolve_folder(paths, doc.slug)
         if library_path is None:
             continue  # папка документа отключена — пропускаем
         doc.status = "processing"

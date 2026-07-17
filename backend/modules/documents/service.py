@@ -31,6 +31,11 @@ def _artifact_dirs(slug: str, library_path: Path | None) -> list[Path]:
     return dirs
 
 
+def _doc_folder(paths: list[Path], slug: str) -> Path | None:
+    """Папка библиотеки, которой принадлежит документ (по метке в slug)."""
+    return index_store.resolve_folder(paths, slug)
+
+
 def list_documents(db: Session) -> list[Document]:
     """Все документы из библиотеки, упорядоченные по дате создания."""
     stmt = select(Document).order_by(Document.created_at)
@@ -40,7 +45,7 @@ def list_documents(db: Session) -> list[Document]:
 def reindex_document(
     db: Session,
     slug: str,
-    library_path: Path,
+    paths: list[Path],
     executor: ThreadPoolExecutor,
 ) -> Document:
     """Полностью переобрабатывает документ: удаляет старые артефакты и запускает pipeline.
@@ -56,6 +61,10 @@ def reindex_document(
         raise ValueError(
             f"У документа {slug} нет relative_path — нужен Сканировать сначала"
         )
+
+    library_path = _doc_folder(paths, slug)
+    if library_path is None:
+        raise ValueError(f"Папка документа {slug} не подключена")
 
     pdf_path = library_path / doc.relative_path
     if not pdf_path.exists():
@@ -85,7 +94,7 @@ def reindex_document(
     return doc
 
 
-def delete_document(db: Session, slug: str, library_path: Path | None = None) -> None:
+def delete_document(db: Session, slug: str, paths: list[Path] | None = None) -> None:
     """Убирает документ из индекса: удаляет запись и наши артефакты.
 
     PDF в папке юзера НЕ трогаем — программа никогда не модифицирует
@@ -96,6 +105,7 @@ def delete_document(db: Session, slug: str, library_path: Path | None = None) ->
     if doc is None:
         raise ValueError(f"Документ {slug} не найден")
 
+    library_path = _doc_folder(paths or [], slug)
     for artifacts_dir in _artifact_dirs(slug, library_path):
         if artifacts_dir.exists():
             shutil.rmtree(artifacts_dir)
@@ -116,7 +126,7 @@ def toggle_pin(db: Session, slug: str) -> Document:
 
 
 def relink_document(
-    db: Session, old_slug: str, new_slug: str, library_path: Path | None = None
+    db: Session, old_slug: str, new_slug: str, paths: list[Path] | None = None
 ) -> Document:
     """Переносит существующий индекс со старого slug на новый — для переименования файла.
 
@@ -143,6 +153,7 @@ def relink_document(
         raise ValueError(f"Документ с slug {new_slug} уже существует")
 
     # Индекс переносим внутри того пула, где он реально лежит.
+    library_path = _doc_folder(paths or [], old_slug)
     old_dir = next(
         (d for d in _artifact_dirs(old_slug, library_path) if d.exists()), None
     )
