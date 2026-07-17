@@ -33,10 +33,60 @@ from pdf_processing.parser import make_document_id
 # строится одним _walk. error — причина падения, progress — текущая стадия
 # обработки (оба только у пула юзера, иначе None).
 StatusResolver = Callable[[str], tuple[str | None, bool, str | None, str | None]]
+# Функция id документа по имени файла (для scoped-slug нужна метка папки).
+SlugOf = Callable[[str], str]
 
 
-def build_library_response(library_path: Path, db: Session) -> LibraryResponse:
-    """Возвращает дерево папки юзера + список висячих документов (нет файла в папке)."""
+def _folder_id(library_path: Path) -> str | None:
+    """Постоянная метка папки из meta.json; создаёт паспорт, если папка новая.
+
+    Метка нужна, чтобы строить id документа `{folder_id}__{файл}` (различать
+    одноимённые файлы из разных папок). read-only папка без meta.json (её не
+    индексировали) → None, id тогда строится по-старому (только имя файла).
+    """
+    meta = index_store.read_meta(library_path)
+    if meta is not None:
+        return meta.get("folder_id")
+    from indexing.embeddings_index import EMBEDDING_MODEL
+
+    try:
+        return index_store.ensure_meta(library_path, EMBEDDING_MODEL)["folder_id"]
+    except OSError:
+        return None  # папка только для чтения — паспорт не создать
+
+
+def _slug_fn(folder_id: str | None) -> SlugOf:
+    """Строит функцию «имя файла → id документа» для конкретной папки."""
+
+    def slug_of(name: str) -> str:
+        base = make_document_id(name)
+        return index_store.scoped_slug(folder_id, base) if folder_id else base
+
+    return slug_of
+
+
+def resolve_library_folder(paths: list[Path], slug: str) -> Path | None:
+    """Находит папку библиотеки, которой принадлежит документ (по метке в slug).
+
+    slug = `{folder_id}__{файл}`; folder_id сверяем с meta.json каждой папки.
+    None — папка отключена или slug легаси (без метки)."""
+    fid = index_store.folder_id_of(slug)
+    if fid is None:
+        return None
+    for lib in paths:
+        meta = index_store.read_meta(lib)
+        if meta and meta.get("folder_id") == fid:
+            return lib
+    return None
+
+
+def build_library_response(paths: list[Path], db: Session) -> LibraryResponse:
+    """Дерево всех папок библиотеки + список висячих документов (файла нет).
+
+    Одна папка → её дерево как есть. Несколько → общий синтетический корень
+    «Knihovny» с папками внутри (фронтенд и фильтр «Kde hledat» рекурсивны,
+    так что работают в обоих случаях без изменений).
+    """
     docs_by_slug = {doc.slug: doc for doc in db.scalars(select(Document)).all()}
 
     def resolve(slug: str) -> tuple[str | None, bool, str | None, str | None]:
@@ -45,17 +95,20 @@ def build_library_response(library_path: Path, db: Session) -> LibraryResponse:
             return (None, False, None, None)
         return (doc.status, doc.pinned, doc.error_message, progress.get_progress(slug))
 
-    tree = _walk(library_path, resolve)
-    # Собираем slug'и всех PDF, реально лежащих в папке (включая подпапки).
+    subtrees = [_walk(lib, resolve, _slug_fn(_folder_id(lib))) for lib in paths]
+    if len(subtrees) == 1:
+        root = subtrees[0]
+    else:
+        root = LibraryFolder(name="Knihovny", path="", folders=subtrees, files=[])
+
     seen_slugs: set[str] = set()
-    _collect_slugs(tree, seen_slugs)
-    # Висячие = всё, что есть в БД, но не нашлось в папке.
+    _collect_slugs(root, seen_slugs)
     orphans = [
         OrphanDocument(slug=doc.slug, title=doc.title, status=doc.status)
         for doc in docs_by_slug.values()
         if doc.slug not in seen_slugs
     ]
-    return LibraryResponse(tree=tree, orphans=orphans)
+    return LibraryResponse(tree=root, orphans=orphans)
 
 
 def build_shared_library_response(
@@ -75,7 +128,7 @@ def build_shared_library_response(
         ).exists()
         return ("ready" if ready else None, slug in pinned, None, None)
 
-    tree = _walk(pdfs_root, resolve)
+    tree = _walk(pdfs_root, resolve, make_document_id)
     # Корень _walk назвался бы «pdfs» (имя подпапки). Подменяем на имя бандла
     # (например «SharedLibrary») — так дерево читабельнее в UI.
     tree.name = pdfs_root.parent.name
@@ -89,7 +142,7 @@ def _collect_slugs(folder: LibraryFolder, out: set[str]) -> None:
         _collect_slugs(sub, out)
 
 
-def _walk(folder: Path, resolve: StatusResolver) -> LibraryFolder:
+def _walk(folder: Path, resolve: StatusResolver, slug_of: SlugOf) -> LibraryFolder:
     folders: list[LibraryFolder] = []
     files: list[LibraryFile] = []
     for entry in sorted(folder.iterdir(), key=lambda p: p.name.lower()):
@@ -97,9 +150,9 @@ def _walk(folder: Path, resolve: StatusResolver) -> LibraryFolder:
         if entry.name.startswith("."):
             continue
         if entry.is_dir():
-            folders.append(_walk(entry, resolve))
+            folders.append(_walk(entry, resolve, slug_of))
         elif entry.suffix.lower() == ".pdf":
-            slug = make_document_id(entry.name)
+            slug = slug_of(entry.name)
             status, pinned, error, doc_progress = resolve(slug)
             files.append(
                 LibraryFile(
@@ -117,123 +170,115 @@ def _walk(folder: Path, resolve: StatusResolver) -> LibraryFolder:
     )
 
 
-def find_pdf_by_slug(library_path: Path, slug: str) -> Path | None:
-    """Ищет в папке библиотеки (рекурсивно) PDF, у которого slug совпадает.
+def find_pdf_by_slug(paths: list[Path], slug: str) -> Path | None:
+    """Ищет по папкам библиотеки PDF, чей id документа совпадает со slug.
 
-    Slug строится из имени файла (make_document_id), так что один проход —
-    O(N) от количества PDF. Для библиотеки в ~200 файлов — миллисекунды.
+    Метку папки из slug сводим к конкретной папке (resolve_library_folder),
+    ищем только в ней — одноимённые файлы из других папок не спутаем. Если
+    метки нет (легаси-slug), ищем во всех папках по имени файла.
     """
-    for entry in library_path.rglob("*.pdf"):
-        if entry.name.startswith("."):
-            continue
-        if make_document_id(entry.name) == slug:
-            return entry
+    folder = resolve_library_folder(paths, slug)
+    if folder is not None:
+        fid = index_store.folder_id_of(slug)
+        for entry in folder.rglob("*.pdf"):
+            if entry.name.startswith("."):
+                continue
+            if index_store.scoped_slug(fid, make_document_id(entry.name)) == slug:
+                return entry
+        return None
+    # Легаси-slug без метки папки — ищем по имени файла во всех папках.
+    for lib in paths:
+        for entry in lib.rglob("*.pdf"):
+            if entry.name.startswith("."):
+                continue
+            if make_document_id(entry.name) == slug:
+                return entry
     return None
 
 
-def scan_library(
-    library_path: Path,
-    db: Session,
-) -> ScanSummary:
-    """Сканирует папку библиотеки: НОВЫЕ PDF только регистрирует (pending).
+def scan_library(paths: list[Path], db: Session) -> ScanSummary:
+    """Сканирует все папки библиотеки: НОВЫЕ PDF только регистрирует (pending).
 
     Скан бесплатный (обнаружение), индексация платная (vision LLM) — поэтому
     это два осознанных шага юзера: Skenovat → список «čeká» → Indexovat
     (start_indexing).
 
+    Id документа = `{folder_id}__{файл}`, поэтому одноимённые файлы в РАЗНЫХ
+    папках — разные документы. Коллизией остаётся только совпадение имён
+    ВНУТРИ одной папки: такие файлы пропускаем и просим переименовать.
+
     Для каждого PDF:
-      - если запись в БД есть (по slug) — пропускаем, но дозаполняем
-        relative_path, если он был пустой (миграция старых записей);
-      - если записи нет, но в <папка>/.search_index/{slug} лежит полный
-        индекс на нашей модели эмбеддингов — «усыновляем»: документ сразу
-        ready, без трат (папку уже проиндексировал кто-то другой);
-      - иначе — создаём Document(status='pending'), в пайплайн НЕ шлём.
-
-    Сам файл юзера НЕ копируем — pipeline прочитает PDF прямо из библиотеки.
-
-    Если два разных файла дают одно имя (id) — это коллизия: мы не можем их
-    различить. Такие файлы НЕ трогаем и возвращаем в duplicates, чтобы юзер
-    переименовал. Иначе один молча перезатёр бы индекс другого.
+      - если запись в БД есть (по slug) — дозаполняем relative_path при
+        переезде;
+      - если нет, но в `.search_index/{slug}` есть полный индекс на нашей
+        модели — «усыновляем» (сразу ready, без трат);
+      - иначе — Document(status='pending'), в пайплайн НЕ шлём.
     """
-    docs_by_slug = {doc.slug: doc for doc in db.scalars(select(Document)).all()}
-
-    # Все PDF библиотеки (без скрытых файлов).
-    pdf_paths = [
-        p for p in sorted(library_path.rglob("*.pdf")) if not p.name.startswith(".")
-    ]
-
-    # Первый проход: сколько файлов дают каждый slug. >1 — совпадение имён.
-    slug_counts: dict[str, int] = {}
-    for p in pdf_paths:
-        slug = make_document_id(p.name)
-        slug_counts[slug] = slug_counts.get(slug, 0) + 1
-
-    # Ленивый импорт: embeddings_index тянет openai/tiktoken.
     from indexing.embeddings_index import EMBEDDING_MODEL
 
-    # Усыновлять чужие индексы можно только на нашей модели эмбеддингов —
-    # векторы разных моделей несравнимы.
-    meta = index_store.read_meta(library_path)
-    can_adopt = meta is not None and meta.get("embedding_model") == EMBEDDING_MODEL
+    docs_by_slug = {doc.slug: doc for doc in db.scalars(select(Document)).all()}
+    summary = ScanSummary(created=0, already_indexed=0, adopted=0, duplicates=[])
+    any_adopted = False
 
-    created = 0
-    already_indexed = 0
-    adopted = 0
-    duplicates: list[str] = []
+    for library_path in paths:
+        folder_id = _folder_id(library_path)
+        slug_of = _slug_fn(folder_id)
+        # Усыновлять чужие индексы можно только на нашей модели эмбеддингов.
+        meta = index_store.read_meta(library_path)
+        can_adopt = meta is not None and meta.get("embedding_model") == EMBEDDING_MODEL
 
-    for pdf_path in pdf_paths:
-        slug = make_document_id(pdf_path.name)
-        relative_path = str(pdf_path.relative_to(library_path))
+        pdf_paths = [
+            p for p in sorted(library_path.rglob("*.pdf")) if not p.name.startswith(".")
+        ]
+        # Сколько файлов дают каждый slug ВНУТРИ этой папки. >1 — совпадение имён.
+        slug_counts: dict[str, int] = {}
+        for p in pdf_paths:
+            slug_counts[slug_of(p.name)] = slug_counts.get(slug_of(p.name), 0) + 1
 
-        # Совпадение имён — пропускаем все такие файлы и сообщаем юзеру.
-        if slug_counts[slug] > 1:
-            duplicates.append(relative_path)
-            continue
+        for pdf_path in pdf_paths:
+            slug = slug_of(pdf_path.name)
+            relative_path = str(pdf_path.relative_to(library_path))
 
-        existing = docs_by_slug.get(slug)
-        if existing is not None:
-            # Дозаполняем путь у старых записей (был None) И обновляем, если файл
-            # переехал в другую папку — иначе «Переиндексировать» искал бы PDF
-            # по старому пути и падал бы с «PDF не найден».
-            if existing.relative_path != relative_path:
-                existing.relative_path = relative_path
-            already_indexed += 1
-            continue
+            if slug_counts[slug] > 1:
+                summary.duplicates.append(relative_path)
+                continue
 
-        if can_adopt and index_store.has_complete_index(library_path, slug):
+            existing = docs_by_slug.get(slug)
+            if existing is not None:
+                if existing.relative_path != relative_path:
+                    existing.relative_path = relative_path
+                summary.already_indexed += 1
+                continue
+
+            if can_adopt and index_store.has_complete_index(library_path, slug):
+                doc = Document(
+                    slug=slug,
+                    title=_adopted_title(library_path, slug) or pdf_path.stem,
+                    status="ready",
+                    relative_path=relative_path,
+                )
+                db.add(doc)
+                db.commit()
+                summary.adopted += 1
+                any_adopted = True
+                continue
+
             doc = Document(
                 slug=slug,
-                title=_adopted_title(library_path, slug) or pdf_path.stem,
-                status="ready",
+                title=pdf_path.stem,  # реальный title подменит pipeline
+                status="pending",
                 relative_path=relative_path,
             )
             db.add(doc)
             db.commit()
-            adopted += 1
-            continue
-
-        title = pdf_path.stem  # имя без расширения; реальный title подменит pipeline
-        doc = Document(
-            slug=slug,
-            title=title,
-            status="pending",
-            relative_path=relative_path,
-        )
-        db.add(doc)
-        db.commit()
-        created += 1
+            summary.created += 1
 
     db.commit()
-    if adopted:
+    if any_adopted:
         # В пуле появились готовые документы без прогона пайплайна —
         # следующий вопрос должен их увидеть.
         library_cache.invalidate()
-    return ScanSummary(
-        created=created,
-        already_indexed=already_indexed,
-        adopted=adopted,
-        duplicates=duplicates,
-    )
+    return summary
 
 
 def _adopted_title(library_path: Path, slug: str) -> str | None:
@@ -247,30 +292,26 @@ def _adopted_title(library_path: Path, slug: str) -> str | None:
 
 
 def start_indexing(
-    library_path: Path,
+    paths: list[Path],
     db: Session,
     executor: ThreadPoolExecutor,
 ) -> int:
-    """Отправляет все pending-документы библиотеки в пайплайн.
+    """Отправляет все pending-документы в пайплайн, каждый — в свою папку.
 
     Статус сразу переводим в processing: повторный клик по «Indexovat» не
     отправит те же документы второй раз (двойная трата на vision), а после
-    падения приложения их подхватит возобновление на старте.
-    Артефакты пишутся в <папка>/.search_index/{slug} (паспорт папки —
-    meta.json — создаём здесь при первой индексации).
-    Возвращает число отправленных.
+    падения приложения их подхватит возобновление на старте. Артефакты
+    пишутся в `<папка документа>/.search_index/{slug}` (папку определяем по
+    метке в slug). Возвращает число отправленных.
     """
-    # Ленивый импорт: embeddings_index тянет openai/tiktoken, а start_indexing
-    # зовётся редко — не грузим их при импорте модуля.
-    from indexing.embeddings_index import EMBEDDING_MODEL
-
     pending = db.scalars(select(Document).where(Document.status == "pending")).all()
-    if pending:
-        index_store.ensure_meta(library_path, EMBEDDING_MODEL)
+    submitted = 0
     for doc in pending:
+        library_path = resolve_library_folder(paths, doc.slug)
+        if library_path is None:
+            continue  # папка документа отключена — пропускаем
         doc.status = "processing"
-    db.commit()
-    for doc in pending:
+        db.commit()
         pdf_path = str(library_path / doc.relative_path) if doc.relative_path else None
         executor.submit(
             run_pipeline,
@@ -278,20 +319,28 @@ def start_indexing(
             pdf_path,
             index_store.doc_dir(library_path, doc.slug),
         )
-    return len(pending)
+        submitted += 1
+    return submitted
 
 
-def open_file(library_path: Path, file_path: str) -> None:
+def _is_within(target: Path, root: Path) -> bool:
+    """target лежит внутри root (или совпадает с ним)?"""
+    try:
+        target.relative_to(root)
+        return True
+    except ValueError:
+        return False
+
+
+def open_file(paths: list[Path], file_path: str) -> None:
     """Открывает PDF в системном просмотрщике.
 
-    Безопасность: файл должен находиться внутри library_path,
+    Безопасность: файл должен находиться внутри одной из папок библиотеки,
     иначе через API можно открыть что угодно на диске.
     """
     target = Path(file_path).expanduser().resolve()
-    try:
-        target.relative_to(library_path)
-    except ValueError as exc:
-        raise ValueError("Файл вне папки библиотеки") from exc
+    if not any(_is_within(target, lib) for lib in paths):
+        raise ValueError("Файл вне папок библиотеки")
     if not target.is_file():
         raise ValueError(f"Файл не найден: {target}")
 

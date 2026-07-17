@@ -22,13 +22,18 @@ class OpenFileRequest(BaseModel):
     path: str
 
 
+def _library_paths(db: Session) -> list[Path]:
+    """Список папок библиотеки как Path. HTTP 400, если ни одной не задано."""
+    paths = settings_service.get_library_paths(db)
+    if not paths:
+        raise HTTPException(status_code=400, detail="Папка библиотеки не задана")
+    return [Path(p) for p in paths]
+
+
 @router.get("/library", response_model=LibraryResponse)
 def get_library(db: Session = Depends(get_session)) -> LibraryResponse:
-    """Возвращает дерево папки библиотеки + список висячих документов."""
-    library_path = settings_service.get_library_path(db)
-    if library_path is None:
-        raise HTTPException(status_code=400, detail="Папка библиотеки не задана")
-    return service.build_library_response(Path(library_path), db)
+    """Возвращает дерево папок библиотеки + список висячих документов."""
+    return service.build_library_response(_library_paths(db), db)
 
 
 @router.post("/library/open")
@@ -37,11 +42,8 @@ def open_library_file(
     db: Session = Depends(get_session),
 ) -> dict:
     """Открывает PDF из библиотеки в системном просмотрщике."""
-    library_path = settings_service.get_library_path(db)
-    if library_path is None:
-        raise HTTPException(status_code=400, detail="Папка библиотеки не задана")
     try:
-        service.open_file(Path(library_path), body.path)
+        service.open_file(_library_paths(db), body.path)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return {"status": "ok"}
@@ -81,7 +83,7 @@ def open_shared_file(
     if shared is None:
         raise HTTPException(status_code=400, detail="Папка общей базы не задана")
     try:
-        service.open_file(Path(shared) / "pdfs", body.path)
+        service.open_file([Path(shared) / "pdfs"], body.path)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return {"status": "ok"}
@@ -91,11 +93,8 @@ def open_shared_file(
 def scan_library(
     db: Session = Depends(get_session),
 ) -> ScanSummary:
-    """Сканирует папку библиотеки: новые PDF регистрирует как pending (čeká)."""
-    library_path = settings_service.get_library_path(db)
-    if library_path is None:
-        raise HTTPException(status_code=400, detail="Папка библиотеки не задана")
-    return service.scan_library(Path(library_path), db)
+    """Сканирует папки библиотеки: новые PDF регистрирует как pending (čeká)."""
+    return service.scan_library(_library_paths(db), db)
 
 
 @router.post("/library/index")
@@ -104,11 +103,8 @@ def index_library(
     db: Session = Depends(get_session),
 ) -> dict:
     """Отправляет обнаруженные (pending) PDF в обработку — платный шаг."""
-    library_path = settings_service.get_library_path(db)
-    if library_path is None:
-        raise HTTPException(status_code=400, detail="Папка библиотеки не задана")
     executor = request.app.state.executor
-    started = service.start_indexing(Path(library_path), db, executor)
+    started = service.start_indexing(_library_paths(db), db, executor)
     return {"started": started}
 
 
@@ -119,9 +115,11 @@ def get_pdf(slug: str, db: Session = Depends(get_session)) -> FileResponse:
     Папка юзера → общая база (`<shared>/pdfs`) → архив проектов — источник в
     ответе может быть из любого пула. Браузер сам поддерживает `#page=N`.
     """
-    library_path = settings_service.get_library_path(db)
+    library_paths = settings_service.get_library_paths(db)
     pdf_path = (
-        service.find_pdf_by_slug(Path(library_path), slug) if library_path else None
+        service.find_pdf_by_slug([Path(p) for p in library_paths], slug)
+        if library_paths
+        else None
     )
     if pdf_path is None:
         shared = settings_service.get_shared_library_path(db)
