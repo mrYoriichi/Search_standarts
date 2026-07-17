@@ -59,8 +59,14 @@ def get_library_path(db: Session) -> str | None:
 
 
 def set_library_path(db: Session, raw_path: str) -> str:
-    """Сохраняет путь к папке библиотеки юзера."""
-    return _set_path(db, LIBRARY_PATH_KEY, raw_path)
+    """Сохраняет путь к папке библиотеки юзера.
+
+    Сбрасывает кеш поиска: индексы теперь лежат в <папка>/.search_index,
+    смена папки меняет и пул индексов.
+    """
+    path = _set_path(db, LIBRARY_PATH_KEY, raw_path)
+    library_cache.invalidate()
+    return path
 
 
 def get_shared_library_path(db: Session) -> str | None:

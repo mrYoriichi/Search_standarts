@@ -20,6 +20,7 @@ import numpy as np
 
 from ask import load_library
 from indexing.bm25_index import tokenize_chunk
+from backend.core import index_store
 from backend.core.paths import PROJECTS_DATA_DIR, RAW_DATA_DIR
 
 
@@ -55,6 +56,25 @@ def _shared_data_root() -> Path | None:
     return root if root.exists() else None
 
 
+def _library_index_root() -> Path | None:
+    """Корень .search_index папки библиотеки или None, если папка не задана.
+
+    Новый пул (этап 4): индексы лежат рядом с PDF юзера, не в data/raw_data.
+    """
+    from backend.core.database import SessionLocal
+    from backend.modules.settings import service as settings_service
+
+    db = SessionLocal()
+    try:
+        library_path = settings_service.get_library_path(db)
+    finally:
+        db.close()
+    if not library_path:
+        return None
+    root = index_store.index_root(Path(library_path))
+    return root if root.exists() else None
+
+
 def _load_merged() -> tuple[list[dict], dict]:
     """Сливает пулы в один (chunks, embeddings_index): нормы юзера,
     общая база, архив проектов.
@@ -64,6 +84,9 @@ def _load_merged() -> tuple[list[dict], dict]:
     если готовых документов нет нигде.
     """
     roots = [DATA_ROOT]
+    library_index = _library_index_root()
+    if library_index is not None:
+        roots.append(library_index)
     shared = _shared_data_root()
     if shared is not None:
         roots.append(shared)
