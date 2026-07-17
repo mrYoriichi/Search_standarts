@@ -424,7 +424,7 @@ function VisionModelCard() {
 
 
 function LibraryPage() {
-  const [path, setPath] = useState<string | null>(null)
+  const [paths, setPaths] = useState<string[]>([])
   const [pathInput, setPathInput] = useState('')
   const [library, setLibrary] = useState<LibraryResponse | null>(null)
   const [loading, setLoading] = useState(true)
@@ -442,11 +442,10 @@ function LibraryPage() {
     setLoading(true)
     setError(null)
     try {
-      const pathRes = await fetch('/api/settings/library')
-      const pathData: { path: string | null } = await pathRes.json()
-      setPath(pathData.path)
-      if (pathData.path) {
-        setPathInput(pathData.path)
+      const pathRes = await fetch('/api/settings/libraries')
+      const pathData: { paths: string[] } = await pathRes.json()
+      setPaths(pathData.paths)
+      if (pathData.paths.length > 0) {
         const libRes = await fetch('/api/library')
         if (libRes.ok) {
           setLibrary(await libRes.json())
@@ -573,13 +572,13 @@ function LibraryPage() {
     }
   }
 
-  async function savePath() {
+  async function addPath() {
     const value = pathInput.trim()
     if (!value) return
     setSaving(true)
     try {
-      const res = await fetch('/api/settings/library', {
-        method: 'PUT',
+      const res = await fetch('/api/settings/libraries', {
+        method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ path: value }),
       })
@@ -588,10 +587,27 @@ function LibraryPage() {
         alert(data.detail ?? `Chyba ${res.status}`)
         return
       }
+      setPathInput('')
       await loadAll()
     } finally {
       setSaving(false)
     }
+  }
+
+  async function removePath(target: string) {
+    if (!confirm(`Odpojit složku od knihovny?\n${target}\n\nIndexy na disku zůstanou.`))
+      return
+    const res = await fetch('/api/settings/libraries', {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ path: target }),
+    })
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}))
+      alert(data.detail ?? `Chyba ${res.status}`)
+      return
+    }
+    await loadAll()
   }
 
   if (loading) {
@@ -602,24 +618,42 @@ function LibraryPage() {
     <div className="flex flex-col gap-6">
       <div className="rounded-md border bg-card p-4 flex flex-col gap-2">
         <h2 className="text-sm font-semibold text-muted-foreground">
-          Složka knihovny
+          Složky knihovny
         </h2>
         <p className="text-xs text-muted-foreground">
-          Všechna PDF z této složky (a podsložek) se objeví v knihovně.
+          Všechna PDF z těchto složek (a podsložek) se objeví v knihovně.
+          Můžete připojit více složek (např. vlastní normy + složku firmy).
         </p>
+        {paths.length > 0 && (
+          <ul className="flex flex-col gap-1">
+            {paths.map((p) => (
+              <li
+                key={p}
+                className="flex items-center gap-2 text-sm font-mono bg-muted/40 rounded px-2 py-1"
+              >
+                <span className="flex-1 break-all">{p}</span>
+                <button
+                  onClick={() => removePath(p)}
+                  className="text-muted-foreground hover:text-destructive shrink-0"
+                  title="Odpojit složku"
+                >
+                  ✕
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
         <div className="flex gap-2">
           <input
             type="text"
             value={pathInput}
             onChange={(e) => setPathInput(e.target.value)}
+            onKeyDown={(e) => e.key === 'Enter' && addPath()}
             placeholder="/Users/.../Normy"
             className="flex-1 border rounded px-2 py-1 text-sm font-mono"
           />
-          <Button
-            onClick={savePath}
-            disabled={saving || !pathInput.trim() || pathInput === path}
-          >
-            {saving ? 'Ukládám…' : 'Uložit'}
+          <Button onClick={addPath} disabled={saving || !pathInput.trim()}>
+            {saving ? 'Přidávám…' : 'Přidat složku'}
           </Button>
         </div>
       </div>
