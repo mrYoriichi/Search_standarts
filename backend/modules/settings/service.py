@@ -11,7 +11,10 @@ from backend.core import library_cache
 from backend.modules.settings.models import Setting
 
 
-LIBRARY_PATH_KEY = "library_path"
+LIBRARY_PATH_KEY = "library_path"  # легаси: одна папка (мигрируем в список ниже)
+# Список папок библиотеки (JSON). Пришёл на смену единственному library_path:
+# юзер может подключить несколько папок сразу (свои нормы + папка фирмы).
+LIBRARY_PATHS_KEY = "library_paths"
 # Папка общей базы норм от владельца (read-only): индексы + оригиналы PDF.
 # Отдельный пул, не сканируется. См. «Два пула документов» в PROJECT_STATE.
 SHARED_LIBRARY_PATH_KEY = "shared_library_path"
@@ -29,18 +32,23 @@ DEFAULT_VISION_MODEL = "gpt-5.4-mini"  # дешевле; gpt-5.5 — по выб
 OPENAI_KEY_KEY = "openai_api_key"
 
 
-def _set_path(db: Session, key: str, raw_path: str) -> str:
-    """Валидирует и сохраняет путь-папку под ключом key. Общее для обеих библиотек.
+def _validate_dir(raw_path: str) -> Path:
+    """Нормализует пользовательскую строку пути в абсолютный путь к папке.
 
-    На вход — пользовательская строка (с `~` или относительная); нормализуем в
-    абсолютный путь через expanduser+resolve. Бросает ValueError, если путь не
-    существует или это не папка.
+    `~` и относительные пути разворачиваем через expanduser+resolve. Бросает
+    ValueError, если путь не существует или это не папка.
     """
     path = Path(raw_path).expanduser().resolve()
     if not path.exists():
         raise ValueError(f"Путь не существует: {path}")
     if not path.is_dir():
         raise ValueError(f"Это не папка: {path}")
+    return path
+
+
+def _set_path(db: Session, key: str, raw_path: str) -> str:
+    """Валидирует и сохраняет путь-папку под ключом key. Общее для обеих библиотек."""
+    path = _validate_dir(raw_path)
 
     setting = db.scalar(select(Setting).where(Setting.key == key))
     if setting is None:
@@ -67,6 +75,64 @@ def set_library_path(db: Session, raw_path: str) -> str:
     path = _set_path(db, LIBRARY_PATH_KEY, raw_path)
     library_cache.invalidate()
     return path
+
+
+def get_library_paths(db: Session) -> list[str]:
+    """Список папок библиотеки. Пустой список — ни одной не задано.
+
+    Мигрирует со старого единственного `library_path`: если списка ещё нет,
+    но легаси-путь задан — переносим его в список (один раз) и сохраняем.
+    """
+    setting = db.scalar(select(Setting).where(Setting.key == LIBRARY_PATHS_KEY))
+    if setting and setting.value:
+        try:
+            paths = json.loads(setting.value)
+            if isinstance(paths, list):
+                return [str(p) for p in paths]
+        except (ValueError, TypeError):
+            pass  # битое значение — трактуем как «списка нет», попробуем миграцию
+
+    legacy = get_library_path(db)
+    if legacy:
+        _save_library_paths(db, [legacy])
+        return [legacy]
+    return []
+
+
+def _save_library_paths(db: Session, paths: list[str]) -> None:
+    """Пишет список папок в настройки (JSON)."""
+    value = json.dumps(paths, ensure_ascii=False)
+    setting = db.scalar(select(Setting).where(Setting.key == LIBRARY_PATHS_KEY))
+    if setting is None:
+        db.add(Setting(key=LIBRARY_PATHS_KEY, value=value))
+    else:
+        setting.value = value
+    db.commit()
+
+
+def add_library_path(db: Session, raw_path: str) -> list[str]:
+    """Добавляет папку в список библиотеки. Валидирует, что папка существует.
+
+    Дубли пути игнорируем (idempotent). Сбрасывает кеш поиска — в пул войдут
+    индексы новой папки.
+    """
+    path = str(_validate_dir(raw_path))
+    paths = get_library_paths(db)
+    if path not in paths:
+        paths.append(path)
+        _save_library_paths(db, paths)
+        library_cache.invalidate()
+    return paths
+
+
+def remove_library_path(db: Session, raw_path: str) -> list[str]:
+    """Убирает папку из списка (по нормализованному пути). Индексы в
+    `.search_index` на диске НЕ трогаем — только отключаем папку от поиска."""
+    target = str(Path(raw_path).expanduser().resolve())
+    paths = [p for p in get_library_paths(db) if p != target]
+    _save_library_paths(db, paths)
+    library_cache.invalidate()
+    return paths
 
 
 def get_shared_library_path(db: Session) -> str | None:

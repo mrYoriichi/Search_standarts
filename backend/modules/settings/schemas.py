@@ -15,6 +15,12 @@ class LibraryPathRequest(BaseModel):
     path: str
 
 
+class LibraryPathsResponse(BaseModel):
+    """Список папок библиотеки."""
+
+    paths: list[str]
+
+
 class OpenAIKeyStatus(BaseModel):
     """Статус ключа OpenAI. Полный ключ наружу не отдаём — только хвост."""
 

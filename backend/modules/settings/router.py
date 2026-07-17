@@ -8,6 +8,7 @@ from backend.modules.settings import service
 from backend.modules.settings.schemas import (
     LibraryPathRequest,
     LibraryPathResponse,
+    LibraryPathsResponse,
     OpenAIKeyRequest,
     OpenAIKeyStatus,
     VisionModelSetting,
@@ -34,6 +35,35 @@ def set_library_path(
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return LibraryPathResponse(path=saved)
+
+
+@router.get("/settings/libraries", response_model=LibraryPathsResponse)
+def get_library_paths(db: Session = Depends(get_session)) -> LibraryPathsResponse:
+    """Список папок библиотеки (мигрирует со старого одиночного пути)."""
+    return LibraryPathsResponse(paths=service.get_library_paths(db))
+
+
+@router.post("/settings/libraries", response_model=LibraryPathsResponse)
+def add_library_path(
+    body: LibraryPathRequest,
+    db: Session = Depends(get_session),
+) -> LibraryPathsResponse:
+    """Добавляет папку в список библиотеки. 400, если папки нет на диске."""
+    try:
+        paths = service.add_library_path(db, body.path)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return LibraryPathsResponse(paths=paths)
+
+
+@router.delete("/settings/libraries", response_model=LibraryPathsResponse)
+def remove_library_path(
+    body: LibraryPathRequest,
+    db: Session = Depends(get_session),
+) -> LibraryPathsResponse:
+    """Убирает папку из списка библиотеки. Индексы на диске не трогаем."""
+    paths = service.remove_library_path(db, body.path)
+    return LibraryPathsResponse(paths=paths)
 
 
 @router.get("/settings/shared-library", response_model=LibraryPathResponse)
