@@ -63,6 +63,7 @@ def process(
     vision_model: str = VISION_MODEL,
     doc_dir: Path | None = None,
     on_progress: Callable[[int, int], None] | None = None,
+    pages_dir: Path | None = None,
 ) -> None:
     """
     Описывает схемы и метаданные документа, результат пишет в descriptions.json.
@@ -72,10 +73,13 @@ def process(
     архив проектов передаёт свою (projects_data/<slug>).
     on_progress — необязательный колбэк (номер страницы по счёту, всего страниц):
     бэкенд показывает прогресс в UI, CLI живёт без него.
+    pages_dir — где лежат скриншоты страниц; по умолчанию <doc_dir>/pages/
+    (пайплайн .search_index передаёт временную локальную папку).
     """
     doc_dir = doc_dir or (RAW_DATA_DIR / make_document_id(pdf_name))
     document_path = doc_dir / "document.json"
     descriptions_path = doc_dir / "descriptions.json"
+    pages_dir = pages_dir or (doc_dir / "pages")
 
     document = load_document(document_path)
     pages = find_pages_with_visuals(document)
@@ -89,7 +93,7 @@ def process(
     pages_described_count = 0
 
     # Шаг 1: извлекаем название и описание документа по первой странице
-    first_page_image = doc_dir / "pages" / "p001.png"
+    first_page_image = pages_dir / "p001.png"
     if first_page_image.exists():
         print("Извлекаю метаданные документа...")
         meta, meta_in, meta_out = extract_document_metadata(
@@ -110,7 +114,7 @@ def process(
     block_descriptions: dict[str, str] = {}
     for i, page_number in enumerate(pages, start=1):
         # Путь к скриншоту этой страницы
-        image_path = doc_dir / "pages" / f"p{page_number:03d}.png"
+        image_path = pages_dir / f"p{page_number:03d}.png"
 
         if not image_path.exists():
             print(f"[{i}/{len(pages)}] стр. {page_number}: скриншота нет, пропуск")

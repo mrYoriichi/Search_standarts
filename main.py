@@ -33,18 +33,17 @@ def save_document_json(document: dict, output_root: Path) -> Path:
 def save_page_images(
     page_images: dict,
     pages_to_save: set[int],
-    doc_dir: Path,
+    pages_dir: Path,
 ) -> dict[int, str]:
     """
-    Сохраняет указанные страницы как PNG в подпапку pages/.
+    Сохраняет указанные страницы как PNG в pages_dir.
     Возвращает словарь {номер_страницы: относительный_путь} —
     он пригодится, чтобы вписать пути в JSON.
 
     page_images   — все картинки страниц из парсера (PIL.Image).
     pages_to_save — какие именно страницы реально сохраняем.
-    doc_dir       — папка документа (data/raw_data/<document_id>/).
+    pages_dir     — куда класть PNG (по умолчанию <doc_dir>/pages/).
     """
-    pages_dir = doc_dir / "pages"
     pages_dir.mkdir(parents=True, exist_ok=True)
 
     saved_paths: dict[int, str] = {}
@@ -68,6 +67,7 @@ def process(
     pdf_path: str | None = None,
     doc_dir: Path | None = None,
     document_id: str | None = None,
+    pages_dir: Path | None = None,
 ) -> None:
     """
     Разбирает один PDF и сохраняет результат в data/raw_data/<document_id>/.
@@ -79,6 +79,9 @@ def process(
     (нормы). Архив проектов передаёт свой пул (projects_data/<slug>).
     document_id — переопределяет id из имени файла. Архив проектов передаёт
     slug вида {проект}__{файл} — имена файлов между проектами повторяются.
+    pages_dir — куда класть скриншоты страниц. По умолчанию <doc_dir>/pages/;
+    пайплайн .search_index передаёт временную локальную папку, чтобы PNG
+    не ехали на сетевой диск.
     """
     if pdf_path is None:
         pdf_path = str(PDF_STORAGE_DIR / f"{pdf_name}.pdf")
@@ -97,7 +100,8 @@ def process(
     # и описание документа, даже если визуалов там нет.
     pages_to_save = collect_pages_to_save(document)
     pages_to_save.add(1)
-    saved_paths = save_page_images(page_images, pages_to_save, doc_dir)
+    pages_dir = pages_dir or (doc_dir / "pages")
+    saved_paths = save_page_images(page_images, pages_to_save, pages_dir)
 
     # Дозаполняем поля у блоков figure/table (пути к картинкам, соседи)
     enrich_visual_blocks(document, pages_to_save)
@@ -113,7 +117,7 @@ def process(
     print(f"  Файл:    {output_path}")
     print(f"  Страниц: {len(document['pages'])}")
     print(f"  Блоков:  {total_blocks}")
-    print(f"  Сохранено картинок страниц: {len(saved_paths)} (в {doc_dir}/pages/)")
+    print(f"  Сохранено картинок страниц: {len(saved_paths)} (в {pages_dir}/)")
 
 
 if __name__ == "__main__":
