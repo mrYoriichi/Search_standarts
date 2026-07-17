@@ -64,6 +64,24 @@ def ensure_meta(library_path: Path, embedding_model: str) -> dict:
     return meta
 
 
+def scoped_slug(folder_id: str, filename_slug: str) -> str:
+    """Id документа = метка папки + slug имени файла (`{folder_id}__{file}`).
+
+    Так один и тот же файл в разных папках даёт разные id — не путаются
+    (тот же приём, что в архиве проектов: `{проект}__{файл}`). folder_id —
+    постоянная метка папки из meta.json, одинаковая на всех машинах, поэтому
+    id не зависит от того, куда папка примонтирована.
+    """
+    return f"{folder_id}__{filename_slug}"
+
+
+def folder_id_of(slug: str) -> str | None:
+    """Достаёт метку папки из id документа. Нет разделителя `__` — None
+    (легаси-slug без папки, из старого пула data/raw_data)."""
+    folder_id, sep, _ = slug.partition("__")
+    return folder_id if sep else None
+
+
 def has_complete_index(library_path: Path, slug: str) -> bool:
     """Есть ли у документа полный индекс (нужный поиску минимум).
 

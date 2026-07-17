@@ -41,6 +41,23 @@ def test_ensure_meta_keeps_existing(tmp_path):
     assert second == first
 
 
+def test_scoped_slug_roundtrip():
+    slug = index_store.scoped_slug("abc123", "most_2025")
+    assert slug == "abc123__most_2025"
+    assert index_store.folder_id_of(slug) == "abc123"
+
+
+def test_scoped_slug_keeps_underscores_in_filename():
+    # Имя файла с '__' не должно ломать разбор — метку берём до ПЕРВОГО '__'.
+    slug = index_store.scoped_slug("abc123", "so_211__tz")
+    assert index_store.folder_id_of(slug) == "abc123"
+
+
+def test_folder_id_of_legacy_slug_is_none():
+    # Старый slug без метки папки (пул data/raw_data) — метки нет.
+    assert index_store.folder_id_of("mvl_649") is None
+
+
 def test_has_complete_index(tmp_path):
     slug = "mvl_649"
     assert not index_store.has_complete_index(tmp_path, slug)
