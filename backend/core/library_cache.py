@@ -95,7 +95,11 @@ def _load_merged() -> tuple[list[dict], dict]:
         matrices.append(index["matrix"])
 
     if not all_chunks:
-        raise RuntimeError("Нет ни одного готового документа.")
+        # Текст уходит юзеру в UI (роутер отдаёт его как detail) — по-чешски.
+        raise RuntimeError(
+            "V knihovně zatím není žádný hotový dokument — "
+            "nejdřív složku naskenujte a naindexujte."
+        )
     # Матрицы пулов уже нормированы (build_matrix_index) — просто составляем их
     # в одну. Порядок строк совпадает с порядком all_chunk_ids.
     matrix = np.vstack(matrices)
@@ -111,21 +115,22 @@ def get_library() -> tuple[list[dict], dict]:
         return _cache
 
 
-def get_tokens() -> dict[str, list[str]]:
-    """Возвращает {chunk_id: токены BM25}. Считает один раз по чанкам кеша.
+def get_library_with_tokens() -> tuple[list[dict], dict, dict[str, list[str]]]:
+    """Возвращает (chunks, embeddings_index, {chunk_id: токены BM25}) РАЗОМ.
 
-    Запрашивается после get_library() — токенизируем тот же набор чанков. На
-    каждый вопрос BM25 собираем из этих токенов (build_bm25_from_tokens), не
-    прогоняя regex по всему корпусу заново.
+    Всё берётся под одним локом — chunks и токены гарантированно одного
+    поколения кеша. Раздельные вызовы get_library() + «get_tokens()» ловили
+    гонку: invalidate() между ними давал токены нового поколения к чанкам
+    старого → KeyError на вопросе. Токены считаются один раз; на каждый вопрос
+    BM25 собирается из них (build_bm25_from_tokens) без токенизации корпуса.
     """
     global _cache, _tokens_cache
     with _lock:
+        if _cache is None:
+            _cache = _load_merged()
         if _tokens_cache is None:
-            if _cache is None:
-                _cache = _load_merged()
-            chunks = _cache[0]
-            _tokens_cache = {c["chunk_id"]: tokenize_chunk(c) for c in chunks}
-        return _tokens_cache
+            _tokens_cache = {c["chunk_id"]: tokenize_chunk(c) for c in _cache[0]}
+        return _cache[0], _cache[1], _tokens_cache
 
 
 def invalidate() -> None:

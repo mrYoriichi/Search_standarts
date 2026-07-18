@@ -4,7 +4,7 @@
 возвращает AskResponse. Никакой логики здесь нет.
 """
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from backend.core.database import get_session
@@ -22,14 +22,22 @@ def create_query(
     db: Session = Depends(get_session),
 ) -> AskResponse:
     """Задать вопрос → получить ответ со ссылками на источники."""
-    return service.ask(
-        question=payload.question,
-        document_ids=payload.document_ids,
-        db=db,
-        mode=payload.mode,
-        answer_model=payload.answer_model,
-        expand=payload.expand,
-    )
+    try:
+        return service.ask(
+            question=payload.question,
+            document_ids=payload.document_ids,
+            db=db,
+            mode=payload.mode,
+            answer_model=payload.answer_model,
+            expand=payload.expand,
+        )
+    except service.NoSearchableDocumentsError as exc:
+        # Устаревший выбор документов — юзеру нужно обновить «Kde hledat».
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        # Пустая библиотека / несовместимые модели эмбеддингов — понятный
+        # текст из library_cache вместо HTTP 500.
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @router.post("/queries/flag")

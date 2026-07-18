@@ -24,6 +24,15 @@ from backend.modules.queries.schemas import AskResponse, Source, UsedChunk
 from backend.modules.telemetry.service import track_event
 
 
+class NoSearchableDocumentsError(Exception):
+    """Фильтр не совпал ни с одним документом.
+
+    Типовая причина: юзер держал вкладку открытой, документы из его выбора
+    успели удалиться/переименоваться — фронт прислал устаревшие document_ids.
+    Без этой проверки пустой корпус ронял BM25 (ZeroDivisionError → HTTP 500).
+    """
+
+
 def ask(
     question: str,
     document_ids: list[str] | None,
@@ -42,14 +51,19 @@ def ask(
     started_at = time.perf_counter()
 
     # Библиотека лежит в памяти (см. backend/core/library_cache.py) — с диска
-    # читаем только при первом вопросе и после изменений библиотеки.
-    chunks, embeddings_index = library_cache.get_library()
-    tokens_by_id = library_cache.get_tokens()
+    # читаем только при первом вопросе и после изменений библиотеки. Чанки и
+    # токены берём одним вызовом — они гарантированно одного поколения кеша.
+    chunks, embeddings_index, tokens_by_id = library_cache.get_library_with_tokens()
 
     if document_ids:
         chunks, embeddings_index = filter_library(
             chunks, embeddings_index, set(document_ids)
         )
+        if not chunks:
+            raise NoSearchableDocumentsError(
+                "Vybrané dokumenty už v knihovně nejsou — "
+                "obnovte výběr v poli „Kde hledat“."
+            )
 
     # Расширяем запрос для поиска (диакритика, термины, синонимы), но ответ
     # генерим по ОРИГИНАЛЬНОМУ вопросу — чтобы отвечать на то, что спросил юзер.

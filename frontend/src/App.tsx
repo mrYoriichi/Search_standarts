@@ -453,17 +453,28 @@ function App() {
   useEffect(() => {
     if (auth.phase !== 'authenticated') return
     if (view !== 'search') return
-    fetch('/api/library')
+    const libraryPromise: Promise<LibraryResponse | null> = fetch('/api/library')
       .then((res) => (res.ok ? res.json() : null))
-      .then((data: LibraryResponse | null) => setLibrary(data))
-      .catch(() => setLibrary(null))
+      .catch(() => null)
     // Архив проектов — второй пул для фильтра.
-    fetch('/api/projects')
+    const archivePromise: Promise<ArchiveApiResponse | null> = fetch('/api/projects')
       .then((res) => (res.ok ? res.json() : null))
-      .then((data: ArchiveApiResponse | null) =>
-        setArchiveTree(data ? buildArchiveTree(data) : null),
-      )
-      .catch(() => setArchiveTree(null))
+      .catch(() => null)
+    Promise.all([libraryPromise, archivePromise]).then(([lib, archive]) => {
+      const archiveTree = archive ? buildArchiveTree(archive) : null
+      setLibrary(lib)
+      setArchiveTree(archiveTree)
+      // Чистим устаревший выбор: пока мы были на другой вкладке, документ
+      // могли удалить/переименовать. Иначе в document_ids уедут несуществующие
+      // slug'и — бэк ответит «выбор пуст» вместо результата.
+      const valid = new Set<string>()
+      if (lib) collectReadySlugs(lib.tree).forEach((s) => valid.add(s))
+      if (archiveTree) collectReadySlugs(archiveTree).forEach((s) => valid.add(s))
+      setSelectedSlugs((prev) => {
+        const next = new Set([...prev].filter((s) => valid.has(s)))
+        return next.size === prev.size ? prev : next
+      })
+    })
   }, [auth.phase, view])
 
   async function handleLogout() {
@@ -534,7 +545,10 @@ function App() {
         body: JSON.stringify(body),
       })
       if (!res.ok) {
-        throw new Error(`Server vrátil ${res.status}`)
+        // Бэк шлёт понятную причину в detail (пустая библиотека, устаревший
+        // выбор…) — показываем её, а не голый код статуса.
+        const errData = await res.json().catch(() => null)
+        throw new Error(errData?.detail ?? `Server vrátil ${res.status}`)
       }
       const data: AskResponse = await res.json()
       setResult(data)
