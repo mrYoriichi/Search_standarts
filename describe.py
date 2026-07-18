@@ -25,6 +25,7 @@ load_dotenv()
 import pypdfium2 as pdfium
 
 from backend.core.paths import RAW_DATA_DIR
+from jsonio import save_json_atomic
 from pdf_processing.drawing import RENDER_MAX_SIDE_PX
 from pdf_processing.image_description import (
     VISION_MODEL,
@@ -44,8 +45,21 @@ def load_document(json_path: Path) -> dict:
 
 def save_descriptions(descriptions: dict, json_path: Path) -> None:
     """Сохраняет словарь описаний в descriptions.json."""
-    with open(json_path, "w", encoding="utf-8") as f:
-        json.dump(descriptions, f, ensure_ascii=False, indent=2)
+    save_json_atomic(json_path, descriptions)
+
+
+def _read_partial(json_path: Path) -> dict | None:
+    """descriptions.json прошлого (возможно, оборванного) запуска или None.
+
+    Vision — самый дорогой этап, поэтому сохраняемся после каждой страницы,
+    а при повторном запуске уже оплаченные описания не покупаем второй раз.
+    """
+    try:
+        with open(json_path, encoding="utf-8") as f:
+            data = json.load(f)
+    except (OSError, json.JSONDecodeError):
+        return None
+    return data if isinstance(data, dict) else None
 
 
 def find_pages_with_visuals(document: dict) -> list[int]:
@@ -64,28 +78,37 @@ def find_pages_with_visuals(document: dict) -> list[int]:
 
 
 def describe_drawings(
-    document: dict, pdf_path: str, vision_model: str
-) -> tuple[dict[str, str], int, int]:
-    """Vision-описание всех чертёжных страниц документа.
+    document: dict,
+    pdf_path: str,
+    vision_model: str,
+    descriptions: dict[str, str],
+    on_page_done: Callable[[], None] | None = None,
+) -> tuple[int, int]:
+    """Vision-описание чертёжных страниц документа (дополняет descriptions).
 
     Чертёжные страницы (по-страничный роутер пометил их page_type == "drawing")
     рендерим на лету из PDF во временную папку, отдаём в vision и выбрасываем
-    PNG — скриншоты чертежей нигде не храним. Возвращает кортеж
-    (описания {номер_страницы: текст}, prompt_tokens, completion_tokens).
+    PNG — скриншоты чертежей нигде не храним.
+
+    descriptions ({номер_страницы: текст}) пополняется НА МЕСТЕ: страницы, уже
+    описанные прошлым запуском, пропускаем — за них заплачено. Пустой ответ
+    тоже записываем ("" = «страница обработана», chunker пустые игнорирует).
+    on_page_done зовётся после каждой страницы — вызывающий сохраняет прогресс.
+    Возвращает (prompt_tokens, completion_tokens) этого запуска.
     """
     drawing_pages = [
         p["page_number"] for p in document["pages"] if p.get("page_type") == "drawing"
     ]
-    descriptions: dict[str, str] = {}
+    todo = [p for p in drawing_pages if str(p) not in descriptions]
     in_tok = out_tok = 0
-    if not drawing_pages:
-        return descriptions, in_tok, out_tok
+    if not todo:
+        return in_tok, out_tok
 
     doc = pdfium.PdfDocument(pdf_path)
     try:
         with tempfile.TemporaryDirectory() as tmp:
             tmp_dir = Path(tmp)
-            for page_number in drawing_pages:
+            for page_number in todo:
                 page = doc[page_number - 1]
                 width, height = page.get_size()
                 scale = RENDER_MAX_SIDE_PX / max(width, height)
@@ -94,11 +117,12 @@ def describe_drawings(
                 desc, p_tok, c_tok = describe_drawing(tmp_png, model=vision_model)
                 in_tok += p_tok
                 out_tok += c_tok
-                if desc.strip():
-                    descriptions[str(page_number)] = desc
+                descriptions[str(page_number)] = desc.strip()
+                if on_page_done is not None:
+                    on_page_done()
     finally:
         doc.close()
-    return descriptions, in_tok, out_tok
+    return in_tok, out_tok
 
 
 def process(
@@ -152,6 +176,17 @@ def process(
 
     print(f"Документ: {document['document_name']}")
 
+    # Частичный результат прошлого (оборванного) запуска: сохраняемся после
+    # каждой страницы, при повторе уже оплаченное vision не покупаем заново.
+    output = _read_partial(descriptions_path) or {
+        "document_title": "",
+        "document_summary": "",
+        "block_descriptions": {},
+        "drawing_descriptions": {},
+    }
+    output.setdefault("described_pages", [])
+    done_pages = set(output["described_pages"])
+
     # Накопители токенов: метаданные считаем отдельно от страниц,
     # чтобы знать "чистую" цену страницы с figure/table.
     meta_in = meta_out = 0
@@ -160,25 +195,30 @@ def process(
 
     # Шаг 1: извлекаем название и описание документа по первой странице
     first_page_image = pages_dir / "p001.png"
-    if first_page_image.exists():
+    if output["document_title"]:
+        print("Метаданные уже есть (прошлый запуск) — пропускаю")
+    elif first_page_image.exists():
         print("Извлекаю метаданные документа...")
         meta, meta_in, meta_out = extract_document_metadata(
             first_page_image, model=vision_model
         )
-        document_title = meta["title"]
-        document_summary = meta["summary"]
-        print(f"  Название: {document_title}")
+        output["document_title"] = meta["title"]
+        output["document_summary"] = meta["summary"]
+        save_descriptions(output, descriptions_path)
+        print(f"  Название: {output['document_title']}")
     else:
         print("  [!] Скриншота первой страницы нет, метаданные пропущены")
-        document_title = ""
-        document_summary = ""
 
     # Шаг 2: описываем схемы и таблицы — накапливаем в общий словарь
     print(f"\nСтраниц с figure/table: {len(pages)}")
     print("Начинаю описание через vision LLM...\n")
 
-    block_descriptions: dict[str, str] = {}
+    block_descriptions: dict[str, str] = output["block_descriptions"]
     for i, page_number in enumerate(pages, start=1):
+        if page_number in done_pages:
+            print(f"[{i}/{len(pages)}] стр. {page_number}: уже описана, пропуск")
+            continue
+
         # Путь к скриншоту этой страницы
         image_path = pages_dir / f"p{page_number:03d}.png"
 
@@ -193,29 +233,30 @@ def process(
             document, page_number, image_path, model=vision_model
         )
         block_descriptions.update(page_descriptions)
+        output["described_pages"].append(page_number)
+        save_descriptions(output, descriptions_path)
         pages_in += in_tok
         pages_out += out_tok
         pages_described_count += 1
         print(f"           проставлено описаний: {len(page_descriptions)}")
 
     # Шаг 3: vision-описание чертёжных страниц (если дан путь к PDF).
-    # Рендерим их на лету из PDF, скриншоты не сохраняем.
-    drawing_descriptions: dict[str, str] = {}
+    # Рендерим их на лету из PDF, скриншоты не сохраняем. Прогресс сохраняем
+    # после каждого листа (on_page_done) — как и для страниц выше.
     draw_in = draw_out = 0
     if pdf_path:
         print("\nОписываю чертёжные страницы через vision LLM...")
-        drawing_descriptions, draw_in, draw_out = describe_drawings(
-            document, pdf_path, vision_model
+        draw_in, draw_out = describe_drawings(
+            document,
+            pdf_path,
+            vision_model,
+            descriptions=output["drawing_descriptions"],
+            on_page_done=lambda: save_descriptions(output, descriptions_path),
         )
-        print(f"  Описано чертежей: {len(drawing_descriptions)}")
+        print(f"  Описано чертежей: {len(output['drawing_descriptions'])}")
+    drawing_descriptions = output["drawing_descriptions"]
 
-    # Сохраняем результат в descriptions.json (полная перезапись)
-    output = {
-        "document_title": document_title,
-        "document_summary": document_summary,
-        "block_descriptions": block_descriptions,
-        "drawing_descriptions": drawing_descriptions,
-    }
+    # Финальное сохранение (на случай, когда ни одного vision-вызова не было)
     save_descriptions(output, descriptions_path)
 
     print("\nГотово!")

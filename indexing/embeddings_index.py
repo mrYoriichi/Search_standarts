@@ -21,6 +21,13 @@ EMBEDDING_MODEL = "text-embedding-3-large"
 # — «Большие чанки».
 MAX_TOKENS_PER_EMBEDDING_TEXT = 8000
 
+# Лимиты OpenAI на ОДИН запрос embeddings: ~300k токенов суммарно и 2048
+# текстов. Берём с запасом (tiktoken может насчитать чуть меньше сервера).
+# Большой документ одним запросом падал бы на последнем шаге пайплайна,
+# когда vision уже оплачен — поэтому шлём партиями.
+MAX_TOKENS_PER_REQUEST = 250_000
+MAX_TEXTS_PER_REQUEST = 1000
+
 # Энкодер для text-embedding-3-large (тот же cl100k_base, что и у GPT-4).
 # Создаём один раз на модуль — это дорого инициализировать.
 _TOKENIZER = tiktoken.get_encoding("cl100k_base")
@@ -81,14 +88,20 @@ def build_embeddings_index(chunks: list[dict]) -> tuple[dict, int]:
           ...
         ]
       }
-    total_tokens — сколько токенов OpenAI насчитал на батч (для стоимости).
+    total_tokens — сколько токенов OpenAI насчитал суммарно (для стоимости).
     """
+    if not chunks:
+        raise ValueError(
+            "Нет чанков для индексации — в документе не нашлось извлекаемого текста."
+        )
+
     # Собираем тексты для индексации (шапка + содержание)
     texts = [build_searchable_text(chunk) for chunk in chunks]
 
     # Защитное обрезание для чанков, которые не влезают в лимит модели.
     # Считаем токены через tiktoken, обрезаем по токенам и декодируем обратно.
     # Полный текст остаётся в chunks.json и работает для BM25.
+    token_counts: list[int] = []
     for i, text in enumerate(texts):
         token_ids = _TOKENIZER.encode(text)
         if len(token_ids) > MAX_TOKENS_PER_EMBEDDING_TEXT:
@@ -96,11 +109,31 @@ def build_embeddings_index(chunks: list[dict]) -> tuple[dict, int]:
                 f"  [!] {chunks[i]['chunk_id']}: {len(token_ids)} токенов > "
                 f"{MAX_TOKENS_PER_EMBEDDING_TEXT}, обрезаю для embedding"
             )
-            truncated = token_ids[:MAX_TOKENS_PER_EMBEDDING_TEXT]
-            texts[i] = _TOKENIZER.decode(truncated)
+            token_ids = token_ids[:MAX_TOKENS_PER_EMBEDDING_TEXT]
+            texts[i] = _TOKENIZER.decode(token_ids)
+        token_counts.append(len(token_ids))
 
-    # Получаем векторы одним батч-запросом
-    embeddings, tokens = get_embeddings(texts)
+    # Режем тексты на партии под лимиты одного запроса (порядок сохраняется).
+    batches: list[list[str]] = [[]]
+    batch_tokens = 0
+    for text, n_tokens in zip(texts, token_counts):
+        batch_full = batch_tokens + n_tokens > MAX_TOKENS_PER_REQUEST or (
+            len(batches[-1]) >= MAX_TEXTS_PER_REQUEST
+        )
+        if batches[-1] and batch_full:
+            batches.append([])
+            batch_tokens = 0
+        batches[-1].append(text)
+        batch_tokens += n_tokens
+
+    embeddings: list[list[float]] = []
+    tokens = 0
+    for n, batch in enumerate(batches, start=1):
+        if len(batches) > 1:
+            print(f"  эмбеддинги: партия {n}/{len(batches)} ({len(batch)} текстов)")
+        vectors, used = get_embeddings(batch)
+        embeddings.extend(vectors)
+        tokens += used
 
     # Связываем каждый вектор с его chunk_id
     items = []

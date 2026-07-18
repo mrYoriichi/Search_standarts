@@ -114,8 +114,10 @@ def ask_vision(
 
     # OpenAI возвращает использованные токены в response.usage.
     # prompt_tokens включает токены и текста, и картинки.
+    # content бывает None (отказ/фильтр модели) — отдаём "" вместо падения,
+    # вызывающие и так умеют жить с пустым ответом.
     return (
-        response.choices[0].message.content,
+        response.choices[0].message.content or "",
         response.usage.prompt_tokens,
         response.usage.completion_tokens,
     )
