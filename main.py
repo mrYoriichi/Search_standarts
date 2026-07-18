@@ -9,8 +9,13 @@ import sys
 from pathlib import Path
 
 from backend.core.paths import PDF_STORAGE_DIR, RAW_DATA_DIR
-from pdf_processing.drawing import route_and_ocr
-from pdf_processing.parser import parse_pdf, collect_pages_to_save, enrich_visual_blocks
+from pdf_processing.drawing import insert_drawing_pages
+from pdf_processing.page_router import classify_pages
+from pdf_processing.parser import (
+    collect_pages_to_save,
+    enrich_visual_blocks,
+    parse_prose_pages,
+)
 
 
 def save_document_json(document: dict, output_root: Path) -> Path:
@@ -88,14 +93,14 @@ def process(
         pdf_path = str(PDF_STORAGE_DIR / f"{pdf_name}.pdf")
 
     print(f"Читаю {pdf_path}, подожди...")
-    document, page_images = parse_pdf(pdf_path)
+    # По-страничный роутер: классифицируем каждую страницу (проза/чертёж),
+    # Docling запускаем ТОЛЬКО по прозаическим (на чертежах он бесполезен и
+    # тормозит), чертёжные читаем OCR'ом и вставляем на их места.
+    page_types = classify_pages(pdf_path)
+    document, page_images = parse_prose_pages(pdf_path, page_types)
     if document_id:
         document["document_id"] = document_id
-
-    # По-страничный роутер: чертёжные страницы Docling парсит плохо (нет текста/
-    # заголовков) — их текст берём OCR'ом и метим page_type, чтобы chunk-шаг
-    # сделал их отдельными чанками, а не слил с прозой.
-    route_and_ocr(document, pdf_path)
+    insert_drawing_pages(document, pdf_path, page_types)
 
     # Папка документа: data/raw_data/<document_id>/ или переданный пул
     doc_dir = doc_dir or (RAW_DATA_DIR / document["document_id"])

@@ -34,32 +34,28 @@ def read_drawing_page(page: "pdfium.PdfPage") -> str:
     return build_drawing_text(layer, ocr_image(image))
 
 
-def route_and_ocr(document: dict, pdf_path: str) -> None:
-    """Проставляет тип каждой странице document и OCR-текст чертёжным (на месте).
+def insert_drawing_pages(document: dict, pdf_path: str, page_types: list[str]) -> None:
+    """Вставляет чертёжные страницы (OCR) в document на их места по номеру.
 
-    Идём по РЕАЛЬНЫМ страницам PDF (pypdfium — источник истины: Docling может
-    пропустить чисто-векторную страницу-чертёж). Прозаической ставим
-    page_type='text' и оставляем разбор Docling; чертёжной — page_type='drawing'
-    + drawing_text (OCR + текстовый слой), блоки пустые (чанк соберём отдельно).
-    Прозаические страницы, которых Docling не нашёл, пропускаем (пустые).
+    Прозаические страницы уже разобраны Docling и лежат в document. Чертёжные
+    Docling не видел — читаем их OCR'ом здесь и собираем итоговый список страниц
+    в правильном порядке (проза + чертежи). Прозаические страницы, которых
+    Docling не нашёл (пустые), пропускаем.
     """
     import pypdfium2 as pdfium
 
-    from pdf_processing.page_router import classify_page, count_paths
+    prose_pages = {p["page_number"]: p for p in document["pages"]}
+    for page in document["pages"]:
+        page["page_type"] = "text"
 
-    docling_pages = {p["page_number"]: p for p in document["pages"]}
     doc = pdfium.PdfDocument(pdf_path)
     try:
-        routed: list[dict] = []
-        for i in range(len(doc)):
+        pages: list[dict] = []
+        for i, page_type in enumerate(page_types):
             page_number = i + 1
-            page = doc[i]
-            text_len = len(page.get_textpage().get_text_range().strip())
-            page_type = classify_page(count_paths(page), text_len)
-
             if page_type == "drawing":
-                drawing_text = read_drawing_page(page)
-                routed.append(
+                drawing_text = read_drawing_page(doc[i])
+                pages.append(
                     {
                         "page_number": page_number,
                         "page_text": drawing_text,
@@ -68,12 +64,8 @@ def route_and_ocr(document: dict, pdf_path: str) -> None:
                         "blocks": [],
                     }
                 )
-            else:
-                docling_page = docling_pages.get(page_number)
-                if docling_page is None:
-                    continue  # Docling ничего не нашёл — пустая страница, пропуск
-                docling_page["page_type"] = "text"
-                routed.append(docling_page)
-        document["pages"] = routed
+            elif page_number in prose_pages:
+                pages.append(prose_pages[page_number])
+        document["pages"] = pages
     finally:
         doc.close()

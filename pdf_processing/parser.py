@@ -8,10 +8,13 @@
 Сохранение — забота того, кто вызывает (main.py, веб-сервер и т.д.).
 """
 
+import os
 import re
+import tempfile
 import unicodedata
 from pathlib import Path
 
+import pypdfium2 as pdfium
 from docling.datamodel.accelerator_options import AcceleratorDevice, AcceleratorOptions
 from docling.datamodel.base_models import InputFormat
 from docling.datamodel.pipeline_options import PdfPipelineOptions
@@ -306,4 +309,59 @@ def parse_pdf(pdf_path: str) -> tuple[dict, dict]:
     pdf_filename = Path(pdf_path).name
     document = build_document_dict(doc, pdf_filename)
 
+    return document, page_images
+
+
+def _remap_to_original(
+    document: dict, page_images: dict, prose_numbers: list[int], original_name: str
+) -> None:
+    """Переносит номера страниц временного PDF на оригинальные (на месте).
+
+    Docling нумерует страницы временного PDF как 1..M; страница j соответствует
+    оригинальной prose_numbers[j-1]. Правим page_number, page-номер в block_id
+    ('p3_b02') и ключи page_images. Восстанавливаем id/имя оригинала.
+    """
+    document["document_id"] = make_document_id(original_name)
+    document["document_name"] = original_name
+    mapping = {j + 1: prose_numbers[j] for j in range(len(prose_numbers))}
+    for page in document["pages"]:
+        new = mapping.get(page["page_number"], page["page_number"])
+        page["page_number"] = new
+        for block in page["blocks"]:
+            block["block_id"] = f"p{new}_" + block["block_id"].split("_", 1)[1]
+    remapped = {mapping.get(k, k): v for k, v in page_images.items()}
+    page_images.clear()
+    page_images.update(remapped)
+
+
+def parse_prose_pages(pdf_path: str, page_types: list[str]) -> tuple[dict, dict]:
+    """Прогоняет Docling ТОЛЬКО по прозаическим страницам (page_types[i]=='text').
+
+    Чертёжные страницы Docling не видит вообще (на них он бесполезен и тормозит).
+    Собирает временный PDF из прозаических страниц, парсит его и возвращает
+    document + page_images с ОРИГИНАЛЬНЫМИ номерами страниц.
+    """
+    original_name = Path(pdf_path).name
+    prose_numbers = [i + 1 for i, t in enumerate(page_types) if t == "text"]
+    if not prose_numbers:
+        # весь документ — чертежи, Docling не нужен
+        return {
+            "document_id": make_document_id(original_name),
+            "document_name": original_name,
+            "pages": [],
+        }, {}
+
+    src = pdfium.PdfDocument(pdf_path)
+    dst = pdfium.PdfDocument.new()
+    dst.import_pages(src, [n - 1 for n in prose_numbers])
+    fd, temp_path = tempfile.mkstemp(suffix=".pdf")
+    os.close(fd)
+    try:
+        with open(temp_path, "wb") as f:
+            dst.save(f)
+        document, page_images = parse_pdf(temp_path)
+    finally:
+        os.remove(temp_path)
+
+    _remap_to_original(document, page_images, prose_numbers, original_name)
     return document, page_images
