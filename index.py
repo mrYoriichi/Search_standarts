@@ -24,6 +24,7 @@ load_dotenv()
 
 from backend.core.paths import RAW_DATA_DIR
 from indexing.embeddings_index import build_embeddings_index, EMBEDDING_MODEL
+from jsonio import save_json_atomic
 from pdf_processing.parser import make_document_id
 from pricing import embedding_cost
 
@@ -36,8 +37,7 @@ def load_chunks(json_path: Path) -> list[dict]:
 
 def save_index(index: dict, json_path: Path) -> None:
     """Сохраняет векторный индекс в JSON-файл."""
-    with open(json_path, "w", encoding="utf-8") as f:
-        json.dump(index, f, ensure_ascii=False, indent=2)
+    save_json_atomic(json_path, index)
 
 
 def process(pdf_name: str, doc_dir: Path | None = None) -> None:

@@ -17,7 +17,6 @@
 """
 
 import argparse
-import json
 import subprocess
 from pathlib import Path
 
@@ -27,6 +26,7 @@ load_dotenv()
 
 from backend.core.paths import RAW_DATA_DIR
 from indexing.embeddings_index import build_embeddings_index
+from jsonio import save_json_atomic
 from pdf_processing.parser import make_document_id
 from pricing import embedding_cost, model_cost
 from vl_pipeline.describe import describe_sheet, extract_document_metadata
@@ -199,18 +199,14 @@ def process(
         chunk["chunk_id"] = f"{doc_id}_c{i:03d}"
 
     chunks_path = doc_dir / "chunks.json"
-    chunks_path.write_text(
-        json.dumps(chunks, ensure_ascii=False, indent=2), encoding="utf-8"
-    )
+    save_json_atomic(chunks_path, chunks)
     print(f"\nЧанков: {len(chunks)} → {chunks_path}")
 
     # 5. Эмбеддинги
     print("Строю векторный индекс (OpenAI)...")
     index, tokens = build_embeddings_index(chunks)
     index_path = doc_dir / "embeddings.json"
-    index_path.write_text(
-        json.dumps(index, ensure_ascii=False, indent=2), encoding="utf-8"
-    )
+    save_json_atomic(index_path, index)
     emb_cost = embedding_cost(tokens)
     print(f"Векторов: {len(index['items'])} → {index_path}")
 

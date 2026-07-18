@@ -71,20 +71,28 @@ def load_library(data_root: Path) -> tuple[list[dict], dict]:
             # Пайплайн ещё не закончен для этого документа — тихо пропускаем
             continue
 
-        chunks = load_chunks(chunks_path)
-        index = load_index(index_path)
+        try:
+            chunks = load_chunks(chunks_path)
+            index = load_index(index_path)
+            index_model = index["model"]
+            index_items = index["items"]
+        except (OSError, json.JSONDecodeError, KeyError):
+            # Битый/недоступный файл индекса не должен класть весь поиск:
+            # пропускаем документ, остальная библиотека работает.
+            print(f"[!] Битый индекс, пропускаю документ: {doc_dir.name}")
+            continue
 
         # Сверяем модель эмбеддингов
         if model is None:
-            model = index["model"]
-        elif model != index["model"]:
+            model = index_model
+        elif model != index_model:
             raise RuntimeError(
-                f"Документ {doc_dir.name} построен на модели {index['model']}, "
+                f"Документ {doc_dir.name} построен на модели {index_model}, "
                 f"а раньше встретилась модель {model}. Перестрой векторный индекс."
             )
 
         all_chunks.extend(chunks)
-        all_items.extend(index["items"])
+        all_items.extend(index_items)
 
     if not all_chunks:
         raise RuntimeError(f"В {data_root} нет ни одного готового документа.")

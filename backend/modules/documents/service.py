@@ -14,6 +14,7 @@ from backend.core.paths import PDF_STORAGE_DIR, RAW_DATA_DIR
 from backend.modules.documents.models import Document
 from backend.modules.documents.pipeline import run_pipeline
 from backend.modules.documents.schemas import UploadItem
+from jsonio import save_json_atomic
 from pdf_processing.parser import make_document_id
 
 
@@ -174,8 +175,7 @@ def relink_document(
         for chunk in chunks:
             chunk["document_id"] = new_slug
             chunk["chunk_id"] = _replace_prefix(chunk["chunk_id"], old_slug, new_slug)
-        with open(chunks_path, "w", encoding="utf-8") as f:
-            json.dump(chunks, f, ensure_ascii=False, indent=2)
+        save_json_atomic(chunks_path, chunks)
 
     # 3. embeddings.json: chunk_id внутри items.
     emb_path = new_dir / "embeddings.json"
@@ -184,8 +184,7 @@ def relink_document(
             emb = json.load(f)
         for item in emb.get("items", []):
             item["chunk_id"] = _replace_prefix(item["chunk_id"], old_slug, new_slug)
-        with open(emb_path, "w", encoding="utf-8") as f:
-            json.dump(emb, f, ensure_ascii=False, indent=2)
+        save_json_atomic(emb_path, emb)
 
     # 4. Обновляем slug в БД.
     doc.slug = new_slug

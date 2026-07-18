@@ -4,11 +4,11 @@
 Когда переедем на БД, изменится только функция сохранения — парсер не трогаем.
 """
 
-import json
 import sys
 from pathlib import Path
 
 from backend.core.paths import PDF_STORAGE_DIR, RAW_DATA_DIR
+from jsonio import save_json_atomic
 from pdf_processing.drawing import insert_drawing_pages
 from pdf_processing.page_router import classify_pages
 from pdf_processing.parser import (
@@ -28,10 +28,7 @@ def save_document_json(document: dict, output_root: Path) -> Path:
     doc_dir.mkdir(parents=True, exist_ok=True)
 
     output_path = doc_dir / "document.json"
-    with open(output_path, "w", encoding="utf-8") as f:
-        # ensure_ascii=False — чтобы чешские символы сохранились как есть,
-        # а не превратились в \u010c и подобные
-        json.dump(document, f, ensure_ascii=False, indent=2)
+    save_json_atomic(output_path, document)
 
     return output_path
 
@@ -119,8 +116,7 @@ def process(
 
     # Сохраняем итоговый JSON — уже с заполненными путями
     output_path = doc_dir / "document.json"
-    with open(output_path, "w", encoding="utf-8") as f:
-        json.dump(document, f, ensure_ascii=False, indent=2)
+    save_json_atomic(output_path, document)
 
     # Отчёт
     total_blocks = sum(len(p["blocks"]) for p in document["pages"])

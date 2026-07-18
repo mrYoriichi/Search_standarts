@@ -23,6 +23,7 @@ from backend.modules.projects.models import ProjectDocument
 from PIL import Image
 
 from indexing.embeddings_index import build_embeddings_index
+from jsonio import save_json_atomic
 from pdf_processing.image_description import ask_vision
 from pdf_processing.ocr import ocr_image
 from pricing import model_cost
@@ -190,9 +191,7 @@ def process_sheet_document(
         chunk["chunk_id"] = f"{slug}_c{i:03d}"
 
     chunks_path = doc_dir / "chunks.json"
-    chunks_path.write_text(
-        json.dumps(chunks, ensure_ascii=False, indent=2), encoding="utf-8"
-    )
+    save_json_atomic(chunks_path, chunks)
     return chunks, total_cost
 
 
@@ -208,9 +207,7 @@ def _prefix_project_context(doc_dir: Path, project: str) -> None:
         title = chunk.get("document_title", "")
         if not title.startswith(project):
             chunk["document_title"] = f"{project} — {title}" if title else project
-    chunks_path.write_text(
-        json.dumps(chunks, ensure_ascii=False, indent=2), encoding="utf-8"
-    )
+    save_json_atomic(chunks_path, chunks)
 
 
 def process_text_document(
@@ -286,10 +283,7 @@ def run_project_pipeline(slug: str, pdf_path: str) -> None:
                 )
                 index, _ = build_embeddings_index(chunks)
                 index_path = PROJECTS_DATA_DIR / slug / "embeddings.json"
-                index_path.write_text(
-                    json.dumps(index, ensure_ascii=False, indent=2),
-                    encoding="utf-8",
-                )
+                save_json_atomic(index_path, index)
             else:
                 process_text_document(
                     slug=slug,

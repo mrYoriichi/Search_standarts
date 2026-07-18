@@ -16,6 +16,8 @@ import json
 import uuid
 from pathlib import Path
 
+from jsonio import save_json_atomic
+
 INDEX_DIR_NAME = ".search_index"
 META_FILENAME = "meta.json"
 # Поднимать при несовместимой смене формата артефактов — старые индексы
@@ -59,8 +61,7 @@ def ensure_meta(library_path: Path, embedding_model: str) -> dict:
     }
     root = index_root(library_path)
     root.mkdir(parents=True, exist_ok=True)
-    with open(root / META_FILENAME, "w", encoding="utf-8") as f:
-        json.dump(meta, f, ensure_ascii=False, indent=2)
+    save_json_atomic(root / META_FILENAME, meta)
     return meta
 
 
@@ -122,20 +123,26 @@ def ensure_unique_folder_id(
         fid = uuid.uuid4().hex
         meta["folder_id"] = fid
         try:
-            with open(
-                index_root(library_path) / META_FILENAME, "w", encoding="utf-8"
-            ) as f:
-                json.dump(meta, f, ensure_ascii=False, indent=2)
+            save_json_atomic(index_root(library_path) / META_FILENAME, meta)
         except OSError:
             return None  # папка только для чтения — коллизию не починить
     return fid
 
 
 def has_complete_index(library_path: Path, slug: str) -> bool:
-    """Есть ли у документа полный индекс (нужный поиску минимум).
+    """Есть ли у документа полный ЧИТАЕМЫЙ индекс (нужный поиску минимум).
 
     chunks.json + embeddings.json достаточно: поиск читает только их,
     document.json/descriptions.json нужны лишь при переобработке.
+    Оба файла обязаны разбираться как JSON: битый/недокопированный файл не
+    «усыновляем» — иначе документ станет ready, а поиск его молча пропустит.
     """
     d = doc_dir(library_path, slug)
-    return (d / "chunks.json").exists() and (d / "embeddings.json").exists()
+    try:
+        with open(d / "chunks.json", encoding="utf-8") as f:
+            chunks = json.load(f)
+        with open(d / "embeddings.json", encoding="utf-8") as f:
+            emb = json.load(f)
+    except (OSError, json.JSONDecodeError):
+        return False
+    return bool(chunks) and "model" in emb and "items" in emb

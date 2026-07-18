@@ -16,6 +16,7 @@ import sys
 from pathlib import Path
 
 from backend.core.paths import RAW_DATA_DIR
+from jsonio import save_json_atomic
 from pdf_processing.chunker import build_chunks_routed
 from pdf_processing.parser import make_document_id
 
@@ -28,8 +29,7 @@ def load_json(json_path: Path) -> dict:
 
 def save_chunks(chunks: list[dict], json_path: Path) -> None:
     """Сохраняет список чанков в JSON-файл."""
-    with open(json_path, "w", encoding="utf-8") as f:
-        json.dump(chunks, f, ensure_ascii=False, indent=2)
+    save_json_atomic(json_path, chunks)
 
 
 def merge_descriptions(document: dict, descriptions: dict) -> None:

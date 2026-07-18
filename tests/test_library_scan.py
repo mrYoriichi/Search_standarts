@@ -35,8 +35,12 @@ def _make_index(library_path, slug: str, model: str, title: str | None = None):
     index_store.ensure_meta(library_path, model)
     d = index_store.doc_dir(library_path, slug)
     d.mkdir(parents=True)
-    (d / "chunks.json").write_text("[]", encoding="utf-8")
-    (d / "embeddings.json").write_text("{}", encoding="utf-8")
+    (d / "chunks.json").write_text(
+        json.dumps([{"chunk_id": f"{slug}_c001", "text": "obsah"}]), encoding="utf-8"
+    )
+    (d / "embeddings.json").write_text(
+        json.dumps({"model": model, "items": []}), encoding="utf-8"
+    )
     if title:
         (d / "descriptions.json").write_text(
             json.dumps({"document_title": title}), encoding="utf-8"
