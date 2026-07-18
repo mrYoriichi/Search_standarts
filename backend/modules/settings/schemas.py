@@ -45,3 +45,9 @@ class VisionModelSetting(BaseModel):
     """Vision-модель для обработки документов (рычаг стоимости)."""
 
     model: str
+
+
+class DescribeImagesSetting(BaseModel):
+    """Тумблер описания картинок vision. False = «Без LLM» (бесплатно)."""
+
+    enabled: bool

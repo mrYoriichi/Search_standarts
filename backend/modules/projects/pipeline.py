@@ -133,11 +133,14 @@ def process_sheet_document(
     project: str,
     relative_path: str,
     vision_model: str,
+    describe_images: bool = True,
 ) -> tuple[list[dict], float]:
     """Обрабатывает чертёжный документ: каждая страница = чанк-лист.
 
     Пишет pages/*.png и chunks.json в PROJECTS_DATA_DIR/{slug}/.
     Возвращает (чанки, стоимость LLM $). Эмбеддинги строит вызывающий.
+    describe_images=False → режим «Без LLM»: vision пропускаем, чанк листа =
+    текстовый слой + OCR (бесплатно).
     """
     doc_dir = PROJECTS_DATA_DIR / slug
     pages_dir = doc_dir / "pages"
@@ -155,13 +158,17 @@ def process_sheet_document(
         total_pages = len(doc)
         for i in range(total_pages):
             page_number = i + 1
-            progress.set_progress(slug, f"list {page_number}/{total_pages} (vision)…")
+            suffix = "vision" if describe_images else "OCR"
+            progress.set_progress(slug, f"list {page_number}/{total_pages} ({suffix})…")
             image_path = render_page_png(
                 doc, i, pages_dir / f"page_{page_number:03d}.png"
             )
             layer_text = doc[i].get_textpage().get_text_range().strip()
             ocr_text = ocr_image(Image.open(image_path))
-            meta, cost = describe_sheet(image_path, vision_model)
+            if describe_images:
+                meta, cost = describe_sheet(image_path, vision_model)
+            else:
+                meta, cost = {}, 0.0
             total_cost += cost
             chunks.append(
                 build_sheet_chunk(
@@ -211,12 +218,14 @@ def process_text_document(
     pdf_path: Path,
     project: str,
     vision_model: str,
+    describe_images: bool = True,
 ) -> None:
     """Текстовый документ архива (TZ, статика): существующий пайплайн норм.
 
     Docling → vision-описания картинок (модели/эпюры в статике — тоже сюда)
     → нарезка по заголовкам → проект в шапку → эмбеддинги.
     Всё пишется в PROJECTS_DATA_DIR/{slug}/, id чанков — от нашего slug.
+    describe_images=False → режим «Без LLM»: vision пропускается.
     """
     # Lazy import — Docling тяжёлый, грузим только при реальной обработке
     # (та же причина, что в documents/pipeline.py).
@@ -234,6 +243,7 @@ def process_text_document(
         vision_model=vision_model,
         doc_dir=doc_dir,
         pdf_path=str(pdf_path),
+        describe_images=describe_images,
         on_progress=lambda done, total: progress.set_progress(
             slug, f"popis obrázků: strana {done}/{total}"
         ),
@@ -263,6 +273,7 @@ def run_project_pipeline(slug: str, pdf_path: str) -> None:
         db.commit()
 
         vision_model = settings_service.get_vision_model(db)
+        describe_images = settings_service.get_describe_images(db)
         try:
             if doc.doc_type == "sheet":
                 chunks, _ = process_sheet_document(
@@ -271,6 +282,7 @@ def run_project_pipeline(slug: str, pdf_path: str) -> None:
                     project=doc.project,
                     relative_path=doc.relative_path,
                     vision_model=vision_model,
+                    describe_images=describe_images,
                 )
                 index, _ = build_embeddings_index(chunks)
                 index_path = PROJECTS_DATA_DIR / slug / "embeddings.json"
@@ -284,6 +296,7 @@ def run_project_pipeline(slug: str, pdf_path: str) -> None:
                     pdf_path=Path(pdf_path),
                     project=doc.project,
                     vision_model=vision_model,
+                    describe_images=describe_images,
                 )
         except Exception as exc:
             logger.exception("Пайплайн архива для %s упал", slug)

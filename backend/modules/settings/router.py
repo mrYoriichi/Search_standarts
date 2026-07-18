@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 from backend.core.database import get_session
 from backend.modules.settings import service
 from backend.modules.settings.schemas import (
+    DescribeImagesSetting,
     LibraryPathRequest,
     LibraryPathResponse,
     LibraryPathsResponse,
@@ -139,6 +140,22 @@ def set_vision_model(
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return VisionModelSetting(model=saved)
+
+
+@router.get("/settings/describe-images", response_model=DescribeImagesSetting)
+def get_describe_images(db: Session = Depends(get_session)) -> DescribeImagesSetting:
+    """Включён ли vision при обработке (описание картинок)."""
+    return DescribeImagesSetting(enabled=service.get_describe_images(db))
+
+
+@router.put("/settings/describe-images", response_model=DescribeImagesSetting)
+def set_describe_images(
+    body: DescribeImagesSetting,
+    db: Session = Depends(get_session),
+) -> DescribeImagesSetting:
+    """Сохраняет тумблер описания картинок. ВЫКЛ = режим «Без LLM» (бесплатно)."""
+    saved = service.set_describe_images(db, body.enabled)
+    return DescribeImagesSetting(enabled=saved)
 
 
 @router.get("/settings/openai-key", response_model=OpenAIKeyStatus)

@@ -59,6 +59,7 @@ def run_pipeline(
         # Vision-модель — рычаг стоимости, юзер выбирает в «Knihovna». Читаем на
         # старте обработки документа, чтобы применить актуальный выбор.
         vision_model = settings_service.get_vision_model(db)
+        describe_images = settings_service.get_describe_images(db)
         try:
             with tempfile.TemporaryDirectory(prefix=f"ss_pages_{slug}_") as tmp:
                 pages_dir = Path(tmp)
@@ -73,6 +74,7 @@ def run_pipeline(
                     doc_dir=doc_dir,
                     pages_dir=pages_dir,
                     pdf_path=pdf_path,
+                    describe_images=describe_images,
                     on_progress=lambda done, total: progress.set_progress(
                         slug, f"popis obrázků: strana {done}/{total}"
                     ),

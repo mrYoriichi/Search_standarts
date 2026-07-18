@@ -24,6 +24,9 @@ PROJECTS_PATHS_KEY = "projects_library_paths"
 VISION_MODEL_KEY = "vision_model"
 VISION_MODELS = ("gpt-5.5", "gpt-5.4-mini")
 DEFAULT_VISION_MODEL = "gpt-5.4-mini"  # дешевле; gpt-5.5 — по выбору в «Knihovna»
+# Тумблер vision при обработке: ВКЛ (дефолт) = Стандарт (описываем схемы и
+# чертежи), ВЫКЛ = «Без LLM» (только OCR/текст, бесплатно). Хранится как "1"/"0".
+DESCRIBE_IMAGES_KEY = "describe_images"
 OPENAI_KEY_KEY = "openai_api_key"
 
 
@@ -224,6 +227,24 @@ def set_vision_model(db: Session, model: str) -> str:
         setting.value = model
     db.commit()
     return model
+
+
+def get_describe_images(db: Session) -> bool:
+    """Включён ли vision при обработке (описание картинок). Дефолт — True (Стандарт)."""
+    setting = db.scalar(select(Setting).where(Setting.key == DESCRIBE_IMAGES_KEY))
+    return setting.value != "0" if setting else True
+
+
+def set_describe_images(db: Session, enabled: bool) -> bool:
+    """Сохраняет тумблер описания картинок. ВЫКЛ = режим «Без LLM» (бесплатно)."""
+    value = "1" if enabled else "0"
+    setting = db.scalar(select(Setting).where(Setting.key == DESCRIBE_IMAGES_KEY))
+    if setting is None:
+        db.add(Setting(key=DESCRIBE_IMAGES_KEY, value=value))
+    else:
+        setting.value = value
+    db.commit()
+    return enabled
 
 
 def get_openai_key(db: Session) -> str | None:

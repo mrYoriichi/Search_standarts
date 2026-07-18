@@ -108,6 +108,7 @@ def process(
     on_progress: Callable[[int, int], None] | None = None,
     pages_dir: Path | None = None,
     pdf_path: str | None = None,
+    describe_images: bool = True,
 ) -> None:
     """
     Описывает схемы и метаданные документа, результат пишет в descriptions.json.
@@ -121,12 +122,30 @@ def process(
     (пайплайн .search_index передаёт временную локальную папку).
     pdf_path — путь к исходному PDF. Задан → чертёжные страницы получают
     vision-описание (рендер на лету из PDF, скриншоты не храним). Не задан →
-    чертежи только с OCR (старое поведение, «Без LLM»).
+    чертежи только с OCR.
+    describe_images — тумблер «Стандарт/Без LLM». False → vision не вызывается
+    вовсе (ни метаданные, ни схемы прозы, ни чертежи): пишем пустой
+    descriptions.json, чанки соберутся из OCR/текста — бесплатно.
     """
     doc_dir = doc_dir or (RAW_DATA_DIR / make_document_id(pdf_name))
     document_path = doc_dir / "document.json"
     descriptions_path = doc_dir / "descriptions.json"
     pages_dir = pages_dir or (doc_dir / "pages")
+
+    # Режим «Без LLM»: vision пропускаем целиком, оставляем пустой паспорт.
+    # descriptions.json всё равно пишем — chunk.process без него не запустится.
+    if not describe_images:
+        print("Popis obrázků vypnut (režim bez LLM) — vision se přeskakuje.")
+        save_descriptions(
+            {
+                "document_title": "",
+                "document_summary": "",
+                "block_descriptions": {},
+                "drawing_descriptions": {},
+            },
+            descriptions_path,
+        )
+        return
 
     document = load_document(document_path)
     pages = find_pages_with_visuals(document)
