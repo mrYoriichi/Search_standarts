@@ -567,6 +567,14 @@ function LibraryPage() {
         alert(data.detail ?? `Chyba ${res.status}`)
         return
       }
+      const data: { started: number; locked?: string[] } = await res.json()
+      if (data.locked && data.locked.length > 0) {
+        alert(
+          'Indexaci právě provádí jiný počítač — tyto složky se přeskočily:\n\n' +
+            data.locked.join('\n') +
+            '\n\nZkuste to znovu později.',
+        )
+      }
       await loadAll()
     } catch {
       alert('Chyba sítě')
