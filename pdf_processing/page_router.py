@@ -33,3 +33,21 @@ def classify_page(path_count: int, text_len: int) -> str:
     if path_count > PATH_DOMINANT_THRESHOLD or text_len < MIN_TEXT_LAYER_CHARS:
         return "drawing"
     return "text"
+
+
+def classify_pages(pdf_path: str) -> list[str]:
+    """Тип каждой страницы PDF по порядку: список из 'drawing' | 'text'.
+
+    Мост для пайплайна: считает пути и длину текстового слоя каждой
+    страницы и прогоняет через classify_page.
+    """
+    doc = pdfium.PdfDocument(pdf_path)
+    try:
+        result: list[str] = []
+        for i in range(len(doc)):
+            page = doc[i]
+            text_len = len(page.get_textpage().get_text_range().strip())
+            result.append(classify_page(count_paths(page), text_len))
+        return result
+    finally:
+        doc.close()
