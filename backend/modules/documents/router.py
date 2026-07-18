@@ -54,6 +54,8 @@ def reindex_document(
     executor = request.app.state.executor
     try:
         return service.reindex_document(db, slug, paths, executor)
+    except service.DocumentBusyError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
@@ -64,6 +66,8 @@ def delete_document(slug: str, db: Session = Depends(get_session)) -> dict:
     paths = [Path(p) for p in settings_service.get_library_paths(db)]
     try:
         service.delete_document(db, slug, paths)
+    except service.DocumentBusyError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     return {"status": "ok"}
@@ -87,5 +91,7 @@ def relink_document(
     paths = [Path(p) for p in settings_service.get_library_paths(db)]
     try:
         return service.relink_document(db, body.old_slug, body.new_slug, paths)
+    except service.DocumentBusyError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc

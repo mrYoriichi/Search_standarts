@@ -95,10 +95,16 @@ def run_pipeline(
 
         # Берём настоящий заголовок документа из descriptions.json
         # (его проставил describe_step). При загрузке у нас был только
-        # filename — теперь подменим на нормальное название.
+        # filename — теперь подменим на нормальное название. Ошибка чтения
+        # НЕ должна ронять пост-обработку: этот код вне try выше, необработанное
+        # исключение молча съел бы executor и документ завис бы в processing.
         descriptions_path = doc_dir / "descriptions.json"
-        with open(descriptions_path, encoding="utf-8") as f:
-            real_title = json.load(f).get("document_title")
+        real_title = None
+        try:
+            with open(descriptions_path, encoding="utf-8") as f:
+                real_title = json.load(f).get("document_title")
+        except (OSError, json.JSONDecodeError):
+            logger.warning("Не смог прочитать заголовок из %s", descriptions_path)
 
         doc = db.scalar(select(Document).where(Document.slug == slug))
         if doc is not None:

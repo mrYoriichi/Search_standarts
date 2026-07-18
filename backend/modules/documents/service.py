@@ -22,6 +22,23 @@ from pdf_processing.parser import make_document_id
 # main.py ищет загруженный PDF как PDF_STORAGE_DIR/{pdf_name}.pdf.
 
 
+class DocumentBusyError(Exception):
+    """Операция отклонена: документ сейчас обрабатывается пайплайном.
+
+    Удаление/переиндексация/relink во время работы фонового pipeline дают
+    гонку: пайплайн дописал бы артефакты уже ПОСЛЕ rmtree, и следующий
+    «Skenovat» «усыновил» бы удалённый документ обратно (двойная оплата).
+    """
+
+
+def _ensure_not_processing(doc: Document) -> None:
+    """Кидает DocumentBusyError, если документ сейчас в работе у пайплайна."""
+    if doc.status == "processing":
+        raise DocumentBusyError(
+            f"Документ {doc.slug} сейчас индексируется — дождись конца обработки"
+        )
+
+
 def _artifact_dirs(slug: str, library_path: Path | None) -> list[Path]:
     """Кандидаты на папку артефактов документа: новый пул .search_index
     (если папка библиотеки известна) и легаси-пул data/raw_data."""
@@ -58,6 +75,7 @@ def reindex_document(
     doc = db.scalar(select(Document).where(Document.slug == slug))
     if doc is None:
         raise ValueError(f"Документ {slug} не найден")
+    _ensure_not_processing(doc)
     if doc.relative_path is None:
         raise ValueError(
             f"У документа {slug} нет relative_path — нужен Сканировать сначала"
@@ -105,6 +123,7 @@ def delete_document(db: Session, slug: str, paths: list[Path] | None = None) -> 
     doc = db.scalar(select(Document).where(Document.slug == slug))
     if doc is None:
         raise ValueError(f"Документ {slug} не найден")
+    _ensure_not_processing(doc)
 
     library_path = _doc_folder(paths or [], slug)
     for artifacts_dir in _artifact_dirs(slug, library_path):
@@ -148,6 +167,7 @@ def relink_document(
     doc = db.scalar(select(Document).where(Document.slug == old_slug))
     if doc is None:
         raise ValueError(f"Документ {old_slug} не найден в БД")
+    _ensure_not_processing(doc)
 
     conflicting = db.scalar(select(Document).where(Document.slug == new_slug))
     if conflicting is not None:
@@ -234,8 +254,10 @@ def create_documents_from_uploads(
         db.commit()
 
         # Кидаем обработку в executor — вернёт управление сразу,
-        # обработка пойдёт в одном из трёх потоков (или в очереди, если все заняты)
-        executor.submit(run_pipeline, slug)
+        # обработка пойдёт в одном из трёх потоков (или в очереди, если все заняты).
+        # pdf_path обязателен: без него describe не опишет чертёжные страницы
+        # (vision-паспорт рендерится прямо из PDF).
+        executor.submit(run_pipeline, slug, str(pdf_path))
 
         items.append(UploadItem(slug=slug, title=title, action="created"))
 
