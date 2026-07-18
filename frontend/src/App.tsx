@@ -71,7 +71,7 @@ type ArchiveDocument = {
 }
 
 type ArchiveApiResponse = {
-  path: string | null
+  paths: string[]
   projects: { name: string; documents: ArchiveDocument[] }[]
 }
 

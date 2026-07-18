@@ -35,7 +35,15 @@ type ScanSummary = {
 const POLL_INTERVAL_MS = 3000
 
 async function togglePin(slug: string): Promise<void> {
-  await fetch(`/api/projects/${slug}/pin`, { method: 'POST' })
+  try {
+    const res = await fetch(`/api/projects/${slug}/pin`, { method: 'POST' })
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}))
+      alert(data.detail ?? `Nepodařilo se přepnout připnutí: ${res.status}`)
+    }
+  } catch {
+    alert('Chyba sítě')
+  }
 }
 
 // Все закреплённые документы архива (плоско, для секции «Připnuté»).
@@ -171,9 +179,11 @@ export default function ArchivePage() {
     loadAll()
   }, [])
 
-  // Пока есть документы в обработке/очереди — раз в 3 с перечитываем статусы.
+  // Пока что-то реально обрабатывается — раз в 3 с перечитываем статусы.
+  // pending НЕ считается: он ждёт клика «Indexovat», на сервере ничего не
+  // меняется — поллинг был бы бесконечным холостым ходом.
   const hasActive = (archive?.projects ?? []).some((p) =>
-    p.documents.some((d) => d.status === 'pending' || d.status === 'processing'),
+    p.documents.some((d) => d.status === 'processing'),
   )
   // Обнаруженные, но ещё не индексированные — для кнопки «Indexovat (N)».
   const pendingCount = (archive?.projects ?? []).reduce(
