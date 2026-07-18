@@ -3,6 +3,7 @@ import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import ArchivePage from './ArchivePage'
 import LibraryPage from './LibraryPage'
+import { Logo } from './Logo'
 import LoginPage from './LoginPage'
 import SettingsPage from './SettingsPage'
 
@@ -589,7 +590,9 @@ function App() {
     <div className="min-h-screen bg-background text-foreground">
       <div className="max-w-3xl mx-auto px-6 py-10 flex flex-col gap-6">
         <div className="flex items-center justify-between gap-4">
-          <h1 className="text-3xl font-bold">Search_standarts</h1>
+          <h1 className="text-3xl">
+            <Logo />
+          </h1>
           <div className="flex items-center gap-3 text-sm text-muted-foreground">
             <button
               onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}

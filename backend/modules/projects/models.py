@@ -6,7 +6,7 @@ slug = {проект}__{имя файла} и привязка к проекту
 
 from datetime import datetime
 
-from sqlalchemy import DateTime, Integer, String, Text
+from sqlalchemy import Boolean, DateTime, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from backend.core.database import Base
@@ -29,4 +29,5 @@ class ProjectDocument(Base):
         String, default="pending"
     )  # pending|processing|ready|error
     error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    pinned: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)

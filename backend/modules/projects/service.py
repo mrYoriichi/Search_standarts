@@ -219,6 +219,16 @@ def sync_archive(db: Session, roots: list[Path]) -> ArchiveScanSummary:
     )
 
 
+def toggle_pin(db: Session, slug: str) -> ProjectDocument:
+    """Переключает закреплённость документа архива. ValueError, если не найден."""
+    doc = db.scalar(select(ProjectDocument).where(ProjectDocument.slug == slug))
+    if doc is None:
+        raise ValueError(f"Документ архива {slug} не найден")
+    doc.pinned = not doc.pinned
+    db.commit()
+    return doc
+
+
 def build_archive_response(db: Session, paths: list[str]) -> ArchiveResponse:
     """Документы архива из БД, сгруппированные по проектам (для UI)."""
     docs = db.scalars(

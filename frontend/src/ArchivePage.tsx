@@ -1,5 +1,6 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Button } from '@/components/ui/button'
+import { IndexingSettingsButton } from './IndexingSettings'
 
 // Архив проектов юзера: список папок архива, «Skenovat», документы по
 // проектам со статусами обработки. Можно подключить несколько папок.
@@ -12,6 +13,7 @@ type ArchiveDocument = {
   page_count: number
   status: string
   error: string | null
+  pinned: boolean
   progress: string | null
 }
 
@@ -32,30 +34,77 @@ type ScanSummary = {
 // Поллинг статусов, пока что-то обрабатывается (pipeline идёт в фоне).
 const POLL_INTERVAL_MS = 3000
 
-function statusLabel(doc: ArchiveDocument): { text: string; className: string } {
-  switch (doc.status) {
-    case 'pending':
-      return { text: 'čeká', className: 'text-muted-foreground' }
-    case 'processing':
-      return {
-        text: doc.progress ?? 'zpracovává se…',
-        className: 'text-amber-600 dark:text-amber-400',
-      }
-    case 'error':
-      return { text: 'chyba', className: 'text-destructive' }
-    default:
-      return { text: '', className: '' }
-  }
+async function togglePin(slug: string): Promise<void> {
+  await fetch(`/api/projects/${slug}/pin`, { method: 'POST' })
 }
 
-function DocumentRow({ doc }: { doc: ArchiveDocument }) {
+// Все закреплённые документы архива (плоско, для секции «Připnuté»).
+function collectPinned(archive: ArchiveResponse): ArchiveDocument[] {
+  const pinned: ArchiveDocument[] = []
+  for (const project of archive.projects) {
+    for (const doc of project.documents) {
+      if (doc.pinned) pinned.push(doc)
+    }
+  }
+  return pinned
+}
+
+function StatusLabel({
+  doc,
+  freshlyReady,
+}: {
+  doc: ArchiveDocument
+  freshlyReady: boolean
+}) {
+  if (doc.status === 'pending') {
+    return <span className="text-xs text-amber-600 dark:text-amber-400">čeká na indexaci</span>
+  }
+  if (doc.status === 'processing') {
+    return (
+      <span className="text-xs text-blue-600 dark:text-blue-400">
+        {doc.progress ?? 'zpracovává se…'}
+      </span>
+    )
+  }
+  if (doc.status === 'error') {
+    return <span className="text-xs text-red-600 dark:text-red-400">chyba</span>
+  }
+  // ready: зелёную плашку показываем только на переходе (как в knihovně).
+  if (freshlyReady) {
+    return <span className="text-xs text-green-600 dark:text-green-400">hotovo</span>
+  }
+  return null
+}
+
+function DocumentRow({
+  doc,
+  freshlyReady,
+  onChange,
+}: {
+  doc: ArchiveDocument
+  freshlyReady: Set<string>
+  onChange: () => void
+}) {
   // Путь внутри проекта (без имени проекта) — короче и читабельнее.
   const insideProject = doc.relative_path.split('/').slice(1).join('/')
-  const label = statusLabel(doc)
   const icon = doc.doc_type === 'sheet' ? '📐' : '📄'
   return (
     <div>
       <div className="flex items-center gap-2 text-sm">
+        <button
+          onClick={async () => {
+            await togglePin(doc.slug)
+            onChange()
+          }}
+          title={doc.pinned ? 'Odepnout' : 'Připnout'}
+          className={
+            doc.pinned
+              ? 'text-base leading-none'
+              : 'text-base leading-none opacity-25 hover:opacity-100'
+          }
+        >
+          📌
+        </button>
         {doc.status === 'ready' ? (
           <a
             href={`/api/library/pdf/${doc.slug}`}
@@ -72,12 +121,10 @@ function DocumentRow({ doc }: { doc: ArchiveDocument }) {
           </span>
         )}
         <span className="text-xs text-muted-foreground">{doc.page_count} s.</span>
-        {label.text && (
-          <span className={`text-xs ${label.className}`}>{label.text}</span>
-        )}
+        <StatusLabel doc={doc} freshlyReady={freshlyReady.has(doc.slug)} />
       </div>
       {doc.status === 'error' && doc.error && (
-        <div className="text-xs text-destructive pl-6">{doc.error}</div>
+        <div className="text-xs text-red-600 dark:text-red-400 pl-7">{doc.error}</div>
       )}
     </div>
   )
@@ -95,6 +142,9 @@ export default function ArchivePage() {
   const [scanning, setScanning] = useState(false)
   const [indexing, setIndexing] = useState(false)
   const [summary, setSummary] = useState<ScanSummary | null>(null)
+  // Документы, только что перешедшие в ready — для зелёной плашки «hotovo».
+  const [freshlyReady, setFreshlyReady] = useState<Set<string>>(new Set())
+  const prevStatusesRef = useRef<Map<string, string>>(new Map())
 
   async function loadAll() {
     setError(null)
@@ -135,6 +185,31 @@ export default function ArchivePage() {
     const id = setInterval(loadAll, POLL_INTERVAL_MS)
     return () => clearInterval(id)
   }, [hasActive])
+
+  // Переход в ready → один раз показываем «hotovo» (как в knihovně). После F5
+  // ref сбрасывается, документ считается уже виденным — плашка не мигает.
+  useEffect(() => {
+    if (!archive) return
+    const nextStatuses = new Map<string, string>()
+    const justReady: string[] = []
+    for (const project of archive.projects) {
+      for (const doc of project.documents) {
+        nextStatuses.set(doc.slug, doc.status)
+        const prev = prevStatusesRef.current.get(doc.slug)
+        if (prev !== undefined && prev !== 'ready' && doc.status === 'ready') {
+          justReady.push(doc.slug)
+        }
+      }
+    }
+    prevStatusesRef.current = nextStatuses
+    if (justReady.length > 0) {
+      setFreshlyReady((prev) => {
+        const next = new Set(prev)
+        justReady.forEach((s) => next.add(s))
+        return next
+      })
+    }
+  }, [archive])
 
   async function addPath() {
     const value = pathInput.trim()
@@ -333,72 +408,117 @@ export default function ArchivePage() {
         </div>
       )}
 
-      {paths.length > 0 && (
-        <div className="flex items-center gap-3">
-          <Button onClick={scan} disabled={scanning} variant="outline">
-            {scanning ? 'Skenuji…' : 'Skenovat'}
-          </Button>
-          {pendingCount > 0 && (
-            <Button onClick={startIndexing} disabled={indexing}>
-              {indexing ? 'Spouštím…' : `Indexovat (${pendingCount})`}
-            </Button>
-          )}
-          {summary && (
-            <p className="text-xs text-muted-foreground">
-              Nalezeno {summary.found}, nových {summary.new}
-              {summary.missing > 0 && `, odstraněno ${summary.missing}`}
-              {summary.duplicates.length > 0 &&
-                `, duplicit ${summary.duplicates.length}`}
-              {summary.errors.length > 0 && `, chyb ${summary.errors.length}`}
-            </p>
-          )}
-        </div>
-      )}
+      <div>
+        <IndexingSettingsButton />
+      </div>
 
-      <div className="flex flex-col gap-3">
-        <h2 className="text-sm font-semibold text-muted-foreground">
-          Moje projekty
-        </h2>
-        {archive && archive.projects.length > 0 ? (
-          <div className="flex flex-col gap-2">
-            {archive.projects.map((project) => {
-              const active = project.documents.filter(
-                (d) => d.status === 'pending' || d.status === 'processing',
-              ).length
-              const errors = project.documents.filter(
-                (d) => d.status === 'error',
-              ).length
-              return (
-                // Проекты свёрнуты по умолчанию — в архиве их может быть много.
-                <details
-                  key={project.name}
-                  className="rounded-md border bg-card p-3"
-                >
-                  <summary className="cursor-pointer text-sm font-semibold flex items-center gap-2">
-                    <span>📁 {project.name}</span>
-                    <span className="text-xs font-normal text-muted-foreground">
-                      {project.documents.length} dokumentů
-                      {active > 0 && ` · zpracovává se ${active}`}
-                      {errors > 0 && ` · chyb ${errors}`}
-                    </span>
-                  </summary>
-                  <div className="flex flex-col gap-1 mt-2 ml-1">
-                    {project.documents.map((doc) => (
-                      <DocumentRow key={doc.slug} doc={doc} />
+      {archive &&
+        (() => {
+          const pinned = collectPinned(archive)
+          return (
+            <>
+              {pinned.length > 0 && (
+                <div className="rounded-md border bg-card p-4">
+                  <h2 className="text-sm font-semibold text-muted-foreground mb-2">
+                    📌 Připnuté
+                  </h2>
+                  <div className="flex flex-col gap-1">
+                    {pinned.map((doc) => (
+                      <DocumentRow
+                        key={doc.slug}
+                        doc={doc}
+                        freshlyReady={freshlyReady}
+                        onChange={loadAll}
+                      />
                     ))}
                   </div>
-                </details>
-              )
-            })}
-          </div>
-        ) : (
-          paths.length > 0 && (
-            <p className="text-sm text-muted-foreground">
-              Zatím žádné dokumenty — klikněte na „Skenovat“.
-            </p>
+                </div>
+              )}
+
+              <div className="rounded-md border bg-card p-4 flex flex-col gap-3">
+                <div className="flex items-center justify-between">
+                  <h2 className="text-sm font-semibold text-muted-foreground">
+                    Moje projekty
+                  </h2>
+                  {paths.length > 0 && (
+                    <div className="flex items-center gap-2">
+                      {pendingCount > 0 && (
+                        <Button
+                          onClick={startIndexing}
+                          disabled={indexing}
+                          size="sm"
+                        >
+                          {indexing ? 'Spouštím…' : `Indexovat (${pendingCount})`}
+                        </Button>
+                      )}
+                      <Button
+                        onClick={scan}
+                        disabled={scanning}
+                        variant="outline"
+                        size="sm"
+                      >
+                        {scanning ? 'Skenuji…' : 'Skenovat'}
+                      </Button>
+                    </div>
+                  )}
+                </div>
+                {summary && (
+                  <p className="text-xs text-muted-foreground">
+                    Nalezeno {summary.found}, nových {summary.new}
+                    {summary.missing > 0 && `, odstraněno ${summary.missing}`}
+                    {summary.duplicates.length > 0 &&
+                      `, duplicit ${summary.duplicates.length}`}
+                    {summary.errors.length > 0 && `, chyb ${summary.errors.length}`}
+                  </p>
+                )}
+                {archive.projects.length > 0 ? (
+                  <div className="flex flex-col gap-2">
+                    {archive.projects.map((project) => {
+                      const active = project.documents.filter(
+                        (d) => d.status === 'pending' || d.status === 'processing',
+                      ).length
+                      const errors = project.documents.filter(
+                        (d) => d.status === 'error',
+                      ).length
+                      return (
+                        // Проекты свёрнуты по умолчанию — их может быть много.
+                        <details
+                          key={project.name}
+                          className="rounded-md border bg-muted/20 p-3"
+                        >
+                          <summary className="cursor-pointer text-sm font-semibold flex items-center gap-2">
+                            <span>📁 {project.name}</span>
+                            <span className="text-xs font-normal text-muted-foreground">
+                              {project.documents.length} dokumentů
+                              {active > 0 && ` · zpracovává se ${active}`}
+                              {errors > 0 && ` · chyb ${errors}`}
+                            </span>
+                          </summary>
+                          <div className="flex flex-col gap-1 mt-2 ml-1">
+                            {project.documents.map((doc) => (
+                              <DocumentRow
+                                key={doc.slug}
+                                doc={doc}
+                                freshlyReady={freshlyReady}
+                                onChange={loadAll}
+                              />
+                            ))}
+                          </div>
+                        </details>
+                      )
+                    })}
+                  </div>
+                ) : (
+                  paths.length > 0 && (
+                    <p className="text-sm text-muted-foreground">
+                      Zatím žádné dokumenty — klikněte na „Skenovat“.
+                    </p>
+                  )
+                )}
+              </div>
+            </>
           )
-        )}
-      </div>
+        })()}
     </div>
   )
 }

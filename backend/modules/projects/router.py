@@ -10,7 +10,11 @@ from backend.core.database import get_session
 from backend.modules.projects import service
 from backend.modules.projects.models import ProjectDocument
 from backend.modules.projects.pipeline import run_project_pipeline
-from backend.modules.projects.schemas import ArchiveResponse, ArchiveScanSummary
+from backend.modules.projects.schemas import (
+    ArchiveResponse,
+    ArchiveScanSummary,
+    ProjectDocumentOut,
+)
 from backend.modules.settings import service as settings_service
 
 
@@ -41,6 +45,15 @@ def scan_archive(
     POST /projects/index, чтобы юзер видел список ДО траты денег.
     """
     return service.sync_archive(db, _projects_paths(db))
+
+
+@router.post("/projects/{slug}/pin", response_model=ProjectDocumentOut)
+def toggle_pin(slug: str, db: Session = Depends(get_session)) -> ProjectDocumentOut:
+    """Переключает закреплённость документа архива."""
+    try:
+        return service.toggle_pin(db, slug)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
 
 
 @router.post("/projects/index")

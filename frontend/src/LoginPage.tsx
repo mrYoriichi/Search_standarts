@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { Button } from '@/components/ui/button'
+import { Logo } from './Logo'
 
 type Props = {
   onLoggedIn: (username: string) => void
@@ -173,7 +174,9 @@ export default function LoginPage({ onLoggedIn }: Props) {
         onSubmit={handleSubmit}
         className="w-full max-w-sm flex flex-col gap-4 rounded-md border bg-card p-6"
       >
-        <h1 className="text-2xl font-bold">Search_standarts</h1>
+        <h1 className="text-2xl">
+          <Logo />
+        </h1>
         <p className="text-sm text-muted-foreground">
           {isRegister ? 'Registrace nového účtu' : 'Přihlášení do aplikace'}
         </p>
