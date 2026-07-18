@@ -28,9 +28,9 @@ class ProjectGroup(BaseModel):
 
 
 class ArchiveResponse(BaseModel):
-    """Ответ GET /projects: путь к архиву + документы по проектам."""
+    """Ответ GET /projects: папки архива + документы по проектам."""
 
-    path: str | None
+    paths: list[str]
     projects: list[ProjectGroup]
 
 

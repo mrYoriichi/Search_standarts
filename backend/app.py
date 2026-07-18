@@ -88,16 +88,23 @@ async def lifespan(app: FastAPI):
             print(f"[startup] Возобновлён pipeline для {doc.slug}")
 
         # То же для архива проектов: застрявшие в processing после падения.
-        projects_path = settings_service.get_projects_path(db)
-        if projects_path:
+        projects_paths = [Path(p) for p in settings_service.get_projects_paths(db)]
+        if projects_paths:
+            from backend.modules.projects import service as projects_service
+
             stuck_projects = db.scalars(
                 select(ProjectDocument).where(ProjectDocument.status == "processing")
             ).all()
             for pdoc in stuck_projects:
+                root = projects_service.resolve_project_root(
+                    projects_paths, pdoc.relative_path
+                )
+                if root is None:
+                    continue
                 executor.submit(
                     run_project_pipeline,
                     pdoc.slug,
-                    str(Path(projects_path) / pdoc.relative_path),
+                    str(root / pdoc.relative_path),
                 )
                 print(f"[startup] Возобновлён pipeline архива для {pdoc.slug}")
     finally:

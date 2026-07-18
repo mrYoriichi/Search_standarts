@@ -17,7 +17,8 @@ LIBRARY_PATH_KEY = "library_path"  # легаси: одна папка (мигр
 LIBRARY_PATHS_KEY = "library_paths"
 # Папка архива проектов юзера (личный пул). Структура: {проект}/.../файл.pdf,
 # проект = папка первого уровня. См. модуль projects.
-PROJECTS_PATH_KEY = "projects_library_path"
+PROJECTS_PATH_KEY = "projects_library_path"  # легаси: одна папка → список ниже
+PROJECTS_PATHS_KEY = "projects_library_paths"
 # Vision-модель для обработки документов (рычаг стоимости: vision ~99% цены дока).
 # Дефолт совпадает с VISION_MODEL в pdf_processing/image_description.py.
 VISION_MODEL_KEY = "vision_model"
@@ -71,13 +72,16 @@ def set_library_path(db: Session, raw_path: str) -> str:
     return path
 
 
-def get_library_paths(db: Session) -> list[str]:
-    """Список папок библиотеки. Пустой список — ни одной не задано.
+# --- Общая механика «список папок» (библиотека и архив устроены одинаково) ---
 
-    Мигрирует со старого единственного `library_path`: если списка ещё нет,
-    но легаси-путь задан — переносим его в список (один раз) и сохраняем.
+
+def _get_path_list(db: Session, list_key: str, legacy_key: str | None) -> list[str]:
+    """Список папок под list_key. Пустой — ничего не задано.
+
+    Мигрирует со старого единственного пути под legacy_key: если списка ещё
+    нет, но легаси-путь задан — переносим его в список (один раз).
     """
-    setting = db.scalar(select(Setting).where(Setting.key == LIBRARY_PATHS_KEY))
+    setting = db.scalar(select(Setting).where(Setting.key == list_key))
     if setting and setting.value:
         try:
             paths = json.loads(setting.value)
@@ -86,64 +90,59 @@ def get_library_paths(db: Session) -> list[str]:
         except (ValueError, TypeError):
             pass  # битое значение — трактуем как «списка нет», попробуем миграцию
 
-    legacy = get_library_path(db)
-    if legacy:
-        _save_library_paths(db, [legacy])
-        return [legacy]
+    if legacy_key is not None:
+        legacy = db.scalar(select(Setting).where(Setting.key == legacy_key))
+        if legacy and legacy.value:
+            _save_path_list(db, list_key, [legacy.value])
+            return [legacy.value]
     return []
 
 
-def _save_library_paths(db: Session, paths: list[str]) -> None:
-    """Пишет список папок в настройки (JSON)."""
+def _save_path_list(db: Session, list_key: str, paths: list[str]) -> None:
     value = json.dumps(paths, ensure_ascii=False)
-    setting = db.scalar(select(Setting).where(Setting.key == LIBRARY_PATHS_KEY))
+    setting = db.scalar(select(Setting).where(Setting.key == list_key))
     if setting is None:
-        db.add(Setting(key=LIBRARY_PATHS_KEY, value=value))
+        db.add(Setting(key=list_key, value=value))
     else:
         setting.value = value
     db.commit()
 
 
-def add_library_path(db: Session, raw_path: str) -> list[str]:
-    """Добавляет папку в список библиотеки. Валидирует, что папка существует.
-
-    Дубли пути игнорируем (idempotent). Сбрасывает кеш поиска — в пул войдут
-    индексы новой папки.
-    """
+def _add_to_path_list(
+    db: Session, list_key: str, legacy_key: str | None, raw_path: str
+) -> list[str]:
+    """Добавляет папку (валидирует существование). Дубли idempotent. Сброс кеша."""
     path = str(_validate_dir(raw_path))
-    paths = get_library_paths(db)
+    paths = _get_path_list(db, list_key, legacy_key)
     if path not in paths:
         paths.append(path)
-        _save_library_paths(db, paths)
+        _save_path_list(db, list_key, paths)
         library_cache.invalidate()
     return paths
 
 
-def remove_library_path(db: Session, raw_path: str) -> list[str]:
-    """Убирает папку из списка (по нормализованному пути). Индексы в
-    `.search_index` на диске НЕ трогаем — только отключаем папку от поиска."""
+def _remove_from_path_list(
+    db: Session, list_key: str, legacy_key: str | None, raw_path: str
+) -> list[str]:
+    """Убирает папку по нормализованному пути. Индексы на диске не трогаем."""
     target = str(Path(raw_path).expanduser().resolve())
-    paths = [p for p in get_library_paths(db) if p != target]
-    _save_library_paths(db, paths)
+    paths = [p for p in _get_path_list(db, list_key, legacy_key) if p != target]
+    _save_path_list(db, list_key, paths)
     library_cache.invalidate()
     return paths
 
 
-def update_library_path(db: Session, old_raw: str, new_raw: str) -> list[str]:
-    """Заменяет папку в списке на новую (правка пути), сохраняя её позицию.
-
-    Валидирует, что новая папка существует. Если старого пути в списке нет —
-    просто добавляет новый (idempotent). Документы привязаны к метке папки
-    (folder_id из meta.json), а не к строке пути, поэтому если новый путь
-    указывает на ту же физическую папку — индексы переподключатся сами.
-    """
+def _update_in_path_list(
+    db: Session, list_key: str, legacy_key: str | None, old_raw: str, new_raw: str
+) -> list[str]:
+    """Правит путь папки на месте (сохраняет позицию, дедупит). Сброс кеша."""
     new_path = str(_validate_dir(new_raw))
     old_path = str(Path(old_raw).expanduser().resolve())
 
     result: list[str] = []
     seen: set[str] = set()
     replaced = False
-    for p in get_library_paths(db):
+    for p in _get_path_list(db, list_key, legacy_key):
         candidate = new_path if p == old_path else p
         if p == old_path:
             replaced = True
@@ -153,20 +152,59 @@ def update_library_path(db: Session, old_raw: str, new_raw: str) -> list[str]:
     if not replaced and new_path not in seen:
         result.append(new_path)
 
-    _save_library_paths(db, result)
+    _save_path_list(db, list_key, result)
     library_cache.invalidate()
     return result
 
 
+# --- Папки библиотеки норм ---
+
+
+def get_library_paths(db: Session) -> list[str]:
+    """Список папок библиотеки (мигрирует со старого library_path)."""
+    return _get_path_list(db, LIBRARY_PATHS_KEY, LIBRARY_PATH_KEY)
+
+
+def add_library_path(db: Session, raw_path: str) -> list[str]:
+    return _add_to_path_list(db, LIBRARY_PATHS_KEY, LIBRARY_PATH_KEY, raw_path)
+
+
+def remove_library_path(db: Session, raw_path: str) -> list[str]:
+    return _remove_from_path_list(db, LIBRARY_PATHS_KEY, LIBRARY_PATH_KEY, raw_path)
+
+
+def update_library_path(db: Session, old_raw: str, new_raw: str) -> list[str]:
+    return _update_in_path_list(
+        db, LIBRARY_PATHS_KEY, LIBRARY_PATH_KEY, old_raw, new_raw
+    )
+
+
+# --- Папки архива проектов ---
+
+
 def get_projects_path(db: Session) -> str | None:
-    """Возвращает путь к папке архива проектов или None, если не задан."""
-    setting = db.scalar(select(Setting).where(Setting.key == PROJECTS_PATH_KEY))
-    return setting.value if setting else None
+    """Легаси: первый путь архива (для мест, которым нужен один). None — пусто."""
+    paths = get_projects_paths(db)
+    return paths[0] if paths else None
 
 
-def set_projects_path(db: Session, raw_path: str) -> str:
-    """Сохраняет путь к папке архива проектов юзера."""
-    return _set_path(db, PROJECTS_PATH_KEY, raw_path)
+def get_projects_paths(db: Session) -> list[str]:
+    """Список папок архива проектов (мигрирует со старого projects_library_path)."""
+    return _get_path_list(db, PROJECTS_PATHS_KEY, PROJECTS_PATH_KEY)
+
+
+def add_projects_path(db: Session, raw_path: str) -> list[str]:
+    return _add_to_path_list(db, PROJECTS_PATHS_KEY, PROJECTS_PATH_KEY, raw_path)
+
+
+def remove_projects_path(db: Session, raw_path: str) -> list[str]:
+    return _remove_from_path_list(db, PROJECTS_PATHS_KEY, PROJECTS_PATH_KEY, raw_path)
+
+
+def update_projects_path(db: Session, old_raw: str, new_raw: str) -> list[str]:
+    return _update_in_path_list(
+        db, PROJECTS_PATHS_KEY, PROJECTS_PATH_KEY, old_raw, new_raw
+    )
 
 
 def get_vision_model(db: Session) -> str:

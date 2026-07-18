@@ -80,23 +80,46 @@ def remove_library_path(
     return LibraryPathsResponse(paths=paths)
 
 
-@router.get("/settings/projects", response_model=LibraryPathResponse)
-def get_projects_path(db: Session = Depends(get_session)) -> LibraryPathResponse:
-    """Возвращает путь к папке архива проектов. None — путь не задан."""
-    return LibraryPathResponse(path=service.get_projects_path(db))
+@router.get("/settings/projects-libraries", response_model=LibraryPathsResponse)
+def get_projects_paths(db: Session = Depends(get_session)) -> LibraryPathsResponse:
+    """Список папок архива проектов (мигрирует со старого одиночного пути)."""
+    return LibraryPathsResponse(paths=service.get_projects_paths(db))
 
 
-@router.put("/settings/projects", response_model=LibraryPathResponse)
-def set_projects_path(
+@router.post("/settings/projects-libraries", response_model=LibraryPathsResponse)
+def add_projects_path(
     body: LibraryPathRequest,
     db: Session = Depends(get_session),
-) -> LibraryPathResponse:
-    """Сохраняет путь к папке архива проектов. Валидирует, что папка существует."""
+) -> LibraryPathsResponse:
+    """Добавляет папку в список архива. 400, если папки нет на диске."""
     try:
-        saved = service.set_projects_path(db, body.path)
+        paths = service.add_projects_path(db, body.path)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
-    return LibraryPathResponse(path=saved)
+    return LibraryPathsResponse(paths=paths)
+
+
+@router.put("/settings/projects-libraries", response_model=LibraryPathsResponse)
+def update_projects_path(
+    body: LibraryPathUpdate,
+    db: Session = Depends(get_session),
+) -> LibraryPathsResponse:
+    """Правит путь папки архива. 400, если новой папки нет на диске."""
+    try:
+        paths = service.update_projects_path(db, body.old_path, body.new_path)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return LibraryPathsResponse(paths=paths)
+
+
+@router.delete("/settings/projects-libraries", response_model=LibraryPathsResponse)
+def remove_projects_path(
+    body: LibraryPathRequest,
+    db: Session = Depends(get_session),
+) -> LibraryPathsResponse:
+    """Убирает папку из списка архива. Индексы на диске не трогаем."""
+    paths = service.remove_projects_path(db, body.path)
+    return LibraryPathsResponse(paths=paths)
 
 
 @router.get("/settings/vision-model", response_model=VisionModelSetting)

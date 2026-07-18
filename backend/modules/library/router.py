@@ -82,16 +82,19 @@ def get_pdf(slug: str, db: Session = Depends(get_session)) -> FileResponse:
         else None
     )
     if pdf_path is None:
-        # Архив проектов: точный путь знает БД (slug уникален по архиву).
+        # Архив проектов: relative_path знает БД, папку — по наличию файла.
         from backend.modules.projects.models import ProjectDocument
+        from backend.modules.projects import service as projects_service
         from sqlalchemy import select
 
-        projects_path = settings_service.get_projects_path(db)
+        projects_paths = [Path(p) for p in settings_service.get_projects_paths(db)]
         pdoc = db.scalar(select(ProjectDocument).where(ProjectDocument.slug == slug))
-        if projects_path and pdoc is not None:
-            candidate = Path(projects_path) / pdoc.relative_path
-            if candidate.exists():
-                pdf_path = candidate
+        if projects_paths and pdoc is not None:
+            root = projects_service.resolve_project_root(
+                projects_paths, pdoc.relative_path
+            )
+            if root is not None:
+                pdf_path = root / pdoc.relative_path
     if pdf_path is None:
         raise HTTPException(status_code=404, detail=f"PDF для slug={slug} не найден")
     return FileResponse(pdf_path, media_type="application/pdf")

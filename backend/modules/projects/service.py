@@ -76,18 +76,34 @@ def make_project_slug(project: str, filename: str) -> str:
     return f"{make_document_id(project)}__{make_document_id(filename)}"
 
 
-def scan_archive(root: Path) -> ArchiveScanResult:
+def resolve_project_root(paths: list[Path], relative_path: str) -> Path | None:
+    """Папка архива, в которой реально лежит файл по relative_path.
+
+    Архивы не хранят метку папки (slug = `{проект}__{файл}` и так не зависит
+    от пути), поэтому папку документа определяем по наличию файла на диске.
+    Первая совпавшая — как и порядок дедупа при скане. None — файла нет нигде.
+    """
+    for root in paths:
+        if (root / relative_path).exists():
+            return root
+    return None
+
+
+def scan_archive(root: Path, seen_slugs: set[str] | None = None) -> ArchiveScanResult:
     """Обходит папку архива и классифицирует все PDF.
 
     Проект = папка первого уровня. PDF прямо в корне архива не индексируем
     (не к чему привязать), но сообщаем о них в skipped_root.
-    Файловую систему только читаем (принцип #16).
+    Файловую систему только читаем (принцип #16). seen_slugs — общий набор
+    занятых slug'ов (при обходе нескольких папок архива): тёзки между папками
+    тоже коллизия (один и тот же проект+файл), уходят в duplicates.
     """
     documents: list[FoundDocument] = []
     duplicates: list[str] = []
     skipped_root: list[str] = []
     errors: list[str] = []
-    seen_slugs: set[str] = set()
+    if seen_slugs is None:
+        seen_slugs = set()
 
     for pdf_path in sorted(root.rglob("*.pdf")):
         relative = pdf_path.relative_to(root)
@@ -126,8 +142,8 @@ def scan_archive(root: Path) -> ArchiveScanResult:
     )
 
 
-def sync_archive(db: Session, root: Path) -> ArchiveScanSummary:
-    """Сканирует папку архива и синхронизирует таблицу project_documents.
+def sync_archive(db: Session, roots: list[Path]) -> ArchiveScanSummary:
+    """Сканирует все папки архива и синхронизирует таблицу project_documents.
 
     Новые файлы — вставляем со статусом "pending".
     Существующие — обновляем путь/тип/страницы (файл мог переехать).
@@ -135,17 +151,31 @@ def sync_archive(db: Session, root: Path) -> ArchiveScanSummary:
     в projects_data; файлы юзера не трогаем). Удалил проект из папки →
     «Skenovat» → проект ушёл и из поиска. Повторная обработка — заново
     за деньги, поэтому удаление папки = осознанное действие юзера.
+
+    slug (`{проект}__{файл}`) уникален по ВСЕМ папкам архива: тёзки между
+    папками — коллизия, уходят в duplicates.
     """
     from backend.core import library_cache
     from backend.core.paths import PROJECTS_DATA_DIR
 
-    result = scan_archive(root)
+    # Общий обход всех папок с единым набором занятых slug'ов.
+    documents: list[FoundDocument] = []
+    duplicates: list[str] = []
+    skipped_root: list[str] = []
+    errors: list[str] = []
+    seen_slugs: set[str] = set()
+    for root in roots:
+        result = scan_archive(root, seen_slugs)
+        documents.extend(result.documents)
+        duplicates.extend(result.duplicates)
+        skipped_root.extend(result.skipped_root)
+        errors.extend(result.errors)
 
     existing = {doc.slug: doc for doc in db.scalars(select(ProjectDocument)).all()}
     found_slugs: set[str] = set()
     new_count = 0
 
-    for found in result.documents:
+    for found in documents:
         found_slugs.add(found.slug)
         doc = existing.get(found.slug)
         if doc is None:
@@ -178,19 +208,18 @@ def sync_archive(db: Session, root: Path) -> ArchiveScanSummary:
     db.commit()
     if removed:
         library_cache.invalidate()
-    missing = removed
 
     return ArchiveScanSummary(
-        found=len(result.documents),
+        found=len(documents),
         new=new_count,
-        missing=missing,
-        duplicates=result.duplicates,
-        skipped_root=result.skipped_root,
-        errors=result.errors,
+        missing=removed,
+        duplicates=duplicates,
+        skipped_root=skipped_root,
+        errors=errors,
     )
 
 
-def build_archive_response(db: Session, path: str | None) -> ArchiveResponse:
+def build_archive_response(db: Session, paths: list[str]) -> ArchiveResponse:
     """Документы архива из БД, сгруппированные по проектам (для UI)."""
     docs = db.scalars(
         select(ProjectDocument).order_by(
@@ -205,7 +234,7 @@ def build_archive_response(db: Session, path: str | None) -> ArchiveResponse:
         groups.setdefault(doc.project, []).append(out)
 
     return ArchiveResponse(
-        path=path,
+        paths=paths,
         projects=[
             ProjectGroup(name=name, documents=items) for name, items in groups.items()
         ],
