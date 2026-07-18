@@ -13,6 +13,7 @@ document.json НЕ меняется — это сознательно, чтоб�
 
 import json
 import sys
+import tempfile
 from pathlib import Path
 from typing import Callable
 
@@ -21,9 +22,13 @@ from dotenv import load_dotenv
 # Загружаем .env (ключ OpenAI) ДО импорта модуля, который обращается к API
 load_dotenv()
 
+import pypdfium2 as pdfium
+
 from backend.core.paths import RAW_DATA_DIR
+from pdf_processing.drawing import RENDER_MAX_SIDE_PX
 from pdf_processing.image_description import (
     VISION_MODEL,
+    describe_drawing,
     describe_page_visuals,
     extract_document_metadata,
 )
@@ -58,12 +63,51 @@ def find_pages_with_visuals(document: dict) -> list[int]:
     return sorted(page_numbers)
 
 
+def describe_drawings(
+    document: dict, pdf_path: str, vision_model: str
+) -> tuple[dict[str, str], int, int]:
+    """Vision-описание всех чертёжных страниц документа.
+
+    Чертёжные страницы (по-страничный роутер пометил их page_type == "drawing")
+    рендерим на лету из PDF во временную папку, отдаём в vision и выбрасываем
+    PNG — скриншоты чертежей нигде не храним. Возвращает кортеж
+    (описания {номер_страницы: текст}, prompt_tokens, completion_tokens).
+    """
+    drawing_pages = [
+        p["page_number"] for p in document["pages"] if p.get("page_type") == "drawing"
+    ]
+    descriptions: dict[str, str] = {}
+    in_tok = out_tok = 0
+    if not drawing_pages:
+        return descriptions, in_tok, out_tok
+
+    doc = pdfium.PdfDocument(pdf_path)
+    try:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_dir = Path(tmp)
+            for page_number in drawing_pages:
+                page = doc[page_number - 1]
+                width, height = page.get_size()
+                scale = RENDER_MAX_SIDE_PX / max(width, height)
+                tmp_png = tmp_dir / f"draw_{page_number:03d}.png"
+                page.render(scale=scale).to_pil().save(tmp_png)
+                desc, p_tok, c_tok = describe_drawing(tmp_png, model=vision_model)
+                in_tok += p_tok
+                out_tok += c_tok
+                if desc.strip():
+                    descriptions[str(page_number)] = desc
+    finally:
+        doc.close()
+    return descriptions, in_tok, out_tok
+
+
 def process(
     pdf_name: str,
     vision_model: str = VISION_MODEL,
     doc_dir: Path | None = None,
     on_progress: Callable[[int, int], None] | None = None,
     pages_dir: Path | None = None,
+    pdf_path: str | None = None,
 ) -> None:
     """
     Описывает схемы и метаданные документа, результат пишет в descriptions.json.
@@ -75,6 +119,9 @@ def process(
     бэкенд показывает прогресс в UI, CLI живёт без него.
     pages_dir — где лежат скриншоты страниц; по умолчанию <doc_dir>/pages/
     (пайплайн .search_index передаёт временную локальную папку).
+    pdf_path — путь к исходному PDF. Задан → чертёжные страницы получают
+    vision-описание (рендер на лету из PDF, скриншоты не храним). Не задан →
+    чертежи только с OCR (старое поведение, «Без LLM»).
     """
     doc_dir = doc_dir or (RAW_DATA_DIR / make_document_id(pdf_name))
     document_path = doc_dir / "document.json"
@@ -132,11 +179,23 @@ def process(
         pages_described_count += 1
         print(f"           проставлено описаний: {len(page_descriptions)}")
 
+    # Шаг 3: vision-описание чертёжных страниц (если дан путь к PDF).
+    # Рендерим их на лету из PDF, скриншоты не сохраняем.
+    drawing_descriptions: dict[str, str] = {}
+    draw_in = draw_out = 0
+    if pdf_path:
+        print("\nОписываю чертёжные страницы через vision LLM...")
+        drawing_descriptions, draw_in, draw_out = describe_drawings(
+            document, pdf_path, vision_model
+        )
+        print(f"  Описано чертежей: {len(drawing_descriptions)}")
+
     # Сохраняем результат в descriptions.json (полная перезапись)
     output = {
         "document_title": document_title,
         "document_summary": document_summary,
         "block_descriptions": block_descriptions,
+        "drawing_descriptions": drawing_descriptions,
     }
     save_descriptions(output, descriptions_path)
 
@@ -147,7 +206,8 @@ def process(
     # ---- Сводка по стоимости ----
     meta_usd = model_cost(vision_model, meta_in, meta_out)
     pages_usd = model_cost(vision_model, pages_in, pages_out)
-    total_usd = meta_usd + pages_usd
+    draw_usd = model_cost(vision_model, draw_in, draw_out)
+    total_usd = meta_usd + pages_usd + draw_usd
 
     print("\n=== Стоимость vision ===")
     print(
@@ -161,6 +221,11 @@ def process(
         per_page_usd = pages_usd / pages_described_count
         print(
             f"  $ на страницу с figure/table:                       ${per_page_usd:.4f}"
+        )
+    if drawing_descriptions:
+        print(f"  Чертежи ({len(drawing_descriptions)} шт.):")
+        print(
+            f"                        input={draw_in:>6}, output={draw_out:>5} → ${draw_usd:.4f}"
         )
     print(f"  ИТОГО vision:                                       ${total_usd:.4f}")
 

@@ -11,6 +11,8 @@
 
 import re
 
+from pdf_processing.drawing import extract_stupen
+
 # Типы блоков-мусора, которые не идут в чанки.
 SKIP_BLOCK_TYPES = {"document_index", "header", "footer"}
 
@@ -296,11 +298,26 @@ def build_chunks(document: dict) -> list[dict]:
 
 
 def build_drawing_chunk(page: dict, document: dict) -> dict:
-    """Чанк одной чертёжной страницы: текст = OCR + текстовый слой (drawing_text).
+    """Чанк одной чертёжной страницы.
 
-    У чертежа нет разделов/заголовков — страница целиком становится чанком,
-    контекст даёт document_title (в него норма/проект вписывают объект).
+    text = vision-паспорт листа (чистая семантика: тип, объект, что нарисовано)
+    + ступень из текста + сырой drawing_text (OCR + текстовый слой: точные
+    строки штампа и термины с чертежа). Паспорт есть только в стандартном
+    режиме; в «Без LLM» остаётся один drawing_text. У чертежа нет разделов —
+    страница целиком = чанк, контекст объекта даёт document_title.
     """
+    drawing_text = page.get("drawing_text", "")
+
+    parts = []
+    paspport = page.get("drawing_description", "").strip()
+    if paspport:
+        parts.append(paspport)
+    stupen = extract_stupen(drawing_text)
+    if stupen:
+        parts.append(f"Stupeň dokumentace: {stupen}")
+    if drawing_text.strip():
+        parts.append(drawing_text.strip())
+
     return {
         "document_id": document["document_id"],
         "document_title": document.get("document_title", ""),
@@ -308,7 +325,7 @@ def build_drawing_chunk(page: dict, document: dict) -> dict:
         "parent_section": "",
         "section_number": "",
         "section_title": "",
-        "text": page["drawing_text"],
+        "text": "\n\n".join(parts),
         "pages": [page["page_number"]],
         "related_blocks": [],
     }
@@ -329,7 +346,9 @@ def build_chunks_routed(document: dict) -> list[dict]:
 
     chunks = build_chunks({**document, "pages": prose_pages})
     for page in drawing_pages:
-        if page.get("drawing_text", "").strip():
+        has_text = page.get("drawing_text", "").strip()
+        has_paspport = page.get("drawing_description", "").strip()
+        if has_text or has_paspport:
             chunks.append(build_drawing_chunk(page, document))
 
     # Сквозной chunk_id по всему объединённому списку (проза + чертежи).

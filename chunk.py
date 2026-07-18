@@ -44,11 +44,16 @@ def merge_descriptions(document: dict, descriptions: dict) -> None:
     document["document_summary"] = descriptions.get("document_summary", "")
 
     block_descriptions = descriptions.get("block_descriptions", {})
+    drawing_descriptions = descriptions.get("drawing_descriptions", {})
     for page in document["pages"]:
         for block in page["blocks"]:
             description = block_descriptions.get(block["block_id"])
             if description:
                 block["description"] = description
+        # Vision-паспорт чертёжной страницы (ключ — номер страницы строкой)
+        drawing_description = drawing_descriptions.get(str(page["page_number"]))
+        if drawing_description:
+            page["drawing_description"] = drawing_description
 
 
 def process(pdf_name: str, doc_dir: Path | None = None) -> None:

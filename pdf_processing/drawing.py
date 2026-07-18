@@ -6,11 +6,42 @@
 померим на eval).
 """
 
+import re
+
 import pypdfium2 as pdfium
 
 # Длинная сторона рендера для OCR. 2200 px хватило на большом листе gama
 # (проверено живьём); тот же размер, что в sheet-пайплайне архива.
 RENDER_MAX_SIDE_PX = 2200
+
+# Известные ступени проектной документации (чешские). Длинные коды впереди,
+# чтобы «DSPS» не срабатывал как «DSP». Штамп чертежа пишет ступень дословно,
+# поэтому ищем готовое слово в тексте листа, а не гадаем по картинке (vision
+# путает ступень с соседними кодами вроде D.2.1.4).
+_STUPEN_CODES = (
+    "DSPS",
+    "PDPS",
+    "DÚR",
+    "DUR",
+    "DSP",
+    "DPS",
+    "RDS",
+    "DVZ",
+    "ZDS",
+    "DZS",
+    "DOS",
+)
+_STUPEN_RE = re.compile(r"\b(" + "|".join(_STUPEN_CODES) + r")\b")
+
+
+def extract_stupen(text: str) -> str:
+    """Ступень проектной документации из текста листа (текстовый слой + OCR).
+
+    Возвращает первый найденный код (DSP, DÚR, PDPS…) как целое слово или "".
+    Штамп пишет ступень буквами — берём готовое слово, не угадываем по картинке.
+    """
+    match = _STUPEN_RE.search(text)
+    return match.group(1) if match else ""
 
 
 def build_drawing_text(layer_text: str, ocr_text: str) -> str:

@@ -233,6 +233,7 @@ def process_text_document(
         slug,
         vision_model=vision_model,
         doc_dir=doc_dir,
+        pdf_path=str(pdf_path),
         on_progress=lambda done, total: progress.set_progress(
             slug, f"popis obrázků: strana {done}/{total}"
         ),

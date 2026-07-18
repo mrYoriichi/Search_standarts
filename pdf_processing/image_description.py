@@ -7,6 +7,7 @@
 
 import base64
 import json
+import re
 from pathlib import Path
 
 from openai import OpenAI
@@ -15,6 +16,46 @@ from openai import OpenAI
 # Модель для распознавания изображений (дефолт). В приложении выбор перекрывается
 # настройкой vision_model («Knihovna»); эта константа — дефолт для CLI/функций.
 VISION_MODEL = "gpt-5.4-mini"
+
+# Промпт для vision-описания чертёжной страницы (целый лист = одна картинка).
+# Задача — не «что видно», а НАСЫЩЕННЫЙ поисковый паспорт листа: из росписки
+# (razítko) вытаскиваем максимум идентифицирующих терминов (тип объекта,
+# инвестор, год, стадия, новостройка/реконструкция), которые помогают и
+# полнотекстовому (BM25), и векторному поиску отличить этот лист от чужого.
+DRAWING_PROMPT = """Jsi expert na stavební, mostní a železniční dokumentaci.
+Na obrázku je jeden list výkresové dokumentace stavebního projektu (v ČR).
+
+Vytvoř bohatý vyhledávací popis listu: identifikaci z razítka (rozpisky) i to,
+co je na výkrese skutečně nakresleno a vyřešeno. Nehádej: co nelze přečíst,
+nech prázdné ("").
+
+Vrať POUZE validní JSON s klíči:
+- "druh": druh a účel konstrukce (typ objektu) co nejpřesněji, např.
+  "trubní propustek", "most pro protihlukovou stěnu (PHS)", "opěrná zeď",
+  "silniční most". NEUVÁDĚJ obor (železniční/silniční) — ten se doplní zvlášť
+  z investora.
+- "objekt": číslo a název stavebního objektu (např. "SO 02 propustek v km 66,375").
+- "nazev": název výkresu (přílohy) z razítka — co list zobrazuje, např.
+  "Nový stav – půdorys a řezy".
+- "stavba": název celé stavby / trati / úseku z razítka.
+- "investor": investor nebo objednatel z razítka.
+- "rok": rok nebo datum z razítka.
+- "lokalita": kde stavba je — staničení (km), trať / silnice, obec nebo
+  katastrální území, okres, kraj — pokud to lze vyčíst.
+- "typ_akce": jedno slovo — "novostavba", "rekonstrukce", nebo "oprava".
+- "popis": 3-6 vět, KONKRÉTNĚ vyjmenuj konstrukční prvky a řešení na výkrese.
+  ROZLIŠ NOVÝ a STÁVAJÍCÍ stav: jasně uveď hlavní NOVÝ nosný prvek a jeho
+  parametry (např. "nový prefabrikovaný trubní propustek DN 800") a co je
+  stávající (např. stávající trouba DN 500). Vyjmenuj koncové a navazující
+  prvky (monolitická betonová čela a křídla z betonu C30/37, spádová jímka,
+  koncový práh, kamenná dlažba, betonové římsy, ocelové zábradlí, podkladní
+  beton) a jaké pohledy/řezy/detaily jsou na listu (půdorys, podélný řez, řezy
+  A-A až D-D, detail vtoku/výtoku). Uveď určující parametry (průměr DN, třídy
+  betonu, materiál), ale NEobkresluj všechny kóty ani rozměry.
+
+Popisuj jen to, co je skutečně vidět. Vše v češtině.
+Nepřidávej žádný text mimo JSON.
+"""
 
 
 def encode_image_to_base64(image_path: str | Path) -> str:
@@ -242,6 +283,118 @@ def describe_page_visuals(
         if "block_id" in item and "description" in item
     }
     return desc_by_id, prompt_tokens, completion_tokens
+
+
+def _strip_json_markdown(raw: str) -> str:
+    """Убирает markdown-обёртку ```json ... ``` вокруг ответа модели."""
+    text = raw.strip()
+    if text.startswith("```"):
+        lines = text.split("\n")[1:]
+        if lines and lines[-1].strip() == "```":
+            lines = lines[:-1]
+        text = "\n".join(lines)
+    return text
+
+
+# Поля паспорта листа и их чешские подписи (подпись сама — полезный термин).
+# "druh"/"objekt" — ведущая строка, "popis" — отдельным абзацем; здесь середина.
+# Точный штамп дублируется из OCR-текста чанка, но чистые значения из vision
+# лучше ложатся в поиск, чем шумный OCR.
+_DRAWING_META_LABELS = (
+    ("nazev", "Název výkresu"),
+    ("stavba", "Stavba"),
+    ("lokalita", "Lokalita"),
+    ("investor", "Investor"),
+    ("rok", "Rok"),
+    ("typ_akce", "Typ akce"),
+)
+
+
+# Обор конструкции по инвестору из росписки. Vision путает обор (пишет
+# «železniční» у silničního mostu), хотя инвестора читает верно — выводим
+# обор детерминированно из инвестора, как ступень из текста. Длинное имя
+# впереди, чтобы оно сработало раньше аббревиатуры.
+_OBOR_BY_INVESTOR = (
+    ("správa železnic", "železniční"),
+    ("české dráhy", "železniční"),
+    ("ředitelství silnic a dálnic", "silniční"),
+    ("řsd", "silniční"),
+)
+
+
+def obor_from_investor(investor: str) -> str:
+    """Обор (železniční/silniční) по инвестору из росписки. Неизвестный → ""."""
+    low = investor.lower()
+    for needle, obor in _OBOR_BY_INVESTOR:
+        if needle in low:
+            return obor
+    return ""
+
+
+def _looks_meaningful(value: str) -> bool:
+    """True, если строка несёт инфу: есть слово из ≥3 букв или число из ≥2 цифр.
+
+    Отсекает мусор vision вроде `km "` (у нечитаемого поля модель выдаёт огрызок).
+    """
+    return bool(re.search(r"[^\W\d_]{3,}", value) or re.search(r"\d{2,}", value))
+
+
+def _assemble_drawing_description(meta: dict) -> str:
+    """Собирает поисковый паспорт листа (см. DRAWING_PROMPT).
+
+    Ведущая строка — обор (из инвестора) + тип конструкции + объект (самые
+    важные термины впереди), затем факты из росписки с подписями, в конце —
+    конкретное описание элементов (popis). Пустые/мусорные поля пропускаем.
+    """
+    druh = (meta.get("druh") or "").strip()
+    obor = obor_from_investor(meta.get("investor") or "")
+    if obor and obor not in druh.lower():
+        druh = f"{obor} {druh}".strip()
+
+    objekt = (meta.get("objekt") or "").strip()
+    lead = ". ".join(p for p in (druh, objekt) if p)
+
+    facts = [
+        f"{label}: {value.strip()}"
+        for key, label in _DRAWING_META_LABELS
+        if (value := (meta.get(key) or "").strip()) and _looks_meaningful(value)
+    ]
+
+    popis = (meta.get("popis") or "").strip()
+
+    parts = [p for p in (lead, "\n".join(facts), popis) if p]
+    return "\n\n".join(parts)
+
+
+def describe_drawing(
+    image_path: str | Path, model: str = VISION_MODEL
+) -> tuple[str, int, int]:
+    """Vision-описание чертёжной страницы — насыщенный поисковый паспорт листа.
+
+    Возвращает (текст_описания, prompt_tokens, completion_tokens). Токены —
+    для подсчёта стоимости вызывающим (как в остальных функциях модуля).
+    Битый/пустой ответ повторяем один раз — разовые сбои vision самочинятся.
+
+    Из росписки тянем максимум идентифицирующих полей (тип объекта, инвестор,
+    год, стадия, локация…) — чтобы лист хорошо отличался и в BM25, и в векторе.
+    Название/текстовый слой сюда НЕ кладём: они добираются отдельно (OCR).
+    """
+    meta: dict = {}
+    prompt_tokens = completion_tokens = 0
+    for _ in range(2):
+        raw, p_tok, c_tok = ask_vision(image_path, DRAWING_PROMPT, model=model)
+        prompt_tokens += p_tok
+        completion_tokens += c_tok
+        try:
+            parsed = json.loads(_strip_json_markdown(raw))
+        except json.JSONDecodeError:
+            parsed = {}
+        if isinstance(parsed, dict):
+            meta = parsed
+        if meta.get("druh") or meta.get("objekt") or meta.get("popis"):
+            break
+
+    return _assemble_drawing_description(meta), prompt_tokens, completion_tokens
 
 
 def extract_document_metadata(
