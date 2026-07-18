@@ -1,5 +1,6 @@
 """HTTP-эндпоинты модуля projects (архив проектов)."""
 
+import threading
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -19,6 +20,9 @@ from backend.modules.settings import service as settings_service
 
 
 router = APIRouter()
+
+# Сериализует POST /projects/index (даблклик) — см. комментарий в index_archive.
+_index_archive_lock = threading.Lock()
 
 
 def _projects_paths(db: Session) -> list[Path]:
@@ -69,18 +73,23 @@ def index_archive(
     """
     paths = _projects_paths(db)
     executor = request.app.state.executor
-    pending = db.scalars(
-        select(ProjectDocument).where(ProjectDocument.status == "pending")
-    ).all()
+    # Под замком: два одновременных клика иначе прочитают одни и те же
+    # pending до чужого commit — двойная оплата vision.
+    with _index_archive_lock:
+        pending = db.scalars(
+            select(ProjectDocument).where(ProjectDocument.status == "pending")
+        ).all()
 
-    submitted = 0
-    for doc in pending:
-        root = service.resolve_project_root(paths, doc.relative_path)
-        if root is None:
-            continue  # файл не найден ни в одной папке — пропускаем
-        doc.status = "processing"
-        db.commit()
-        executor.submit(run_project_pipeline, doc.slug, str(root / doc.relative_path))
-        submitted += 1
+        submitted = 0
+        for doc in pending:
+            root = service.resolve_project_root(paths, doc.relative_path)
+            if root is None:
+                continue  # файл не найден ни в одной папке — пропускаем
+            doc.status = "processing"
+            db.commit()
+            executor.submit(
+                run_project_pipeline, doc.slug, str(root / doc.relative_path)
+            )
+            submitted += 1
 
     return {"started": submitted}

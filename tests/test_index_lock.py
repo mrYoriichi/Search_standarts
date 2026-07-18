@@ -48,3 +48,38 @@ def test_done_releases_after_last_doc(tmp_path):
     index_lock.done(tmp_path)
     # Последний закончил — лок снят.
     assert not (index_store.index_root(tmp_path) / index_lock.LOCK_FILENAME).exists()
+
+
+def test_second_acquire_keeps_inflight_counter(tmp_path):
+    # Повторный «Indexovat» во время работы папки не должен обнулять счётчик:
+    # иначе done() старой партии снимал бы лок, пока новая ещё пишет.
+    lock_file = index_store.index_root(tmp_path) / index_lock.LOCK_FILENAME
+    index_lock.acquire(tmp_path)
+    index_lock.register(tmp_path, 2)
+    index_lock.acquire(tmp_path)  # вторая партия той же машины
+    index_lock.register(tmp_path, 1)
+    index_lock.done(tmp_path)
+    index_lock.done(tmp_path)
+    # Один документ ещё в работе — лок держим.
+    assert lock_file.exists()
+    index_lock.done(tmp_path)
+    assert not lock_file.exists()
+
+
+def test_unreadable_lock_counts_as_busy(tmp_path):
+    # Сбой ЧТЕНИЯ (не «файла нет») — не повод перезаписывать чужой лок.
+    # open() на папке с именем лок-файла даёт IsADirectoryError (подвид OSError).
+    root = index_store.index_root(tmp_path)
+    root.mkdir(parents=True)
+    (root / index_lock.LOCK_FILENAME).mkdir()
+    assert index_lock.holder(tmp_path) is not None
+    assert index_lock.acquire(tmp_path) is not None
+
+
+def test_broken_lock_json_is_free(tmp_path):
+    # Мусор в файле — такой лок можно перехватить (это не сетевой сбой).
+    root = index_store.index_root(tmp_path)
+    root.mkdir(parents=True)
+    (root / index_lock.LOCK_FILENAME).write_text("{oops", encoding="utf-8")
+    assert index_lock.holder(tmp_path) is None
+    assert index_lock.acquire(tmp_path) is None

@@ -9,10 +9,10 @@ from fastapi import UploadFile
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from backend.core import index_store, library_cache
+from backend.core import index_lock, index_store, library_cache
 from backend.core.paths import PDF_STORAGE_DIR, RAW_DATA_DIR
 from backend.modules.documents.models import Document
-from backend.modules.documents.pipeline import run_pipeline
+from backend.modules.documents.pipeline import run_pipeline, run_pipeline_locked
 from backend.modules.documents.schemas import UploadItem
 from jsonio import save_json_atomic
 from pdf_processing.parser import make_document_id
@@ -89,6 +89,12 @@ def reindex_document(
     if not pdf_path.exists():
         raise ValueError(f"PDF не найден в библиотеке: {pdf_path}")
 
+    # Межмашинный лок папки — как при обычной индексации: без него reindex
+    # писал бы в .search_index параллельно с другой машиной.
+    busy = index_lock.acquire(library_path)
+    if busy is not None:
+        raise DocumentBusyError(f"Složku právě indexuje jiný počítač: {busy}")
+
     # Сносим старые артефакты в обоих пулах (легаси data/raw_data и
     # .search_index) — новые лягут в .search_index.
     for artifacts_dir in _artifact_dirs(slug, library_path):
@@ -107,8 +113,13 @@ def reindex_document(
     from indexing.embeddings_index import EMBEDDING_MODEL
 
     index_store.ensure_meta(library_path, EMBEDDING_MODEL)
+    index_lock.register(library_path, 1)
     executor.submit(
-        run_pipeline, slug, str(pdf_path), index_store.doc_dir(library_path, slug)
+        run_pipeline_locked,
+        library_path,
+        slug,
+        str(pdf_path),
+        index_store.doc_dir(library_path, slug),
     )
     return doc
 

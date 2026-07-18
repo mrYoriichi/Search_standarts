@@ -26,7 +26,7 @@ from pathlib import Path
 # Загружаем .env как можно раньше — до импорта сервисов, читающих env-vars.
 load_dotenv()
 
-from backend.core import index_store
+from backend.core import index_lock, index_store
 from backend.core.database import Base, SessionLocal, engine, ensure_columns
 from backend.core.paths import FRONTEND_DIST
 from backend.modules.auth import service as auth_service
@@ -39,7 +39,7 @@ from backend.modules.telemetry.models import (  # noqa: F401 — для create_a
     PendingReport,
 )
 from backend.modules.documents.models import Document
-from backend.modules.documents.pipeline import run_pipeline
+from backend.modules.documents.pipeline import run_pipeline, run_pipeline_locked
 from backend.modules.documents.router import router as documents_router
 from backend.modules.health.router import router as health_router
 from backend.modules.projects.models import ProjectDocument
@@ -78,14 +78,36 @@ async def lifespan(app: FastAPI):
             select(Document).where(Document.status == "processing")
         ).all()
         for doc in stuck:
-            pdf_path: str | None = None
-            doc_dir: Path | None = None
+            if not doc.relative_path:
+                # Легаси upload-flow: PDF в data/pdfs, артефакты в data/raw_data.
+                executor.submit(run_pipeline, doc.slug, None, None)
+                print(f"[startup] Возобновлён pipeline для {doc.slug}")
+                continue
             folder = index_store.resolve_folder(library_paths, doc.slug)
-            if doc.relative_path and folder is not None:
-                pdf_path = str(folder / doc.relative_path)
-                doc_dir = index_store.doc_dir(folder, doc.slug)
-            executor.submit(run_pipeline, doc.slug, pdf_path, doc_dir)
+            if folder is None:
+                # Папка отключена или сетевой диск ещё не смонтирован — раньше
+                # пайплайн уходил в легаси-путь и честный документ помечался
+                # failed. Возвращаем в pending: доиндексируется кнопкой
+                # «Indexovat», когда папка появится.
+                doc.status = "pending"
+                print(f"[startup] Папка {doc.slug} недоступна — вернул в pending")
+                continue
+            busy = index_lock.acquire(folder)
+            if busy is not None:
+                # Папку уже индексирует другая машина — параллельно не лезем.
+                doc.status = "pending"
+                print(f"[startup] {doc.slug}: папку индексирует {busy} — pending")
+                continue
+            index_lock.register(folder, 1)
+            executor.submit(
+                run_pipeline_locked,
+                folder,
+                doc.slug,
+                str(folder / doc.relative_path),
+                index_store.doc_dir(folder, doc.slug),
+            )
             print(f"[startup] Возобновлён pipeline для {doc.slug}")
+        db.commit()
 
         # То же для архива проектов: застрявшие в processing после падения.
         projects_paths = [Path(p) for p in settings_service.get_projects_paths(db)]

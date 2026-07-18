@@ -8,6 +8,7 @@
 import json
 import platform
 import subprocess
+import threading
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Callable
@@ -17,7 +18,7 @@ from sqlalchemy.orm import Session
 
 from backend.core import index_lock, index_store, library_cache, progress
 from backend.modules.documents.models import Document
-from backend.modules.documents.pipeline import run_pipeline
+from backend.modules.documents.pipeline import run_pipeline_locked
 from backend.modules.library.schemas import (
     LibraryFile,
     LibraryFolder,
@@ -256,13 +257,10 @@ def _adopted_title(library_path: Path, slug: str) -> str | None:
         return None
 
 
-def _run_with_lock(library_path: Path, slug: str, pdf_path: str | None, doc_dir: Path):
-    """Обёртка pipeline: освежает лок папки в начале и снимает его в конце."""
-    try:
-        index_lock.refresh(library_path)
-        run_pipeline(slug, pdf_path, doc_dir)
-    finally:
-        index_lock.done(library_path)
+# Сериализует одновременные POST /library/index (даблклик): без этого оба
+# запроса успевали прочитать одни и те же pending до чужого commit —
+# документ уходил в пайплайн дважды (двойная оплата vision).
+_start_indexing_lock = threading.Lock()
 
 
 def start_indexing(
@@ -282,40 +280,41 @@ def start_indexing(
     оставляем pending и сообщаем, кто занят. Возвращает (сколько отправлено,
     список «папка: кто индексирует»).
     """
-    pending = db.scalars(select(Document).where(Document.status == "pending")).all()
+    with _start_indexing_lock:
+        pending = db.scalars(select(Document).where(Document.status == "pending")).all()
 
-    # Группируем pending по папкам — лок берём один на папку.
-    by_folder: dict[Path, list[Document]] = {}
-    for doc in pending:
-        library_path = index_store.resolve_folder(paths, doc.slug)
-        if library_path is None:
-            continue  # папка документа отключена — пропускаем
-        by_folder.setdefault(library_path, []).append(doc)
+        # Группируем pending по папкам — лок берём один на папку.
+        by_folder: dict[Path, list[Document]] = {}
+        for doc in pending:
+            library_path = index_store.resolve_folder(paths, doc.slug)
+            if library_path is None:
+                continue  # папка документа отключена — пропускаем
+            by_folder.setdefault(library_path, []).append(doc)
 
-    submitted = 0
-    locked: list[str] = []
-    for library_path, docs in by_folder.items():
-        busy_owner = index_lock.acquire(library_path)
-        if busy_owner is not None:
-            locked.append(f"{library_path.name}: {busy_owner}")
-            continue  # держит другая машина — оставляем документы pending
-        index_lock.register(library_path, len(docs))
-        for doc in docs:
-            doc.status = "processing"
-        db.commit()
-        for doc in docs:
-            pdf_path = (
-                str(library_path / doc.relative_path) if doc.relative_path else None
-            )
-            executor.submit(
-                _run_with_lock,
-                library_path,
-                doc.slug,
-                pdf_path,
-                index_store.doc_dir(library_path, doc.slug),
-            )
-            submitted += 1
-    return submitted, locked
+        submitted = 0
+        locked: list[str] = []
+        for library_path, docs in by_folder.items():
+            busy_owner = index_lock.acquire(library_path)
+            if busy_owner is not None:
+                locked.append(f"{library_path.name}: {busy_owner}")
+                continue  # держит другая машина — оставляем документы pending
+            index_lock.register(library_path, len(docs))
+            for doc in docs:
+                doc.status = "processing"
+            db.commit()
+            for doc in docs:
+                pdf_path = (
+                    str(library_path / doc.relative_path) if doc.relative_path else None
+                )
+                executor.submit(
+                    run_pipeline_locked,
+                    library_path,
+                    doc.slug,
+                    pdf_path,
+                    index_store.doc_dir(library_path, doc.slug),
+                )
+                submitted += 1
+        return submitted, locked
 
 
 def _is_within(target: Path, root: Path) -> bool:

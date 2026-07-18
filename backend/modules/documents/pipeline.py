@@ -12,7 +12,7 @@ from pathlib import Path
 
 from sqlalchemy import select
 
-from backend.core import library_cache, progress
+from backend.core import index_lock, library_cache, progress
 from backend.core.database import SessionLocal
 from backend.core.errors import classify_pipeline_error
 from backend.core.paths import RAW_DATA_DIR
@@ -21,6 +21,23 @@ from backend.modules.telemetry.service import track_event
 
 
 logger = logging.getLogger(__name__)
+
+
+def run_pipeline_locked(
+    library_path: Path, slug: str, pdf_path: str | None, doc_dir: Path
+) -> None:
+    """Пайплайн под межмашинным локом папки (см. backend/core/index_lock.py).
+
+    Освежает лок в начале, отмечает документ завершённым в конце (последний
+    документ папки снимает лок). ВСЕ пути, пишущие в .search_index — запуск
+    кнопкой, переиндексация, возобновление после падения, — обязаны идти
+    через эту обёртку, иначе лок не живёт и другая машина зайдёт параллельно.
+    """
+    try:
+        index_lock.refresh(library_path)
+        run_pipeline(slug, pdf_path, doc_dir)
+    finally:
+        index_lock.done(library_path)
 
 
 def run_pipeline(
