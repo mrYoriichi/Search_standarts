@@ -16,7 +16,7 @@ import sys
 from pathlib import Path
 
 from backend.core.paths import RAW_DATA_DIR
-from pdf_processing.chunker import build_chunks
+from pdf_processing.chunker import build_chunks_routed
 from pdf_processing.parser import make_document_id
 
 
@@ -77,7 +77,7 @@ def process(pdf_name: str, doc_dir: Path | None = None) -> None:
     print(f"Документ: {document['document_name']}")
     print("Нарезаю на чанки...")
 
-    chunks = build_chunks(document)
+    chunks = build_chunks_routed(document)
     save_chunks(chunks, chunks_path)
 
     # Небольшой отчёт

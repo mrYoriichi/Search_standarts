@@ -9,6 +9,7 @@ import sys
 from pathlib import Path
 
 from backend.core.paths import PDF_STORAGE_DIR, RAW_DATA_DIR
+from pdf_processing.drawing import route_and_ocr
 from pdf_processing.parser import parse_pdf, collect_pages_to_save, enrich_visual_blocks
 
 
@@ -90,6 +91,11 @@ def process(
     document, page_images = parse_pdf(pdf_path)
     if document_id:
         document["document_id"] = document_id
+
+    # По-страничный роутер: чертёжные страницы Docling парсит плохо (нет текста/
+    # заголовков) — их текст берём OCR'ом и метим page_type, чтобы chunk-шаг
+    # сделал их отдельными чанками, а не слил с прозой.
+    route_and_ocr(document, pdf_path)
 
     # Папка документа: data/raw_data/<document_id>/ или переданный пул
     doc_dir = doc_dir or (RAW_DATA_DIR / document["document_id"])

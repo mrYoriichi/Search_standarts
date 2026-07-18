@@ -32,3 +32,48 @@ def read_drawing_page(page: "pdfium.PdfPage") -> str:
     scale = RENDER_MAX_SIDE_PX / max(width, height)
     image = page.render(scale=scale).to_pil()
     return build_drawing_text(layer, ocr_image(image))
+
+
+def route_and_ocr(document: dict, pdf_path: str) -> None:
+    """Проставляет тип каждой странице document и OCR-текст чертёжным (на месте).
+
+    Идём по РЕАЛЬНЫМ страницам PDF (pypdfium — источник истины: Docling может
+    пропустить чисто-векторную страницу-чертёж). Прозаической ставим
+    page_type='text' и оставляем разбор Docling; чертёжной — page_type='drawing'
+    + drawing_text (OCR + текстовый слой), блоки пустые (чанк соберём отдельно).
+    Прозаические страницы, которых Docling не нашёл, пропускаем (пустые).
+    """
+    import pypdfium2 as pdfium
+
+    from pdf_processing.page_router import classify_page, count_paths
+
+    docling_pages = {p["page_number"]: p for p in document["pages"]}
+    doc = pdfium.PdfDocument(pdf_path)
+    try:
+        routed: list[dict] = []
+        for i in range(len(doc)):
+            page_number = i + 1
+            page = doc[i]
+            text_len = len(page.get_textpage().get_text_range().strip())
+            page_type = classify_page(count_paths(page), text_len)
+
+            if page_type == "drawing":
+                drawing_text = read_drawing_page(page)
+                routed.append(
+                    {
+                        "page_number": page_number,
+                        "page_text": drawing_text,
+                        "page_type": "drawing",
+                        "drawing_text": drawing_text,
+                        "blocks": [],
+                    }
+                )
+            else:
+                docling_page = docling_pages.get(page_number)
+                if docling_page is None:
+                    continue  # Docling ничего не нашёл — пустая страница, пропуск
+                docling_page["page_type"] = "text"
+                routed.append(docling_page)
+        document["pages"] = routed
+    finally:
+        doc.close()

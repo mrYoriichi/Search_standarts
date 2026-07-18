@@ -293,3 +293,47 @@ def build_chunks(document: dict) -> list[dict]:
         chunk.pop("_blocks", None)
 
     return result
+
+
+def build_drawing_chunk(page: dict, document: dict) -> dict:
+    """Чанк одной чертёжной страницы: текст = OCR + текстовый слой (drawing_text).
+
+    У чертежа нет разделов/заголовков — страница целиком становится чанком,
+    контекст даёт document_title (в него норма/проект вписывают объект).
+    """
+    return {
+        "document_id": document["document_id"],
+        "document_title": document.get("document_title", ""),
+        "document_summary": document.get("document_summary", ""),
+        "parent_section": "",
+        "section_number": "",
+        "section_title": "",
+        "text": page["drawing_text"],
+        "pages": [page["page_number"]],
+        "related_blocks": [],
+    }
+
+
+def build_chunks_routed(document: dict) -> list[dict]:
+    """Нарезка с учётом типа страниц (по-страничный роутер).
+
+    Прозаические страницы (page_type != 'drawing') режет обычный build_chunks;
+    чертёжные (page_type == 'drawing') — по одному чанку на страницу из
+    drawing_text. Результаты сливает и заново нумерует chunk_id сквозным
+    счётчиком по всему документу. Без page_type ведёт себя как build_chunks
+    (все страницы — проза) — обратная совместимость.
+    """
+    pages = document["pages"]
+    prose_pages = [p for p in pages if p.get("page_type") != "drawing"]
+    drawing_pages = [p for p in pages if p.get("page_type") == "drawing"]
+
+    chunks = build_chunks({**document, "pages": prose_pages})
+    for page in drawing_pages:
+        if page.get("drawing_text", "").strip():
+            chunks.append(build_drawing_chunk(page, document))
+
+    # Сквозной chunk_id по всему объединённому списку (проза + чертежи).
+    document_id = document["document_id"]
+    for i, chunk in enumerate(chunks, start=1):
+        chunk["chunk_id"] = f"{document_id}_c{i:03d}"
+    return chunks
