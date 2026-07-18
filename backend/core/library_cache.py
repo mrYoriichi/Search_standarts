@@ -52,8 +52,13 @@ def _library_index_roots() -> list[Path]:
     finally:
         db.close()
     roots = []
+    seen: list[Path] = []
     for library_path in library_paths:
-        root = index_store.index_root(Path(library_path))
+        p = Path(library_path)
+        if any(index_store.same_dir(p, s) for s in seen):
+            continue  # та же физическая папка под вторым путём — чанки не двоим
+        seen.append(p)
+        root = index_store.index_root(p)
         if root.exists():
             roots.append(root)
     return roots

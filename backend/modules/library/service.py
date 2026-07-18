@@ -6,6 +6,7 @@
 """
 
 import json
+import os
 import platform
 import subprocess
 import threading
@@ -38,6 +39,16 @@ StatusResolver = Callable[[str], tuple[str | None, bool, str | None, str | None]
 SlugOf = Callable[[str], str]
 
 
+def _unique_dirs(paths: list[Path]) -> list[Path]:
+    """Убирает повторы одной и той же физической папки (симлинк/второй путь)."""
+    result: list[Path] = []
+    for p in paths:
+        if any(index_store.same_dir(p, seen) for seen in result):
+            continue
+        result.append(p)
+    return result
+
+
 def _folder_ids(paths: list[Path]) -> dict[Path, str | None]:
     """Метки всех папок, гарантированно уникальные между собой.
 
@@ -45,16 +56,30 @@ def _folder_ids(paths: list[Path]) -> dict[Path, str | None]:
     коллизию чиним: второй папке метка перевыдаётся (см.
     index_store.ensure_unique_folder_id). Персистим в meta.json, чтобы все
     читатели (дерево, resolve_folder, кеш) видели уже исправленные метки.
+
+    Одна и та же ФИЗИЧЕСКАЯ папка под двумя путями (симлинк, двойной маунт) —
+    НЕ коллизия: обе записи получают общую метку, meta.json не трогаем. Иначе
+    метка перевыдавалась бы «пинг-понгом» на каждый запрос, а документы
+    становились бы сиротами.
     """
     from indexing.embeddings_index import EMBEDDING_MODEL
 
     ids: dict[Path, str | None] = {}
-    taken: set[str] = set()
+    taken: dict[str, Path] = {}
     for lib in paths:
-        fid = index_store.ensure_unique_folder_id(lib, taken, EMBEDDING_MODEL)
+        meta = index_store.read_meta(lib)
+        existing = (meta or {}).get("folder_id")
+        if (
+            existing
+            and existing in taken
+            and index_store.same_dir(lib, taken[existing])
+        ):
+            ids[lib] = existing
+            continue
+        fid = index_store.ensure_unique_folder_id(lib, set(taken), EMBEDDING_MODEL)
         ids[lib] = fid
         if fid:
-            taken.add(fid)
+            taken[fid] = lib
     return ids
 
 
@@ -75,6 +100,7 @@ def build_library_response(paths: list[Path], db: Session) -> LibraryResponse:
     «Knihovny» с папками внутри (фронтенд и фильтр «Kde hledat» рекурсивны,
     так что работают в обоих случаях без изменений).
     """
+    paths = _unique_dirs(paths)
     docs_by_slug = {doc.slug: doc for doc in db.scalars(select(Document)).all()}
 
     def resolve(slug: str) -> tuple[str | None, bool, str | None, str | None]:
@@ -84,7 +110,21 @@ def build_library_response(paths: list[Path], db: Session) -> LibraryResponse:
         return (doc.status, doc.pinned, doc.error_message, progress.get_progress(slug))
 
     folder_ids = _folder_ids(paths)
-    subtrees = [_walk(lib, resolve, _slug_fn(folder_ids[lib])) for lib in paths]
+    subtrees = []
+    for lib in paths:
+        try:
+            subtrees.append(_walk(lib, resolve, _slug_fn(folder_ids[lib])))
+        except OSError:
+            # Папка недоступна (отвалился сетевой диск) — показываем пустой
+            # узел с пометкой; остальные папки и вся страница живут дальше.
+            subtrees.append(
+                LibraryFolder(
+                    name=f"{lib.name} (nedostupná)",
+                    path=str(lib),
+                    folders=[],
+                    files=[],
+                )
+            )
     if len(subtrees) == 1:
         root = subtrees[0]
     else:
@@ -181,6 +221,7 @@ def scan_library(paths: list[Path], db: Session) -> ScanSummary:
     """
     from indexing.embeddings_index import EMBEDDING_MODEL
 
+    paths = _unique_dirs(paths)
     docs_by_slug = {doc.slug: doc for doc in db.scalars(select(Document)).all()}
     summary = ScanSummary(created=0, already_indexed=0, adopted=0, duplicates=[])
     any_adopted = False
@@ -193,9 +234,14 @@ def scan_library(paths: list[Path], db: Session) -> ScanSummary:
         meta = index_store.read_meta(library_path)
         can_adopt = meta is not None and meta.get("embedding_model") == EMBEDDING_MODEL
 
-        pdf_paths = [
-            p for p in sorted(library_path.rglob("*.pdf")) if not p.name.startswith(".")
-        ]
+        try:
+            pdf_paths = [
+                p
+                for p in sorted(library_path.rglob("*.pdf"))
+                if not p.name.startswith(".")
+            ]
+        except OSError:
+            continue  # папка недоступна (сетевой диск) — скан остальных живёт
         # Сколько файлов дают каждый slug ВНУТРИ этой папки. >1 — совпадение имён.
         slug_counts: dict[str, int] = {}
         for p in pdf_paths:
@@ -342,7 +388,9 @@ def open_file(paths: list[Path], file_path: str) -> None:
     if system == "Darwin":
         subprocess.run(["open", str(target)], check=False)
     elif system == "Windows":
-        # На Windows `start` — это shell-команда, не отдельный exe.
-        subprocess.run(["start", "", str(target)], shell=True, check=False)
+        # startfile = ShellExecute, открывает файл ассоциированной программой.
+        # НЕ shell-команда `start`: через неё имя файла вида `a&calc.pdf`
+        # из общей папки исполнило бы команду.
+        os.startfile(str(target))  # существует только на Windows
     else:
         subprocess.run(["xdg-open", str(target)], check=False)

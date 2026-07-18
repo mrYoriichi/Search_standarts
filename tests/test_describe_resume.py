@@ -101,6 +101,8 @@ def test_describe_drawings_skips_already_paid(tmp_path, monkeypatch):
         return "popis", 1, 1
 
     monkeypatch.setattr(describe, "describe_drawing", fake_describe_drawing)
+    # Тестовые страницы пустые — отключаем отсев пустых, тут проверяем resume.
+    monkeypatch.setattr(describe, "_is_blank", lambda img: False)
 
     descriptions = {"1": "už zaplaceno"}
     saves: list[dict] = []
@@ -114,6 +116,56 @@ def test_describe_drawings_skips_already_paid(tmp_path, monkeypatch):
     assert len(calls) == 1  # страница 1 пропущена — за неё уже заплачено
     assert descriptions == {"1": "už zaplaceno", "2": "popis"}
     assert saves  # прогресс сохранялся после каждого листа
+
+
+def test_blank_drawing_page_not_sent_to_vision(tmp_path, monkeypatch):
+    # Пустой оборот обложки раньше уходил в vision (и из-за retry — дважды).
+    pdf_path = tmp_path / "prazdny.pdf"
+    pdf = pdfium.PdfDocument.new()
+    pdf.new_page(2000, 1000)  # страница без содержимого — однотонная
+    pdf.save(pdf_path)
+
+    document = {"pages": [{"page_number": 1, "page_type": "drawing", "blocks": []}]}
+
+    def must_not_run(*args, **kwargs):
+        raise AssertionError("пустая страница не должна уходить в vision")
+
+    monkeypatch.setattr(describe, "describe_drawing", must_not_run)
+
+    descriptions: dict[str, str] = {}
+    describe.describe_drawings(
+        document, str(pdf_path), "gpt-test", descriptions=descriptions
+    )
+    # Пометка «обработана» стоит — повторный запуск тоже платить не будет.
+    assert descriptions == {"1": ""}
+
+
+def test_metadata_from_drawing_first_page(tmp_path, monkeypatch):
+    # Первая страница — чертёж: p001.png от Docling нет, рендерим сами из PDF.
+    pdf_path = tmp_path / "vykres.pdf"
+    pdf = pdfium.PdfDocument.new()
+    pdf.new_page(2000, 1000)
+    pdf.save(pdf_path)
+
+    _write_document(tmp_path, 0)  # страниц с figure/table нет
+    doc = {
+        "document_name": "Vykres",
+        "document_id": "vykres",
+        "pages": [{"page_number": 1, "page_type": "drawing", "blocks": []}],
+    }
+    (tmp_path / "document.json").write_text(
+        json.dumps(doc, ensure_ascii=False), encoding="utf-8"
+    )
+    (tmp_path / "pages").mkdir()
+
+    monkeypatch.setattr(describe, "extract_document_metadata", _fake_metadata)
+    monkeypatch.setattr(describe, "describe_drawing", lambda png, model: ("p", 1, 1))
+    monkeypatch.setattr(describe, "_is_blank", lambda img: False)
+
+    describe.process("vykres", doc_dir=tmp_path, pdf_path=str(pdf_path))
+
+    saved = json.loads((tmp_path / "descriptions.json").read_text(encoding="utf-8"))
+    assert saved["document_title"] == "Titul"  # метаданные добыты с рендера
 
 
 def test_no_llm_mode_still_writes_empty_passport(tmp_path, monkeypatch):

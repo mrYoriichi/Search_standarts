@@ -199,6 +199,14 @@ def search_embeddings(
     Возвращает список пар (chunk_id, score), отсортированный
     по убыванию смысловой близости.
     """
+    # Запрос эмбеддится ТЕКУЩЕЙ моделью — индекс обязан быть на ней же,
+    # иначе получим либо ошибку размерностей, либо тихо бессмысленный поиск
+    # (после смены константы EMBEDDING_MODEL без переиндексации).
+    if index.get("model") != EMBEDDING_MODEL:
+        raise RuntimeError(
+            f"Индекс построен моделью {index.get('model')}, поиск использует "
+            f"{EMBEDDING_MODEL}. Переиндексируй документы."
+        )
     matrix = index["matrix"]
     chunk_ids = index["chunk_ids"]
     if matrix.shape[0] == 0:

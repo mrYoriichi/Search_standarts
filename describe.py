@@ -48,6 +48,39 @@ def save_descriptions(descriptions: dict, json_path: Path) -> None:
     save_json_atomic(json_path, descriptions)
 
 
+def _is_blank(image) -> bool:
+    """Однотонная (пустая) страница? Такую в vision не шлём — платить не за что.
+
+    Раньше пустой оборот обложки уходил в vision как «чертёж» и из-за retry
+    в describe_drawing оплачивался ДВАЖДЫ.
+    """
+    lo, hi = image.convert("L").getextrema()
+    return lo == hi
+
+
+def _render_first_page(pdf_path: str, pages_dir: Path) -> Path | None:
+    """Рендерит страницу 1 из PDF — когда Docling её не рендерил.
+
+    Так бывает, когда первая страница — чертёж (роутер отдал её OCR, и
+    скриншота p001.png нет): без этого документ терял title/summary,
+    типовой кейс архива проектов. Ошибка рендера — просто None (метаданные
+    пропустим, как раньше).
+    """
+    try:
+        doc = pdfium.PdfDocument(pdf_path)
+        try:
+            page = doc[0]
+            width, height = page.get_size()
+            scale = RENDER_MAX_SIDE_PX / max(width, height)
+            out = pages_dir / "p001.png"
+            page.render(scale=scale).to_pil().save(out)
+            return out
+        finally:
+            doc.close()
+    except Exception:
+        return None
+
+
 def _read_partial(json_path: Path) -> dict | None:
     """descriptions.json прошлого (возможно, оборванного) запуска или None.
 
@@ -112,8 +145,16 @@ def describe_drawings(
                 page = doc[page_number - 1]
                 width, height = page.get_size()
                 scale = RENDER_MAX_SIDE_PX / max(width, height)
+                pil = page.render(scale=scale).to_pil()
+                if _is_blank(pil):
+                    # Пустой лист: "" = пометка «обработан», chunker пустые
+                    # игнорирует, повторный запуск сюда не вернётся.
+                    descriptions[str(page_number)] = ""
+                    if on_page_done is not None:
+                        on_page_done()
+                    continue
                 tmp_png = tmp_dir / f"draw_{page_number:03d}.png"
-                page.render(scale=scale).to_pil().save(tmp_png)
+                pil.save(tmp_png)
                 desc, p_tok, c_tok = describe_drawing(tmp_png, model=vision_model)
                 in_tok += p_tok
                 out_tok += c_tok
@@ -193,8 +234,12 @@ def process(
     pages_in = pages_out = 0
     pages_described_count = 0
 
-    # Шаг 1: извлекаем название и описание документа по первой странице
+    # Шаг 1: извлекаем название и описание документа по первой странице.
+    # Если Docling её не рендерил (первая страница — чертёж), делаем скриншот
+    # сами из PDF — иначе документ остался бы без title/summary.
     first_page_image = pages_dir / "p001.png"
+    if not first_page_image.exists() and pdf_path:
+        first_page_image = _render_first_page(pdf_path, pages_dir) or first_page_image
     if output["document_title"]:
         print("Метаданные уже есть (прошлый запуск) — пропускаю")
     elif first_page_image.exists():

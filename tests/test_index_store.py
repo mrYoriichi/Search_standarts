@@ -2,6 +2,8 @@
 
 import json
 
+import pytest
+
 from backend.core import index_store
 
 
@@ -31,6 +33,20 @@ def test_ensure_meta_creates_passport(tmp_path):
         (tmp_path / ".search_index" / "meta.json").read_text(encoding="utf-8")
     )
     assert on_disk == meta
+
+
+def test_ensure_meta_missing_folder_raises(tmp_path):
+    # Папку библиотеки НЕ создаём (принцип №16): её отсутствие — опечатка в
+    # пути или отвалившийся сетевой диск, маскировать нельзя.
+    missing = tmp_path / "neexistuje"
+    with pytest.raises(OSError):
+        index_store.ensure_meta(missing, "text-embedding-3-large")
+    assert not missing.exists()
+
+
+def test_ensure_unique_folder_id_missing_folder_is_none(tmp_path):
+    missing = tmp_path / "neexistuje"
+    assert index_store.ensure_unique_folder_id(missing, set(), "m") is None
 
 
 def test_ensure_meta_keeps_existing(tmp_path):

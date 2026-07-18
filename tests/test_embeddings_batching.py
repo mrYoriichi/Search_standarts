@@ -1,5 +1,6 @@
 """Тесты батчинга эмбеддингов: большой документ шлётся партиями, не одним запросом."""
 
+import numpy as np
 import pytest
 
 from indexing import embeddings_index
@@ -41,6 +42,17 @@ def test_batches_respect_count_limit(monkeypatch):
     assert [len(c) for c in calls] == [2, 2, 1]
     # Порядок chunk_id не пострадал от разбиения.
     assert [it["chunk_id"] for it in index["items"]] == [f"c{i:03d}" for i in range(5)]
+
+
+def test_search_rejects_foreign_model_index():
+    # Смена EMBEDDING_MODEL без переиндексации — понятная ошибка, не мусор.
+    index = {
+        "model": "stary-model",
+        "chunk_ids": [],
+        "matrix": np.zeros((0, 3), dtype=np.float32),
+    }
+    with pytest.raises(RuntimeError):
+        embeddings_index.search_embeddings(index, "dotaz")
 
 
 def test_batches_respect_token_limit(monkeypatch):

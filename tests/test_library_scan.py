@@ -10,7 +10,7 @@ from sqlalchemy.orm import sessionmaker
 from backend.core import index_store
 from backend.core.database import Base
 from backend.modules.documents.models import Document
-from backend.modules.library.service import scan_library
+from backend.modules.library.service import build_library_response, scan_library
 
 
 @pytest.fixture
@@ -148,3 +148,30 @@ def test_duplicate_within_one_folder_is_reported(db, tmp_path):
     summary = scan_library([lib], db)
     assert summary.created == 0
     assert len(summary.duplicates) == 2
+
+
+def test_unavailable_folder_does_not_crash(db, tmp_path):
+    # Отвалившийся сетевой диск: скан и дерево живут, папка помечена.
+    ok = _make_library(tmp_path / "A", "Norma.pdf")
+    missing = tmp_path / "B"  # не существует
+
+    summary = scan_library([ok, missing], db)
+    assert summary.created == 1  # здоровая папка отсканирована
+
+    response = build_library_response([ok, missing], db)
+    names = [f.name for f in response.tree.folders]
+    assert any("nedostupná" in n for n in names)
+
+
+def test_same_physical_folder_twice_keeps_folder_id(db, tmp_path):
+    # Одна папка под двумя путями (симлинк) — НЕ перевыдаём метку пинг-понгом.
+    lib = _make_library(tmp_path / "A", "Norma.pdf")
+    link = tmp_path / "link"
+    link.symlink_to(lib)
+
+    scan_library([lib, link], db)
+    fid_before = index_store.read_meta(lib)["folder_id"]
+    # Повторные обращения (дерево строит метки заново) не меняют метку.
+    build_library_response([lib, link], db)
+    build_library_response([lib, link], db)
+    assert index_store.read_meta(lib)["folder_id"] == fid_before

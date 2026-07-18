@@ -30,6 +30,19 @@ def index_root(library_path: Path) -> Path:
     return library_path / INDEX_DIR_NAME
 
 
+def same_dir(a: Path, b: Path) -> bool:
+    """Один и тот же каталог на диске (симлинк / второй маунт)?
+
+    Одну физическую папку, добавленную под двумя путями, нельзя считать
+    двумя папками: скан регистрировал бы файлы дважды, кеш двоил бы чанки,
+    а метка folder_id перевыдавалась бы «пинг-понгом» на каждый запрос.
+    """
+    try:
+        return a.samefile(b)
+    except OSError:
+        return False
+
+
 def doc_dir(library_path: Path, slug: str) -> Path:
     """Папка артефактов одного документа."""
     return index_root(library_path) / slug
@@ -59,8 +72,12 @@ def ensure_meta(library_path: Path, embedding_model: str) -> dict:
         "folder_id": uuid.uuid4().hex,
         "embedding_model": embedding_model,
     }
+    if not library_path.is_dir():
+        # Папку библиотеки НЕ создаём (принцип №16): её отсутствие — это
+        # опечатка в пути или отвалившийся сетевой диск, маскировать нельзя.
+        raise FileNotFoundError(f"Папка библиотеки недоступна: {library_path}")
     root = index_root(library_path)
-    root.mkdir(parents=True, exist_ok=True)
+    root.mkdir(exist_ok=True)
     save_json_atomic(root / META_FILENAME, meta)
     return meta
 
