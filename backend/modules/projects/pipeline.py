@@ -20,8 +20,11 @@ from backend.core.database import SessionLocal
 from backend.core.errors import classify_pipeline_error
 from backend.core.paths import PROJECTS_DATA_DIR
 from backend.modules.projects.models import ProjectDocument
+from PIL import Image
+
 from indexing.embeddings_index import build_embeddings_index
 from pdf_processing.image_description import ask_vision
+from pdf_processing.ocr import ocr_image
 from pricing import model_cost
 
 
@@ -98,24 +101,28 @@ def build_sheet_chunk(
     page_number: int,
     meta: dict,
     layer_text: str,
+    ocr_text: str,
     parent_section: str,
 ) -> dict:
     """Чанк одного листа. Без chunk_id — проставляется финальным проходом (#19).
 
-    text = описание + текстовый слой; объект из росписки — в description,
-    название листа — в section_title (уйдёт в «шапку» при индексации).
+    text = vision-описание + текстовый слой + OCR; объект из росписки — в
+    description, название листа — в section_title (уйдёт в «шапку» при
+    индексации). OCR добирает текст, впечатанный в чертёж (метки, примечания,
+    ссылки на нормы), которого нет в текстовом слое.
     """
     popis = meta.get("popis", "")
     objekt = meta.get("objekt", "")
     description = f"{objekt}. {popis}".strip(". ") if objekt else popis
+    text_parts = [p for p in (description, layer_text, ocr_text) if p and p.strip()]
     return {
         "parent_section": parent_section,
         "section_number": meta.get("cislo", ""),
         "section_title": meta.get("nazev", ""),
         "pages": [page_number],
         "description": description,
-        "ocr_text": "",
-        "text": f"{description}\n\n{layer_text}".strip(),
+        "ocr_text": ocr_text,
+        "text": "\n\n".join(text_parts),
         "related_blocks": [],
     }
 
@@ -153,10 +160,13 @@ def process_sheet_document(
                 doc, i, pages_dir / f"page_{page_number:03d}.png"
             )
             layer_text = doc[i].get_textpage().get_text_range().strip()
+            ocr_text = ocr_image(Image.open(image_path))
             meta, cost = describe_sheet(image_path, vision_model)
             total_cost += cost
             chunks.append(
-                build_sheet_chunk(page_number, meta, layer_text, parent_section)
+                build_sheet_chunk(
+                    page_number, meta, layer_text, ocr_text, parent_section
+                )
             )
     finally:
         doc.close()
