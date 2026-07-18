@@ -1,9 +1,8 @@
 import { useEffect, useState } from 'react'
 import { Button } from '@/components/ui/button'
 
-// Архив проектов юзера: путь к папке, «Skenovat», документы по проектам
-// со статусами обработки. Пока только личный пул; общие проекты — потом
-// (второй колонкой на этой же странице).
+// Архив проектов юзера: список папок архива, «Skenovat», документы по
+// проектам со статусами обработки. Можно подключить несколько папок.
 
 type ArchiveDocument = {
   slug: string
@@ -17,7 +16,7 @@ type ArchiveDocument = {
 }
 
 type ArchiveResponse = {
-  path: string | null
+  paths: string[]
   projects: { name: string; documents: ArchiveDocument[] }[]
 }
 
@@ -85,8 +84,10 @@ function DocumentRow({ doc }: { doc: ArchiveDocument }) {
 }
 
 export default function ArchivePage() {
-  const [path, setPath] = useState<string | null>(null)
+  const [paths, setPaths] = useState<string[]>([])
   const [pathInput, setPathInput] = useState('')
+  const [editingPath, setEditingPath] = useState<string | null>(null)
+  const [editValue, setEditValue] = useState('')
   const [archive, setArchive] = useState<ArchiveResponse | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -98,10 +99,9 @@ export default function ArchivePage() {
   async function loadAll() {
     setError(null)
     try {
-      const pathRes = await fetch('/api/settings/projects')
-      const pathData: { path: string | null } = await pathRes.json()
-      setPath(pathData.path)
-      if (pathData.path) setPathInput(pathData.path)
+      const pathRes = await fetch('/api/settings/projects-libraries')
+      const pathData: { paths: string[] } = await pathRes.json()
+      setPaths(pathData.paths)
 
       const res = await fetch('/api/projects')
       if (res.ok) {
@@ -136,13 +136,13 @@ export default function ArchivePage() {
     return () => clearInterval(id)
   }, [hasActive])
 
-  async function savePath() {
+  async function addPath() {
     const value = pathInput.trim()
     if (!value) return
     setSaving(true)
     try {
-      const res = await fetch('/api/settings/projects', {
-        method: 'PUT',
+      const res = await fetch('/api/settings/projects-libraries', {
+        method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ path: value }),
       })
@@ -151,6 +151,53 @@ export default function ArchivePage() {
         alert(data.detail ?? `Chyba ${res.status}`)
         return
       }
+      setPathInput('')
+      await loadAll()
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  async function removePath(target: string) {
+    if (!confirm(`Odpojit složku archivu?\n${target}\n\nIndexy zůstanou.`)) return
+    const res = await fetch('/api/settings/projects-libraries', {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ path: target }),
+    })
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}))
+      alert(data.detail ?? `Chyba ${res.status}`)
+      return
+    }
+    await loadAll()
+  }
+
+  function startEdit(target: string) {
+    setEditingPath(target)
+    setEditValue(target)
+  }
+
+  async function savePathEdit() {
+    const value = editValue.trim()
+    if (!value || editingPath === null) return
+    if (value === editingPath) {
+      setEditingPath(null)
+      return
+    }
+    setSaving(true)
+    try {
+      const res = await fetch('/api/settings/projects-libraries', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ old_path: editingPath, new_path: value }),
+      })
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}))
+        alert(data.detail ?? `Chyba ${res.status}`)
+        return
+      }
+      setEditingPath(null)
       await loadAll()
     } finally {
       setSaving(false)
@@ -199,26 +246,83 @@ export default function ArchivePage() {
     <div className="flex flex-col gap-6">
       <div className="rounded-md border bg-card p-4 flex flex-col gap-2">
         <h2 className="text-sm font-semibold text-muted-foreground">
-          Složka archivu projektů
+          Složky archivu projektů
         </h2>
         <p className="text-xs text-muted-foreground">
-          Složka s dokončenými projekty: každý projekt = podsložka první úrovně
-          (TZ, statické výpočty, výkresy). Soubory se pouze čtou, nic se
-          nemění. Zpracování výkresů využívá vision model (viz „Knihovna“).
+          Složky s dokončenými projekty: každý projekt = podsložka první úrovně
+          (TZ, statické výpočty, výkresy). Můžete připojit více složek. Soubory
+          se pouze čtou. Zpracování výkresů využívá vision model (viz „Knihovna“).
         </p>
+        {paths.length > 0 && (
+          <ul className="flex flex-col gap-1">
+            {paths.map((p) => (
+              <li
+                key={p}
+                className="flex items-center gap-2 text-sm font-mono bg-muted/40 rounded px-2 py-1"
+              >
+                {editingPath === p ? (
+                  <>
+                    <input
+                      type="text"
+                      value={editValue}
+                      onChange={(e) => setEditValue(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') savePathEdit()
+                        if (e.key === 'Escape') setEditingPath(null)
+                      }}
+                      autoFocus
+                      className="flex-1 border rounded px-2 py-0.5 text-sm font-mono"
+                    />
+                    <button
+                      onClick={savePathEdit}
+                      disabled={saving || !editValue.trim()}
+                      className="text-muted-foreground hover:text-foreground shrink-0"
+                      title="Uložit"
+                    >
+                      ✓
+                    </button>
+                    <button
+                      onClick={() => setEditingPath(null)}
+                      className="text-muted-foreground hover:text-foreground shrink-0"
+                      title="Zrušit"
+                    >
+                      ✕
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <span className="flex-1 break-all">{p}</span>
+                    <button
+                      onClick={() => startEdit(p)}
+                      className="text-muted-foreground hover:text-foreground shrink-0"
+                      title="Upravit cestu"
+                    >
+                      ✎
+                    </button>
+                    <button
+                      onClick={() => removePath(p)}
+                      className="text-muted-foreground hover:text-destructive shrink-0"
+                      title="Odpojit složku"
+                    >
+                      🗑
+                    </button>
+                  </>
+                )}
+              </li>
+            ))}
+          </ul>
+        )}
         <div className="flex gap-2">
           <input
             type="text"
             value={pathInput}
             onChange={(e) => setPathInput(e.target.value)}
+            onKeyDown={(e) => e.key === 'Enter' && addPath()}
             placeholder="/Users/.../Projekty"
             className="flex-1 border rounded px-2 py-1 text-sm font-mono"
           />
-          <Button
-            onClick={savePath}
-            disabled={saving || !pathInput.trim() || pathInput === path}
-          >
-            {saving ? 'Ukládám…' : 'Uložit'}
+          <Button onClick={addPath} disabled={saving || !pathInput.trim()}>
+            {saving ? 'Přidávám…' : 'Přidat složku'}
           </Button>
         </div>
       </div>
@@ -229,7 +333,7 @@ export default function ArchivePage() {
         </div>
       )}
 
-      {path && (
+      {paths.length > 0 && (
         <div className="flex items-center gap-3">
           <Button onClick={scan} disabled={scanning} variant="outline">
             {scanning ? 'Skenuji…' : 'Skenovat'}
@@ -288,7 +392,7 @@ export default function ArchivePage() {
             })}
           </div>
         ) : (
-          path && (
+          paths.length > 0 && (
             <p className="text-sm text-muted-foreground">
               Zatím žádné dokumenty — klikněte na „Skenovat“.
             </p>
