@@ -295,15 +295,6 @@ export default function ArchivePage() {
           )
         )}
       </div>
-
-      <div className="flex flex-col gap-3">
-        <h2 className="text-sm font-semibold text-muted-foreground">
-          Projekty obecné
-        </h2>
-        <p className="text-sm text-muted-foreground rounded-md border bg-card p-3">
-          Sdílené projekty od vlastníka (jen pro čtení) — připravuje se.
-        </p>
-      </div>
     </div>
   )
 }

@@ -3,7 +3,6 @@ import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import ArchivePage from './ArchivePage'
 import LibraryPage from './LibraryPage'
-import SharedLibraryPage from './SharedLibraryPage'
 import LoginPage from './LoginPage'
 import SettingsPage from './SettingsPage'
 
@@ -123,7 +122,7 @@ function buildArchiveTree(archive: ArchiveApiResponse): LibraryFolder {
   return root
 }
 
-type View = 'search' | 'library' | 'shared' | 'archive' | 'settings'
+type View = 'search' | 'library' | 'archive' | 'settings'
 
 
 // Собирает slug'и всех индексированных (ready) PDF в папке, включая подпапки.
@@ -375,8 +374,6 @@ function App() {
   const [result, setResult] = useState<AskResponse | null>(null)
 
   const [library, setLibrary] = useState<LibraryResponse | null>(null)
-  // Общая база (read-only пул владельца). null — не задана или пуста.
-  const [sharedLibrary, setSharedLibrary] = useState<LibraryResponse | null>(null)
   // Архив проектов (дерево уже в форме LibraryFolder). null — не задан/пуст.
   const [archiveTree, setArchiveTree] = useState<LibraryFolder | null>(null)
   const [selectedSlugs, setSelectedSlugs] = useState<Set<string>>(new Set())
@@ -459,13 +456,7 @@ function App() {
       .then((res) => (res.ok ? res.json() : null))
       .then((data: LibraryResponse | null) => setLibrary(data))
       .catch(() => setLibrary(null))
-    // Общая база — отдельный пул для фильтра «Kde hledat». 400 (путь не задан)
-    // тихо игнорируем: секции просто не будет.
-    fetch('/api/library/shared')
-      .then((res) => (res.ok ? res.json() : null))
-      .then((data: LibraryResponse | null) => setSharedLibrary(data))
-      .catch(() => setSharedLibrary(null))
-    // Архив проектов — третий пул для фильтра.
+    // Архив проектов — второй пул для фильтра.
     fetch('/api/projects')
       .then((res) => (res.ok ? res.json() : null))
       .then((data: ArchiveApiResponse | null) =>
@@ -478,7 +469,6 @@ function App() {
     await fetch('/api/auth/logout', { method: 'POST' })
     setAuth({ phase: 'anonymous' })
     setLibrary(null)
-    setSharedLibrary(null)
     setArchiveTree(null)
     setResult(null)
   }
@@ -651,17 +641,6 @@ function App() {
             Knihovna
           </button>
           <button
-            onClick={() => setView('shared')}
-            className={
-              'px-4 py-2 text-sm border-b-2 -mb-px ' +
-              (view === 'shared'
-                ? 'border-foreground font-medium'
-                : 'border-transparent text-muted-foreground hover:text-foreground')
-            }
-          >
-            Knihovna obecná
-          </button>
-          <button
             onClick={() => setView('archive')}
             className={
               'px-4 py-2 text-sm border-b-2 -mb-px ' +
@@ -676,8 +655,6 @@ function App() {
 
         {view === 'library' && <LibraryPage />}
 
-        {view === 'shared' && <SharedLibraryPage />}
-
         {view === 'archive' && <ArchivePage />}
 
         {view === 'settings' && <SettingsPage />}
@@ -690,13 +667,10 @@ function App() {
           </h2>
           {(() => {
             const userReady = library ? collectReadySlugs(library.tree).length : 0
-            const sharedReady = sharedLibrary
-              ? collectReadySlugs(sharedLibrary.tree).length
-              : 0
             const archiveReady = archiveTree
               ? collectReadySlugs(archiveTree).length
               : 0
-            if (userReady + sharedReady + archiveReady === 0) {
+            if (userReady + archiveReady === 0) {
               return (
                 <p className="text-sm text-muted-foreground">
                   Žádné indexované dokumenty. Přejděte do „Knihovny“ a klikněte na „Skenovat“.
@@ -722,20 +696,6 @@ function App() {
                       </p>
                       <FilterTree
                         folder={library.tree}
-                        selectedSlugs={selectedSlugs}
-                        searchAll={searchAll}
-                        onToggleFile={toggleSlug}
-                        onToggleFolder={toggleFolder}
-                      />
-                    </div>
-                  )}
-                  {sharedReady > 0 && sharedLibrary && (
-                    <div className="flex-1">
-                      <p className="text-xs font-medium text-muted-foreground mb-1">
-                        Obecná knihovna
-                      </p>
-                      <FilterTree
-                        folder={sharedLibrary.tree}
                         selectedSlugs={selectedSlugs}
                         searchAll={searchAll}
                         onToggleFile={toggleSlug}
