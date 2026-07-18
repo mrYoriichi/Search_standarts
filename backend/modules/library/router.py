@@ -49,46 +49,6 @@ def open_library_file(
     return {"status": "ok"}
 
 
-@router.get("/library/shared", response_model=LibraryResponse)
-def get_shared_library(db: Session = Depends(get_session)) -> LibraryResponse:
-    """Дерево общей базы (read-only). Статус «ready» — по наличию индексов."""
-    shared = settings_service.get_shared_library_path(db)
-    if shared is None:
-        raise HTTPException(status_code=400, detail="Папка общей базы не задана")
-    pdfs_root = Path(shared) / "pdfs"
-    if not pdfs_root.exists():
-        raise HTTPException(
-            status_code=400, detail="В папке общей базы нет подпапки 'pdfs'"
-        )
-    return service.build_shared_library_response(
-        pdfs_root,
-        Path(shared) / "raw_data",
-        settings_service.get_shared_pinned_slugs(db),
-    )
-
-
-@router.post("/library/shared/{slug}/pin")
-def pin_shared_document(slug: str, db: Session = Depends(get_session)) -> dict:
-    """Переключает закрепление документа общей базы (пины в настройках)."""
-    return {"pinned": settings_service.toggle_shared_pin(db, slug)}
-
-
-@router.post("/library/shared/open")
-def open_shared_file(
-    body: OpenFileRequest,
-    db: Session = Depends(get_session),
-) -> dict:
-    """Открывает PDF из общей базы в системном просмотрщике."""
-    shared = settings_service.get_shared_library_path(db)
-    if shared is None:
-        raise HTTPException(status_code=400, detail="Папка общей базы не задана")
-    try:
-        service.open_file([Path(shared) / "pdfs"], body.path)
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-    return {"status": "ok"}
-
-
 @router.post("/library/scan", response_model=ScanSummary)
 def scan_library(
     db: Session = Depends(get_session),
@@ -112,8 +72,8 @@ def index_library(
 def get_pdf(slug: str, db: Session = Depends(get_session)) -> FileResponse:
     """Отдаёт PDF по slug — для просмотра в браузере. Ищет во всех пулах.
 
-    Папка юзера → общая база (`<shared>/pdfs`) → архив проектов — источник в
-    ответе может быть из любого пула. Браузер сам поддерживает `#page=N`.
+    Папки библиотеки → архив проектов — источник в ответе может быть из
+    любого пула. Браузер сам поддерживает `#page=N`.
     """
     library_paths = settings_service.get_library_paths(db)
     pdf_path = (
@@ -121,10 +81,6 @@ def get_pdf(slug: str, db: Session = Depends(get_session)) -> FileResponse:
         if library_paths
         else None
     )
-    if pdf_path is None:
-        shared = settings_service.get_shared_library_path(db)
-        if shared is not None:
-            pdf_path = service.find_pdf_by_slug(Path(shared) / "pdfs", slug)
     if pdf_path is None:
         # Архив проектов: точный путь знает БД (slug уникален по архиву).
         from backend.modules.projects.models import ProjectDocument

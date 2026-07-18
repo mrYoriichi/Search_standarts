@@ -15,12 +15,6 @@ LIBRARY_PATH_KEY = "library_path"  # легаси: одна папка (мигр
 # Список папок библиотеки (JSON). Пришёл на смену единственному library_path:
 # юзер может подключить несколько папок сразу (свои нормы + папка фирмы).
 LIBRARY_PATHS_KEY = "library_paths"
-# Папка общей базы норм от владельца (read-only): индексы + оригиналы PDF.
-# Отдельный пул, не сканируется. См. «Два пула документов» в PROJECT_STATE.
-SHARED_LIBRARY_PATH_KEY = "shared_library_path"
-# Закреплённые документы общей базы. У них нет строки в documents (пул read-only),
-# поэтому пины храним отдельным списком slug'ов (JSON) здесь.
-SHARED_PINNED_KEY = "shared_pinned_slugs"
 # Папка архива проектов юзера (личный пул). Структура: {проект}/.../файл.pdf,
 # проект = папка первого уровня. См. модуль projects.
 PROJECTS_PATH_KEY = "projects_library_path"
@@ -162,53 +156,6 @@ def update_library_path(db: Session, old_raw: str, new_raw: str) -> list[str]:
     _save_library_paths(db, result)
     library_cache.invalidate()
     return result
-
-
-def get_shared_library_path(db: Session) -> str | None:
-    """Возвращает путь к папке общей базы или None, если не задан."""
-    setting = db.scalar(select(Setting).where(Setting.key == SHARED_LIBRARY_PATH_KEY))
-    return setting.value if setting else None
-
-
-def set_shared_library_path(db: Session, raw_path: str) -> str:
-    """Сохраняет путь к папке общей базы.
-
-    Сбрасывает кеш библиотеки: в слитый пул поиска должны попасть индексы
-    из новой общей базы (см. library_cache).
-    """
-    path = _set_path(db, SHARED_LIBRARY_PATH_KEY, raw_path)
-    library_cache.invalidate()
-    return path
-
-
-def get_shared_pinned_slugs(db: Session) -> set[str]:
-    """Множество slug'ов закреплённых документов общей базы."""
-    setting = db.scalar(select(Setting).where(Setting.key == SHARED_PINNED_KEY))
-    if not setting or not setting.value:
-        return set()
-    try:
-        return set(json.loads(setting.value))
-    except (ValueError, TypeError):
-        return set()  # битое значение трактуем как «пинов нет»
-
-
-def toggle_shared_pin(db: Session, slug: str) -> bool:
-    """Переключает закрепление документа общей базы. Возвращает новое состояние."""
-    pinned = get_shared_pinned_slugs(db)
-    now_pinned = slug not in pinned
-    if now_pinned:
-        pinned.add(slug)
-    else:
-        pinned.discard(slug)
-
-    value = json.dumps(sorted(pinned))
-    setting = db.scalar(select(Setting).where(Setting.key == SHARED_PINNED_KEY))
-    if setting is None:
-        db.add(Setting(key=SHARED_PINNED_KEY, value=value))
-    else:
-        setting.value = value
-    db.commit()
-    return now_pinned
 
 
 def get_projects_path(db: Session) -> str | None:

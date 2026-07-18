@@ -99,30 +99,6 @@ def build_library_response(paths: list[Path], db: Session) -> LibraryResponse:
     return LibraryResponse(tree=root, orphans=orphans)
 
 
-def build_shared_library_response(
-    pdfs_root: Path, data_root: Path, pinned_slugs: set[str] | None = None
-) -> LibraryResponse:
-    """Дерево общей базы из её папки с PDF (`<shared>/pdfs`).
-
-    Статус «ready» — если для slug есть индексы в `<shared>/raw_data/{slug}`.
-    Общая база read-only, в БД её нет, поэтому статус берём с диска, а пины —
-    из переданного множества (хранится в настройках). Висячих нет."""
-    pinned = pinned_slugs or set()
-
-    def resolve(slug: str) -> tuple[str | None, bool, str | None, str | None]:
-        doc_dir = data_root / slug
-        ready = (doc_dir / "chunks.json").exists() and (
-            doc_dir / "embeddings.json"
-        ).exists()
-        return ("ready" if ready else None, slug in pinned, None, None)
-
-    tree = _walk(pdfs_root, resolve, make_document_id)
-    # Корень _walk назвался бы «pdfs» (имя подпапки). Подменяем на имя бандла
-    # (например «SharedLibrary») — так дерево читабельнее в UI.
-    tree.name = pdfs_root.parent.name
-    return LibraryResponse(tree=tree, orphans=[])
-
-
 def _collect_slugs(folder: LibraryFolder, out: set[str]) -> None:
     for file in folder.files:
         out.add(file.slug)

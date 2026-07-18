@@ -80,27 +80,6 @@ def remove_library_path(
     return LibraryPathsResponse(paths=paths)
 
 
-@router.get("/settings/shared-library", response_model=LibraryPathResponse)
-def get_shared_library_path(
-    db: Session = Depends(get_session),
-) -> LibraryPathResponse:
-    """Возвращает путь к папке общей базы. None — путь не задан."""
-    return LibraryPathResponse(path=service.get_shared_library_path(db))
-
-
-@router.put("/settings/shared-library", response_model=LibraryPathResponse)
-def set_shared_library_path(
-    body: LibraryPathRequest,
-    db: Session = Depends(get_session),
-) -> LibraryPathResponse:
-    """Сохраняет путь к папке общей базы. Валидирует, что папка существует."""
-    try:
-        saved = service.set_shared_library_path(db, body.path)
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-    return LibraryPathResponse(path=saved)
-
-
 @router.get("/settings/projects", response_model=LibraryPathResponse)
 def get_projects_path(db: Session = Depends(get_session)) -> LibraryPathResponse:
     """Возвращает путь к папке архива проектов. None — путь не задан."""

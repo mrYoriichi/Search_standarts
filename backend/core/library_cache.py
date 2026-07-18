@@ -36,26 +36,6 @@ _cache: tuple[list[dict], dict] | None = None
 _tokens_cache: dict[str, list[str]] | None = None
 
 
-def _shared_data_root() -> Path | None:
-    """Корень индексов общей базы (<shared>/raw_data) или None, если не задан.
-
-    Путь к общей базе живёт в настройках (БД). Импорт settings_service —
-    ленивый, чтобы не зациклить модули (settings импортирует этот модуль).
-    """
-    from backend.core.database import SessionLocal
-    from backend.modules.settings import service as settings_service
-
-    db = SessionLocal()
-    try:
-        shared_path = settings_service.get_shared_library_path(db)
-    finally:
-        db.close()
-    if not shared_path:
-        return None
-    root = Path(shared_path) / "raw_data"
-    return root if root.exists() else None
-
-
 def _library_index_roots() -> list[Path]:
     """Корни .search_index всех папок библиотеки (существующие).
 
@@ -80,8 +60,8 @@ def _library_index_roots() -> list[Path]:
 
 
 def _load_merged() -> tuple[list[dict], dict]:
-    """Сливает пулы в один (chunks, embeddings_index): нормы юзера,
-    общая база, архив проектов.
+    """Сливает пулы в один (chunks, embeddings_index): нормы юзера
+    (папки библиотеки) и архив проектов.
 
     Все пулы обязаны быть на одной модели эмбеддингов — векторы из разных
     моделей несравнимы. Пустой/отсутствующий пул тихо пропускаем; ошибка только
@@ -89,9 +69,6 @@ def _load_merged() -> tuple[list[dict], dict]:
     """
     roots = [DATA_ROOT]
     roots.extend(_library_index_roots())
-    shared = _shared_data_root()
-    if shared is not None:
-        roots.append(shared)
     if PROJECTS_DATA_DIR.exists():
         roots.append(PROJECTS_DATA_DIR)
 
