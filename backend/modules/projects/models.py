@@ -23,7 +23,7 @@ class ProjectDocument(Base):
     relative_path: Mapped[str] = mapped_column(String)  # путь внутри архива
     doc_type: Mapped[str] = mapped_column(
         String
-    )  # "text" (TZ, статика) | "sheet" (чертёжный лист)
+    )  # легаси: всегда "text" (развилка sheet/text снесена; NOT NULL в живых БД)
     page_count: Mapped[int] = mapped_column(Integer, default=0)
     status: Mapped[str] = mapped_column(
         String, default="pending"

@@ -1,8 +1,8 @@
-"""Сканирование папки архива проектов: обход, классификация PDF, slug'и.
+"""Сканирование папки архива проектов: обход PDF, slug'и.
 
-Правило классификации (согласовано, см. PROJECT_STATE):
-страница крупнее A3 → чертёжный лист ("sheet"), иначе текстовый
-документ ("text") — TZ, статический расчёт, seznam příloh и т.п.
+Классификации sheet/text больше нет (шаг 3 универсального пайплайна):
+все документы идут через общий по-страничный роутер, при скане только
+считаем страницы и отсеиваем битые PDF.
 """
 
 import shutil
@@ -23,10 +23,6 @@ from backend.modules.projects.schemas import (
 )
 from pdf_processing.parser import make_document_id
 
-# Длинная сторона A3 = 420 мм ≈ 1191 pt. Берём с запасом на поля и кривой
-# экспорт из CAD: всё, что длиннее ~1250 pt, — чертёжный формат (A2/A1/A0).
-_SHEET_LONG_SIDE_PT = 1250
-
 
 @dataclass
 class FoundDocument:
@@ -35,7 +31,6 @@ class FoundDocument:
     slug: str
     project: str
     relative_path: str
-    doc_type: str  # "text" | "sheet"
     page_count: int
 
 
@@ -49,19 +44,15 @@ class ArchiveScanResult:
     errors: list[str]  # файлы, которые не удалось открыть как PDF
 
 
-def classify_pdf(pdf_path: Path) -> tuple[str, int]:
-    """Определяет тип PDF по размеру первой страницы и считает страницы.
+def count_pages(pdf_path: Path) -> int:
+    """Число страниц PDF (для UI) + бесплатный отсев битых файлов.
 
-    Возвращает ("sheet" | "text", page_count). Кидает исключение,
-    если файл не открывается как PDF, — обрабатывает вызывающий.
+    Кидает исключение, если файл не открывается как PDF, —
+    обрабатывает вызывающий (уходит в errors скана).
     """
     doc = pdfium.PdfDocument(pdf_path)
     try:
-        page_count = len(doc)
-        width, height = doc[0].get_size()
-        long_side = max(width, height)
-        doc_type = "sheet" if long_side > _SHEET_LONG_SIDE_PT else "text"
-        return doc_type, page_count
+        return len(doc)
     finally:
         doc.close()
 
@@ -90,7 +81,7 @@ def resolve_project_root(paths: list[Path], relative_path: str) -> Path | None:
 
 
 def scan_archive(root: Path, seen_slugs: set[str] | None = None) -> ArchiveScanResult:
-    """Обходит папку архива и классифицирует все PDF.
+    """Обходит папку архива и собирает все PDF.
 
     Проект = папка первого уровня. PDF прямо в корне архива не индексируем
     (не к чему привязать), но сообщаем о них в skipped_root.
@@ -118,7 +109,7 @@ def scan_archive(root: Path, seen_slugs: set[str] | None = None) -> ArchiveScanR
             continue
 
         try:
-            doc_type, page_count = classify_pdf(pdf_path)
+            page_count = count_pages(pdf_path)
         except Exception as error:
             errors.append(f"{relative}: {error}")
             continue
@@ -129,7 +120,6 @@ def scan_archive(root: Path, seen_slugs: set[str] | None = None) -> ArchiveScanR
                 slug=slug,
                 project=project,
                 relative_path=str(relative),
-                doc_type=doc_type,
                 page_count=page_count,
             )
         )
@@ -146,7 +136,7 @@ def sync_archive(db: Session, roots: list[Path]) -> ArchiveScanSummary:
     """Сканирует все папки архива и синхронизирует таблицу project_documents.
 
     Новые файлы — вставляем со статусом "pending".
-    Существующие — обновляем путь/тип/страницы (файл мог переехать).
+    Существующие — обновляем путь/страницы (файл мог переехать).
     Пропавшие с диска — удаляем из БД вместе с индексами (наши артефакты
     в projects_data; файлы юзера не трогаем). Удалил проект из папки →
     «Skenovat» → проект ушёл и из поиска. Повторная обработка — заново
@@ -197,7 +187,9 @@ def sync_archive(db: Session, roots: list[Path]) -> ArchiveScanSummary:
                     slug=found.slug,
                     project=found.project,
                     relative_path=found.relative_path,
-                    doc_type=found.doc_type,
+                    # Колонка NOT NULL без default в живых БД (SQLite не умеет
+                    # снять NOT NULL) — пишем константу, развилки больше нет.
+                    doc_type="text",
                     page_count=found.page_count,
                     status="pending",
                 )
@@ -205,7 +197,6 @@ def sync_archive(db: Session, roots: list[Path]) -> ArchiveScanSummary:
             new_count += 1
         else:
             doc.relative_path = found.relative_path
-            doc.doc_type = found.doc_type
             doc.page_count = found.page_count
 
     removed = 0

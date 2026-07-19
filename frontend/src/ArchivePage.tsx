@@ -9,7 +9,6 @@ type ArchiveDocument = {
   slug: string
   project: string
   relative_path: string
-  doc_type: string
   page_count: number
   status: string
   error: string | null
@@ -96,7 +95,6 @@ function DocumentRow({
 }) {
   // Путь внутри проекта (без имени проекта) — короче и читабельнее.
   const insideProject = doc.relative_path.split('/').slice(1).join('/')
-  const icon = doc.doc_type === 'sheet' ? '📐' : '📄'
   return (
     <div>
       <div className="flex items-center gap-2 text-sm">
@@ -122,11 +120,11 @@ function DocumentRow({
             className="text-foreground hover:underline flex-1"
             title="Otevřít PDF v prohlížeči"
           >
-            {icon} {insideProject}
+            📄 {insideProject}
           </a>
         ) : (
           <span className="flex-1 text-muted-foreground">
-            {icon} {insideProject}
+            📄 {insideProject}
           </span>
         )}
         <span className="text-xs text-muted-foreground">{doc.page_count} s.</span>

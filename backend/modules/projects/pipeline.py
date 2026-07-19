@@ -22,7 +22,6 @@ from backend.core.paths import PROJECTS_DATA_DIR
 from backend.modules.projects.models import ProjectDocument
 from PIL import Image
 
-from indexing.embeddings_index import build_embeddings_index
 from jsonio import save_json_atomic
 from pdf_processing.image_description import ask_vision
 from pdf_processing.ocr import ocr_image
@@ -275,26 +274,13 @@ def run_project_pipeline(slug: str, pdf_path: str) -> None:
         vision_model = settings_service.get_vision_model(db)
         describe_images = settings_service.get_describe_images(db)
         try:
-            if doc.doc_type == "sheet":
-                chunks, _ = process_sheet_document(
-                    slug=slug,
-                    pdf_path=Path(pdf_path),
-                    project=doc.project,
-                    relative_path=doc.relative_path,
-                    vision_model=vision_model,
-                    describe_images=describe_images,
-                )
-                index, _ = build_embeddings_index(chunks)
-                index_path = PROJECTS_DATA_DIR / slug / "embeddings.json"
-                save_json_atomic(index_path, index)
-            else:
-                process_text_document(
-                    slug=slug,
-                    pdf_path=Path(pdf_path),
-                    project=doc.project,
-                    vision_model=vision_model,
-                    describe_images=describe_images,
-                )
+            process_text_document(
+                slug=slug,
+                pdf_path=Path(pdf_path),
+                project=doc.project,
+                vision_model=vision_model,
+                describe_images=describe_images,
+            )
         except Exception as exc:
             logger.exception("Пайплайн архива для %s упал", slug)
             doc.status = "error"

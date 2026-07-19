@@ -11,7 +11,6 @@ class ProjectDocumentOut(BaseModel):
     slug: str
     project: str
     relative_path: str
-    doc_type: str
     page_count: int
     status: str
     error: str | None = None
