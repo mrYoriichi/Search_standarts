@@ -179,6 +179,7 @@ async def block_cross_site_writes(request: Request, call_next):
             )
     return await call_next(request)
 
+
 # /api/health и /api/auth/* — без require_auth (нужно где-то логиниться и пинговать).
 # Остальные роутеры защищены: 401, если нет сессии или сессия в 'blocked'.
 app.include_router(health_router, prefix="/api", tags=["health"])
