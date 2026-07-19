@@ -1,6 +1,8 @@
 """Тесты lock-файла индексации папки."""
 
 import json
+import os
+import threading
 import time
 
 from backend.core import index_lock, index_store
@@ -76,10 +78,53 @@ def test_unreadable_lock_counts_as_busy(tmp_path):
     assert index_lock.acquire(tmp_path) is not None
 
 
-def test_broken_lock_json_is_free(tmp_path):
-    # Мусор в файле — такой лок можно перехватить (это не сетевой сбой).
+def test_concurrent_acquire_single_winner(tmp_path, monkeypatch):
+    # Гонка №3 из аудита: несколько «машин» одновременно жмут «Indexovat»
+    # на свободной папке — выиграть должна ровно одна. Раньше acquire был
+    # «прочитал → записал» без атомарности, и выигрывали все сразу.
+    monkeypatch.setattr(index_lock, "owner", lambda: threading.current_thread().name)
+
+    for round_no in range(20):
+        library = tmp_path / f"round{round_no}"
+        library.mkdir()
+        results: dict[str, str | None] = {}
+        barrier = threading.Barrier(8)
+
+        def worker(lib=library, res=results, bar=barrier):
+            bar.wait()  # все 8 стартуют одновременно
+            res[threading.current_thread().name] = index_lock.acquire(lib)
+
+        threads = [
+            threading.Thread(target=worker, name=f"r{round_no}-pc{i}") for i in range(8)
+        ]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+
+        winners = [name for name, res in results.items() if res is None]
+        assert len(winners) == 1, f"раунд {round_no}: выиграли {winners}"
+
+
+def test_fresh_broken_lock_counts_as_busy(tmp_path):
+    # Свежий битый JSON может быть чужим локом, который прямо сейчас
+    # дописывается (создание файла и запись JSON — два разных вызова).
+    # Перехватить его — значит вернуть гонку из аудита (№3).
     root = index_store.index_root(tmp_path)
     root.mkdir(parents=True)
     (root / index_lock.LOCK_FILENAME).write_text("{oops", encoding="utf-8")
+    assert index_lock.holder(tmp_path) is not None
+    assert index_lock.acquire(tmp_path) is not None
+
+
+def test_stale_broken_lock_is_free(tmp_path):
+    # Протухший мусор (упали посреди записи и не вернулись) — перехватываем,
+    # как обычный протухший лок: возраст берём из mtime файла.
+    root = index_store.index_root(tmp_path)
+    root.mkdir(parents=True)
+    lock_file = root / index_lock.LOCK_FILENAME
+    lock_file.write_text("{oops", encoding="utf-8")
+    old = time.time() - index_lock.TTL_SECONDS - 1
+    os.utime(lock_file, (old, old))
     assert index_lock.holder(tmp_path) is None
     assert index_lock.acquire(tmp_path) is None
