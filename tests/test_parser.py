@@ -1,6 +1,6 @@
 """Тесты make_document_id — идентичность документа (решение №15 в PROJECT_STATE)."""
 
-from pdf_processing.parser import make_document_id
+from pdf_processing.parser import make_block, make_document_id
 
 
 def test_diacritics_and_spaces():
@@ -25,3 +25,21 @@ def test_cyrillic_becomes_empty():
     # и затрут друг друга. Чинить отдельным шагом (транслитерация) -
     # тогда этот тест сознательно поменяем.
     assert make_document_id("Чертёж моста.pdf") == ""
+
+
+class _FakeTableItem:
+    """Минимальный двойник Docling TableItem: только то, что читает make_block."""
+
+    label = "table"
+    prov: list = []
+
+    def export_to_markdown(self, doc=None) -> str:
+        return "| Zatížení | Hodnota |\n| vítr | 1,5 kN/m2 |\n"
+
+
+def test_make_block_saves_table_markdown():
+    # ШАГ 3 (аудит 2026-07-19): точные значения ячеек должны попадать в
+    # document.json — vision-пересказ чисел не сохраняет.
+    block = make_block(_FakeTableItem(), 1, 1, doc=None)
+    assert block["type"] == "table"
+    assert "1,5 kN/m2" in block["text"]

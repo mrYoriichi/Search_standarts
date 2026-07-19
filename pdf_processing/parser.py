@@ -119,18 +119,33 @@ def extract_bbox(item) -> list | None:
     return [round(bbox.l), round(bbox.t), round(bbox.r), round(bbox.b)]
 
 
-def make_block(item, block_idx_on_page: int, page_num: int) -> dict:
+def _table_markdown(item, doc) -> str | None:
+    """Точные значения ячеек таблицы markdown-текстом (Docling).
+
+    Vision-описание таблицы — пересказ БЕЗ точных чисел; чтобы по значениям
+    можно было искать, нужен сам текст ячеек. Ошибка сериализации не должна
+    ронять разбор — таблица тогда остаётся, как раньше, без текста.
+    """
+    try:
+        markdown = item.export_to_markdown(doc)
+    except Exception:
+        return None
+    return markdown.strip() or None
+
+
+def make_block(item, block_idx_on_page: int, page_num: int, doc=None) -> dict:
     """
     Превращает один элемент Docling в наш словарь-блок.
     Для картинок возвращает расширенную структуру с полями
     под будущие шаги (caption, image_path, description).
+    doc — DoclingDocument: нужен таблицам для сериализации ячеек в markdown.
     """
     block_type = map_label(item.label)
     block_id = f"p{page_num}_b{block_idx_on_page:02d}"
     bbox = extract_bbox(item)
 
     if block_type in VISUAL_BLOCK_TYPES:
-        return {
+        block = {
             "block_id": block_id,
             "type": block_type,
             "bbox": bbox,
@@ -139,6 +154,9 @@ def make_block(item, block_idx_on_page: int, page_num: int) -> dict:
             "next_page": None,
             "description": None,
         }
+        if block_type == "table":
+            block["text"] = _table_markdown(item, doc)
+        return block
 
     # Обычный текстовый блок
     block = {
@@ -217,7 +235,7 @@ def build_document_dict(doc, pdf_filename: str) -> dict:
         if page_num not in pages_dict:
             pages_dict[page_num] = []
         block_idx = len(pages_dict[page_num]) + 1
-        pages_dict[page_num].append(make_block(item, block_idx, page_num))
+        pages_dict[page_num].append(make_block(item, block_idx, page_num, doc))
 
     # Шаг 2: превращаем словарь в отсортированный список страниц.
     # Для каждой страницы заодно строим page_text — сцепленный текст.

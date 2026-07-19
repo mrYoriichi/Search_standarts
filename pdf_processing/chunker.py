@@ -51,6 +51,12 @@ def is_block_useful(block: dict) -> bool:
     if block_type in ("figure", "table"):
         description = block.get("description")
         if not description:
+            # Таблица без vision-описания, но с текстом ячеек (markdown из
+            # Docling) — полезна: точные значения ищутся по тексту. Так
+            # таблицы не выпадают из поиска в режиме «Без LLM».
+            if block_type == "table":
+                text = block.get("text")
+                return bool(text and text.strip())
             return False
         low = description.lower()
         if any(marker in low for marker in NON_TECHNICAL_SUBSTRINGS):
@@ -75,7 +81,17 @@ def build_chunk_text(blocks: list[dict]) -> str:
         if block_type == "figure":
             pieces.append(f"[SCHÉMA: {block['description']}]")
         elif block_type == "table":
-            pieces.append(f"[TABULKA: {block['description']}]")
+            # Пересказ vision (тема таблицы) + сам текст ячеек (точные
+            # значения) — что из этого есть. Старые индексы без text и
+            # режим «Без LLM» без description работают одинаково честно.
+            description = block.get("description")
+            text = (block.get("text") or "").strip()
+            if description and text:
+                pieces.append(f"[TABULKA: {description}]\n{text}")
+            elif description:
+                pieces.append(f"[TABULKA: {description}]")
+            else:
+                pieces.append(f"[TABULKA]\n{text}")
         else:
             pieces.append(block["text"].strip())
     return "\n\n".join(pieces)

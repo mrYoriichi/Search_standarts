@@ -120,6 +120,55 @@ def test_figure_and_table_markers():
     assert "[TABULKA: součinitele]" in chunks[0]["text"]
 
 
+def test_table_text_survives_without_description():
+    # Режим «Без LLM»: у таблицы нет vision-описания, но есть текст ячеек
+    # (markdown из Docling) — таблица НЕ должна выпадать из поиска.
+    doc = _doc(
+        [
+            {
+                "page_number": 1,
+                "blocks": [
+                    _heading("p1_b01", "3 Zatížení", 1, "3"),
+                    {
+                        "block_id": "p1_b02",
+                        "type": "table",
+                        "description": None,
+                        "text": "| Zatížení | Hodnota |\n| vítr | 1,5 kN/m2 |",
+                    },
+                ],
+            }
+        ]
+    )
+    chunks = build_chunks(doc)
+    assert len(chunks) == 1
+    assert "1,5 kN/m2" in chunks[0]["text"]
+    assert "[TABULKA]" in chunks[0]["text"]
+
+
+def test_table_description_and_text_combined():
+    # Режим «Стандарт»: пересказ vision + точные значения ячеек — оба в чанке
+    # (vision описывает тему, но точные числа знает только сам текст таблицы).
+    doc = _doc(
+        [
+            {
+                "page_number": 1,
+                "blocks": [
+                    _heading("p1_b01", "4 Součinitele", 1, "4"),
+                    {
+                        "block_id": "p1_b02",
+                        "type": "table",
+                        "description": "součinitele zatížení",
+                        "text": "| γ | 1,35 |",
+                    },
+                ],
+            }
+        ]
+    )
+    chunks = build_chunks(doc)
+    assert "[TABULKA: součinitele zatížení]" in chunks[0]["text"]
+    assert "1,35" in chunks[0]["text"]
+
+
 def test_fallback_page_per_chunk_when_no_headings():
     # Документ без заголовков ур.1/2 (seznam příloh) не должен потеряться:
     # каждая страница с контентом становится чанком, пустая — пропускается.
