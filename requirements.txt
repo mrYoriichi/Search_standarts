@@ -6,6 +6,9 @@
 
 # Пайплайн обработки PDF
 docling==2.93.0          # парсинг PDF в структурированный JSON
+onnxruntime==1.27.0      # движок RapidOCR (OCR чертёжных страниц); rapidocr
+                         # приходит с docling, но БЕЗ движка — без этой строки
+                         # чистая установка падает на первом чертеже
 
 # LLM и токены
 openai==2.37.0           # OpenAI API (vision + embeddings + generate_answer)
