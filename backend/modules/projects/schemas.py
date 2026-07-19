@@ -44,3 +44,4 @@ class ArchiveScanSummary(BaseModel):
     duplicates: list[str]  # файлы-тёзки (slug занят) — не индексируются
     skipped_root: list[str]  # PDF в корне архива — вне проектов
     errors: list[str]  # файлы, не открывшиеся как PDF
+    unavailable: list[str]  # недоступные папки (сетевой диск) — чистка пропущена

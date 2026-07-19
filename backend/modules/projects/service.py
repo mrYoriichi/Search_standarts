@@ -151,6 +151,8 @@ def sync_archive(db: Session, roots: list[Path]) -> ArchiveScanSummary:
     в projects_data; файлы юзера не трогаем). Удалил проект из папки →
     «Skenovat» → проект ушёл и из поиска. Повторная обработка — заново
     за деньги, поэтому удаление папки = осознанное действие юзера.
+    Недоступная папка (сетевой диск отвалился) — НЕ «пропавшие»: она уходит
+    в unavailable, и чистка в этот скан пропускается целиком.
 
     slug (`{проект}__{файл}`) уникален по ВСЕМ папкам архива: тёзки между
     папками — коллизия, уходят в duplicates.
@@ -163,9 +165,20 @@ def sync_archive(db: Session, roots: list[Path]) -> ArchiveScanSummary:
     duplicates: list[str] = []
     skipped_root: list[str] = []
     errors: list[str] = []
+    unavailable: list[str] = []
     seen_slugs: set[str] = set()
     for root in roots:
-        result = scan_archive(root, seen_slugs)
+        # Недоступная папка (отвалился сетевой диск) неотличима от пустой:
+        # rglob по несуществующему пути молча даёт пустой список — и чистка
+        # ниже снесла бы записи и индексы живых документов.
+        if not root.is_dir():
+            unavailable.append(str(root))
+            continue
+        try:
+            result = scan_archive(root, seen_slugs)
+        except OSError:
+            unavailable.append(str(root))
+            continue
         documents.extend(result.documents)
         duplicates.extend(result.duplicates)
         skipped_root.extend(result.skipped_root)
@@ -196,14 +209,18 @@ def sync_archive(db: Session, roots: list[Path]) -> ArchiveScanSummary:
             doc.page_count = found.page_count
 
     removed = 0
-    for slug, doc in existing.items():
-        if slug in found_slugs:
-            continue
-        if doc.status == "processing":
-            continue  # обрабатывается прямо сейчас — не выдёргиваем из-под ног
-        shutil.rmtree(PROJECTS_DATA_DIR / slug, ignore_errors=True)
-        db.delete(doc)
-        removed += 1
+    # Документы архива не несут метку папки (slug = {проект}__{файл}),
+    # поэтому при ЛЮБОЙ недоступной папке чистку пропускаем целиком — не
+    # понять, чьи «пропавшие». Вернётся диск — следующий скан дочистит.
+    if not unavailable:
+        for slug, doc in existing.items():
+            if slug in found_slugs:
+                continue
+            if doc.status == "processing":
+                continue  # обрабатывается прямо сейчас — не выдёргиваем из-под ног
+            shutil.rmtree(PROJECTS_DATA_DIR / slug, ignore_errors=True)
+            db.delete(doc)
+            removed += 1
 
     db.commit()
     if removed:
@@ -216,6 +233,7 @@ def sync_archive(db: Session, roots: list[Path]) -> ArchiveScanSummary:
         duplicates=duplicates,
         skipped_root=skipped_root,
         errors=errors,
+        unavailable=unavailable,
     )
 
 

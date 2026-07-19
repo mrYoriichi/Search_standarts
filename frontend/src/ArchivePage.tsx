@@ -29,6 +29,7 @@ type ScanSummary = {
   duplicates: string[]
   skipped_root: string[]
   errors: string[]
+  unavailable: string[]
 }
 
 // Поллинг статусов, пока что-то обрабатывается (pipeline идёт в фоне).
@@ -479,6 +480,12 @@ export default function ArchivePage() {
                     {summary.duplicates.length > 0 &&
                       `, duplicit ${summary.duplicates.length}`}
                     {summary.errors.length > 0 && `, chyb ${summary.errors.length}`}
+                  </p>
+                )}
+                {summary && summary.unavailable.length > 0 && (
+                  <p className="text-xs text-red-600 dark:text-red-400">
+                    Nedostupné složky (úklid přeskočen):{' '}
+                    {summary.unavailable.join(', ')}
                   </p>
                 )}
                 {archive.projects.length > 0 ? (
