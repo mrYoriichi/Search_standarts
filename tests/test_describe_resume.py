@@ -118,6 +118,38 @@ def test_describe_drawings_skips_already_paid(tmp_path, monkeypatch):
     assert saves  # прогресс сохранялся после каждого листа
 
 
+def test_describe_drawings_reports_progress(tmp_path, monkeypatch):
+    # UX архива (ШАГ 3): у чисто чертёжного PDF describe-этап раньше висел
+    # на статичном «popis obrázků…» — нужен прогресс по листам, как давала
+    # sheet-ветка («list N/M»), которую заменяет общий пайплайн.
+    pdf_path = tmp_path / "vykres.pdf"
+    pdf = pdfium.PdfDocument.new()
+    pdf.new_page(2000, 1000)
+    pdf.new_page(2000, 1000)
+    pdf.save(pdf_path)
+
+    document = {
+        "pages": [
+            {"page_number": 1, "page_type": "drawing", "blocks": []},
+            {"page_number": 2, "page_type": "drawing", "blocks": []},
+        ]
+    }
+    monkeypatch.setattr(
+        describe, "describe_drawing", lambda png, model: ("popis", 1, 1)
+    )
+    monkeypatch.setattr(describe, "_is_blank", lambda img: False)
+
+    progress_calls: list[tuple[int, int]] = []
+    describe.describe_drawings(
+        document,
+        str(pdf_path),
+        "gpt-test",
+        descriptions={},
+        on_progress=lambda done, total: progress_calls.append((done, total)),
+    )
+    assert progress_calls == [(1, 2), (2, 2)]
+
+
 def test_blank_drawing_page_not_sent_to_vision(tmp_path, monkeypatch):
     # Пустой оборот обложки раньше уходил в vision (и из-за retry — дважды).
     pdf_path = tmp_path / "prazdny.pdf"

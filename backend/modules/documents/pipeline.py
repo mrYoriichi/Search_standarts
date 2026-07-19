@@ -102,6 +102,9 @@ def run_pipeline(
                     on_progress=lambda done, total: progress.set_progress(
                         slug, f"popis obrázků: strana {done}/{total}"
                     ),
+                    on_drawing_progress=lambda done, total: progress.set_progress(
+                        slug, f"popis výkresů: strana {done}/{total}"
+                    ),
                 )
             progress.set_progress(slug, "řezání na části…")
             chunk_step.process(slug, doc_dir=doc_dir)

@@ -116,6 +116,7 @@ def describe_drawings(
     vision_model: str,
     descriptions: dict[str, str],
     on_page_done: Callable[[], None] | None = None,
+    on_progress: Callable[[int, int], None] | None = None,
 ) -> tuple[int, int]:
     """Vision-описание чертёжных страниц документа (дополняет descriptions).
 
@@ -127,6 +128,8 @@ def describe_drawings(
     описанные прошлым запуском, пропускаем — за них заплачено. Пустой ответ
     тоже записываем ("" = «страница обработана», chunker пустые игнорирует).
     on_page_done зовётся после каждой страницы — вызывающий сохраняет прогресс.
+    on_progress(done, total) зовётся перед каждой страницей — для UI (чисто
+    чертёжный PDF иначе висит без движения весь vision-этап).
     Возвращает (prompt_tokens, completion_tokens) этого запуска.
     """
     drawing_pages = [
@@ -141,7 +144,9 @@ def describe_drawings(
     try:
         with tempfile.TemporaryDirectory() as tmp:
             tmp_dir = Path(tmp)
-            for page_number in todo:
+            for done, page_number in enumerate(todo, start=1):
+                if on_progress is not None:
+                    on_progress(done, len(todo))
                 page = doc[page_number - 1]
                 width, height = page.get_size()
                 scale = RENDER_MAX_SIDE_PX / max(width, height)
@@ -174,6 +179,7 @@ def process(
     pages_dir: Path | None = None,
     pdf_path: str | None = None,
     describe_images: bool = True,
+    on_drawing_progress: Callable[[int, int], None] | None = None,
 ) -> None:
     """
     Описывает схемы и метаданные документа, результат пишет в descriptions.json.
@@ -297,6 +303,7 @@ def process(
             vision_model,
             descriptions=output["drawing_descriptions"],
             on_page_done=lambda: save_descriptions(output, descriptions_path),
+            on_progress=on_drawing_progress,
         )
         print(f"  Описано чертежей: {len(output['drawing_descriptions'])}")
     drawing_descriptions = output["drawing_descriptions"]
