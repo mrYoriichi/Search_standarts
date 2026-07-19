@@ -81,8 +81,15 @@ def run_pipeline(
             with tempfile.TemporaryDirectory(prefix=f"ss_pages_{slug}_") as tmp:
                 pages_dir = Path(tmp)
                 progress.set_progress(slug, "čtení PDF…")
+                # document_id=slug: в артефакты должен попасть scoped-slug
+                # ({folder_id}__{файл}) из БД, а не id из имени файла — иначе
+                # фильтр «Kde hledat» не совпадёт ни с одним чанком.
                 parser_step.process(
-                    slug, pdf_path=pdf_path, doc_dir=doc_dir, pages_dir=pages_dir
+                    slug,
+                    pdf_path=pdf_path,
+                    doc_dir=doc_dir,
+                    document_id=slug,
+                    pages_dir=pages_dir,
                 )
                 progress.set_progress(slug, "popis obrázků…")
                 describe_step.process(
