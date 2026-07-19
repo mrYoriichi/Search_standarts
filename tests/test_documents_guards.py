@@ -6,12 +6,15 @@
 """
 
 import io
+import json
+import time
 
 import pytest
 from fastapi import UploadFile
 from sqlalchemy import create_engine, select
 from sqlalchemy.orm import sessionmaker
 
+from backend.core import index_lock, index_store
 from backend.core.database import Base
 from backend.modules.documents import service
 from backend.modules.documents.models import Document
@@ -58,6 +61,68 @@ def test_relink_processing_refused(db):
     _add_doc(db, "stare", "processing")
     with pytest.raises(service.DocumentBusyError):
         service.relink_document(db, "stare", "nove")
+
+
+def _make_locked_library(tmp_path, filename_slug: str, lock_age: float = 0.0):
+    """Папка библиотеки с meta, артефактами документа и ЧУЖИМ локом.
+
+    Возвращает (папка, scoped-slug документа). lock_age — возраст лока в
+    секундах (0 = свежий, индексация другой машины идёт прямо сейчас).
+    """
+    library = tmp_path / "lib"
+    library.mkdir()
+    index_store.ensure_meta(library, "test-model")
+    fid = index_store.read_meta(library)["folder_id"]
+    slug = index_store.scoped_slug(fid, filename_slug)
+    artifacts = index_store.doc_dir(library, slug)
+    artifacts.mkdir(parents=True)
+    (artifacts / "chunks.json").write_text("[]", encoding="utf-8")
+    lock_path = index_store.index_root(library) / index_lock.LOCK_FILENAME
+    lock_path.write_text(
+        json.dumps({"owner": "PC-KOLEGA", "ts": time.time() - lock_age}),
+        encoding="utf-8",
+    )
+    return library, slug
+
+
+def test_delete_refused_when_foreign_lock(db, tmp_path):
+    # №4 из аудита: чужая машина индексирует папку — rmtree у неё из-под ног
+    # уронил бы её пайплайн (оплаченный vision пропал бы).
+    library, slug = _make_locked_library(tmp_path, "norma")
+    _add_doc(db, slug, "ready")
+
+    with pytest.raises(service.DocumentBusyError):
+        service.delete_document(db, slug, paths=[library])
+
+    assert db.scalar(select(Document).where(Document.slug == slug)) is not None
+    assert index_store.doc_dir(library, slug).exists()
+
+
+def test_relink_refused_when_foreign_lock(db, tmp_path):
+    library, old_slug = _make_locked_library(tmp_path, "stare")
+    _add_doc(db, old_slug, "ready")
+    fid = index_store.folder_id_of(old_slug)
+    new_slug = index_store.scoped_slug(fid, "nove")
+
+    with pytest.raises(service.DocumentBusyError):
+        service.relink_document(db, old_slug, new_slug, paths=[library])
+
+    # Ничего не переименовано, slug в БД прежний.
+    assert index_store.doc_dir(library, old_slug).exists()
+    assert db.scalar(select(Document).where(Document.slug == old_slug)) is not None
+
+
+def test_delete_works_when_lock_stale(db, tmp_path):
+    # Протухший лок (машина упала) — не повод блокировать удаление.
+    library, slug = _make_locked_library(
+        tmp_path, "norma", lock_age=index_lock.TTL_SECONDS + 1
+    )
+    _add_doc(db, slug, "ready")
+
+    service.delete_document(db, slug, paths=[library])
+
+    assert db.scalar(select(Document).where(Document.slug == slug)) is None
+    assert not index_store.doc_dir(library, slug).exists()
 
 
 class _FakeExecutor:

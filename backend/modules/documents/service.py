@@ -54,6 +54,21 @@ def _doc_folder(paths: list[Path], slug: str) -> Path | None:
     return index_store.resolve_folder(paths, slug)
 
 
+def _ensure_folder_not_locked(library_path: Path | None) -> None:
+    """Кидает DocumentBusyError, если папку сейчас индексирует ДРУГАЯ машина.
+
+    delete/relink меняют общий .search_index — под чужим пайплайном rmtree/
+    rename уронили бы его запись (оплаченный vision пропал бы). Лок здесь
+    только проверяем, НЕ берём: acquire+done сбили бы счётчик документов,
+    которые прямо сейчас индексирует наша собственная машина.
+    """
+    if library_path is None:
+        return  # легаси-пул data/raw_data — локальный, координировать нечего
+    busy = index_lock.holder(library_path)
+    if busy is not None:
+        raise DocumentBusyError(f"Složku právě indexuje jiný počítač: {busy}")
+
+
 def list_documents(db: Session) -> list[Document]:
     """Все документы из библиотеки, упорядоченные по дате создания."""
     stmt = select(Document).order_by(Document.created_at)
@@ -137,6 +152,7 @@ def delete_document(db: Session, slug: str, paths: list[Path] | None = None) -> 
     _ensure_not_processing(doc)
 
     library_path = _doc_folder(paths or [], slug)
+    _ensure_folder_not_locked(library_path)
     for artifacts_dir in _artifact_dirs(slug, library_path):
         if artifacts_dir.exists():
             shutil.rmtree(artifacts_dir)
@@ -186,6 +202,7 @@ def relink_document(
 
     # Индекс переносим внутри того пула, где он реально лежит.
     library_path = _doc_folder(paths or [], old_slug)
+    _ensure_folder_not_locked(library_path)
     old_dir = next(
         (d for d in _artifact_dirs(old_slug, library_path) if d.exists()), None
     )
