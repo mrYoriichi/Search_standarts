@@ -15,9 +15,12 @@
 import asyncio
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import asynccontextmanager
+from urllib.parse import urlparse
 
 from dotenv import load_dotenv
-from fastapi import Depends, FastAPI
+from fastapi import Depends, FastAPI, Request
+from fastapi.middleware.trustedhost import TrustedHostMiddleware
+from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy import select
 
@@ -153,6 +156,28 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="Search_standarts API", lifespan=lifespan)
+
+# Защита от DNS rebinding: сервер слушает только 127.0.0.1, но вредоносная
+# страница может переключить DNS своего домена на 127.0.0.1 и слать запросы
+# «изнутри» браузера. У таких запросов Host — чужой домен, отсекаем их.
+app.add_middleware(TrustedHostMiddleware, allowed_hosts=["localhost", "127.0.0.1"])
+
+
+@app.middleware("http")
+async def block_cross_site_writes(request: Request, call_next):
+    """Защита от CSRF: чужой сайт не должен запускать наши POST/PUT/DELETE.
+
+    Браузер ставит заголовок Origin во все кросс-сайтовые запросы, и страница
+    не может его подделать. Запросы без Origin (curl, наш же фронтенд через
+    GET) пропускаем. Порт не проверяем: Vite в dev ходит с localhost:5173.
+    """
+    if request.method in ("POST", "PUT", "DELETE", "PATCH"):
+        origin = request.headers.get("origin")
+        if origin and urlparse(origin).hostname not in ("localhost", "127.0.0.1"):
+            return JSONResponse(
+                status_code=403, content={"detail": "Cross-site request blocked"}
+            )
+    return await call_next(request)
 
 # /api/health и /api/auth/* — без require_auth (нужно где-то логиниться и пинговать).
 # Остальные роутеры защищены: 401, если нет сессии или сессия в 'blocked'.
