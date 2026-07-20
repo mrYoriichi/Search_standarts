@@ -196,6 +196,14 @@ def build_chunks(document: dict) -> list[dict]:
     doc_title = document.get("document_title", "")
     doc_summary = document.get("document_summary", "")
 
+    # Есть ли в документе нумерованные разделы вообще: если нет — весь текст
+    # соберёт фоллбек «страница = чанк» ниже, чанк-преамбула не нужен.
+    has_sections = any(
+        block["type"] == "heading" and block.get("level") in (1, 2)
+        for page in document["pages"]
+        for block in page["blocks"]
+    )
+
     chunks = []
     current = None
     parent_section = ""
@@ -258,10 +266,14 @@ def build_chunks(document: dict) -> list[dict]:
 
                 # Уровень 3 (или без уровня) — содержимое, идёт в чанк.
 
-            if current is None:
-                continue
             if not is_block_useful(block):
                 continue
+            if current is None:
+                if not has_sections:
+                    continue
+                # Преамбула: титул и předmluva до первого нумерованного
+                # заголовка — раньше молча выпадали из индекса (№8 аудита).
+                current = start_chunk("", "", "")
 
             current["blocks"].append(block)
             current["pages"].add(page_num)

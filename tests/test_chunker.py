@@ -185,6 +185,38 @@ def test_fallback_page_per_chunk_when_no_headings():
     assert chunks[1]["pages"] == [3]
 
 
+def test_preamble_before_first_numbered_heading_is_kept():
+    # №8 из аудита: титул и předmluva до первого нумерованного заголовка
+    # молча выпадали из индекса, если дальше нумерованные разделы есть.
+    doc = _doc(
+        [
+            {
+                "page_number": 1,
+                "blocks": [
+                    _para("p1_b01", "ČSN EN 1992-2. Navrhování betonových mostů."),
+                    _heading("p1_b02", "Předmluva", None),
+                    _para("p1_b03", "Tato norma nahrazuje vydání z roku 2007."),
+                ],
+            },
+            {
+                "page_number": 2,
+                "blocks": [
+                    _heading("p2_b01", "1 Předmět normy", 1, "1"),
+                    _para("p2_b02", "Norma platí pro navrhování mostů."),
+                ],
+            },
+        ]
+    )
+    chunks = build_chunks(doc)
+    all_text = "\n".join(c["text"] for c in chunks)
+    assert "nahrazuje vydání" in all_text  # предисловие не потеряно
+    assert "betonových mostů" in all_text  # титульный текст не потерян
+    # Преамбула — отдельный первый чанк без номера раздела.
+    preamble = chunks[0]
+    assert preamble["section_number"] == ""
+    assert preamble["pages"] == [1]
+
+
 def test_giant_section_split_by_paragraphs():
     # Раздел без подзаголовков ур.3 длиннее MAX_CHUNK_CHARS (2500)
     # режется по границам абзацев, а не остаётся одним гигантом.
