@@ -46,6 +46,29 @@ async function togglePin(slug: string): Promise<void> {
   }
 }
 
+async function reindexDocument(slug: string, name: string): Promise<boolean> {
+  // Полная переобработка: старые артефакты удаляются, pipeline запускается
+  // заново. Vision оплачивается повторно — поэтому подтверждение.
+  const ok = confirm(
+    `Přeindexovat „${name}“?\n\n` +
+      `Staré úryvky a embeddingy budou smazány a dokument se zpracuje znovu. ` +
+      `Popisy stránek (vision) se platí znovu.`,
+  )
+  if (!ok) return false
+  try {
+    const res = await fetch(`/api/projects/${slug}/reindex`, { method: 'POST' })
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}))
+      alert(data.detail ?? `Chyba ${res.status}`)
+      return false
+    }
+    return true
+  } catch {
+    alert('Chyba sítě')
+    return false
+  }
+}
+
 // Все закреплённые документы архива (плоско, для секции «Připnuté»).
 function collectPinned(archive: ArchiveResponse): ArchiveDocument[] {
   const pinned: ArchiveDocument[] = []
@@ -129,6 +152,17 @@ function DocumentRow({
         )}
         <span className="text-xs text-muted-foreground">{doc.page_count} s.</span>
         <StatusLabel doc={doc} freshlyReady={freshlyReady.has(doc.slug)} />
+        {(doc.status === 'ready' || doc.status === 'error') && (
+          <button
+            onClick={async () => {
+              if (await reindexDocument(doc.slug, insideProject)) onChange()
+            }}
+            title="Přeindexovat"
+            className="text-base leading-none opacity-25 hover:opacity-100"
+          >
+            🔄
+          </button>
+        )}
       </div>
       {doc.status === 'error' && doc.error && (
         <div className="text-xs text-red-600 dark:text-red-400 pl-7">{doc.error}</div>

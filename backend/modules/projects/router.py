@@ -60,6 +60,23 @@ def toggle_pin(slug: str, db: Session = Depends(get_session)) -> ProjectDocument
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 
 
+@router.post("/projects/{slug}/reindex", response_model=ProjectDocumentOut)
+def reindex_document(
+    slug: str,
+    request: Request,
+    db: Session = Depends(get_session),
+) -> ProjectDocumentOut:
+    """Полная переобработка документа архива: артефакты удаляем, pipeline заново."""
+    try:
+        return service.reindex_document(
+            db, slug, _projects_paths(db), request.app.state.executor
+        )
+    except service.DocumentBusyError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
 @router.post("/projects/index")
 def index_archive(
     request: Request,

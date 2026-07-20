@@ -6,6 +6,7 @@
 """
 
 import shutil
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -226,6 +227,57 @@ def sync_archive(db: Session, roots: list[Path]) -> ArchiveScanSummary:
         errors=errors,
         unavailable=unavailable,
     )
+
+
+class DocumentBusyError(Exception):
+    """Операция отклонена: документ архива сейчас обрабатывается пайплайном.
+
+    Переиндексация во время работы фонового pipeline даёт гонку: пайплайн
+    дописал бы артефакты уже ПОСЛЕ rmtree — файлы и статус разъехались бы.
+    """
+
+
+def reindex_document(
+    db: Session,
+    slug: str,
+    paths: list[Path],
+    executor: ThreadPoolExecutor,
+) -> ProjectDocument:
+    """Полностью переобрабатывает документ архива: старые артефакты удаляются.
+
+    Нужно после смены пайплайна (шаг 3: бывшие sheet-документы) или когда
+    юзер заменил содержимое PDF. Сам PDF в папке архива НЕ трогаем.
+    Межмашинный лок не нужен: артефакты архива лежат в локальной
+    PROJECTS_DATA_DIR, а не в общей сетевой папке.
+    """
+    from backend.core import library_cache
+    from backend.core.paths import PROJECTS_DATA_DIR
+    from backend.modules.projects.pipeline import run_project_pipeline
+
+    doc = db.scalar(select(ProjectDocument).where(ProjectDocument.slug == slug))
+    if doc is None:
+        raise ValueError(f"Документ архива {slug} не найден")
+    if doc.status == "processing":
+        raise DocumentBusyError(
+            f"Документ {slug} сейчас индексируется — дождись конца обработки"
+        )
+
+    root = resolve_project_root(paths, doc.relative_path)
+    if root is None:
+        raise ValueError(f"PDF не найден ни в одной папке архива: {doc.relative_path}")
+
+    shutil.rmtree(PROJECTS_DATA_DIR / slug, ignore_errors=True)
+
+    doc.status = "processing"
+    doc.error = None
+    db.commit()
+
+    # Старые чанки уже удалены с диска — убираем их из кеша сразу, не дожидаясь
+    # конца переобработки (pipeline сбросит кеш ещё раз, когда документ готов).
+    library_cache.invalidate()
+
+    executor.submit(run_project_pipeline, slug, str(root / doc.relative_path))
+    return doc
 
 
 def toggle_pin(db: Session, slug: str) -> ProjectDocument:
