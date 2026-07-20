@@ -243,6 +243,14 @@ def parse_vision_response(raw_text: str) -> list[dict]:
     return result
 
 
+class VisionEmptyResponseError(Exception):
+    """Vision вернул пустой/битый ответ для страницы, где блоки есть.
+
+    HTTP 200, но content пустой (отказ модели) или не-JSON. Без этой ошибки
+    страница помечалась «описанной» и её схемы навсегда выпадали из индекса.
+    """
+
+
 def describe_page_visuals(
     document: dict,
     page_number: int,
@@ -268,23 +276,25 @@ def describe_page_visuals(
     # 2. Строим промпт
     prompt = build_vision_prompt(page_context)
 
-    # 3. Отправляем в модель — получаем ответ и счётчики токенов
-    raw_answer, prompt_tokens, completion_tokens = ask_vision(
-        image_path, prompt, model=model
+    # 3-5. Запрос и разбор. Пустой/битый ответ — одна повторная попытка,
+    # как у describe_drawing. Блоки на странице ЕСТЬ (проверка выше),
+    # поэтому пусто и после повтора — сбой, а не «нечего описывать»:
+    # молча помечать такую страницу обработанной нельзя (№9 аудита).
+    prompt_tokens = completion_tokens = 0
+    for _ in range(2):
+        raw_answer, in_tok, out_tok = ask_vision(image_path, prompt, model=model)
+        prompt_tokens += in_tok
+        completion_tokens += out_tok
+        desc_by_id = {
+            item["block_id"]: item["description"]
+            for item in parse_vision_response(raw_answer)
+            if "block_id" in item and "description" in item
+        }
+        if desc_by_id:
+            return desc_by_id, prompt_tokens, completion_tokens
+    raise VisionEmptyResponseError(
+        f"Vision nevrátil použitelný popis stránky {page_number}"
     )
-
-    # 4. Разбираем ответ в список {block_id, description}
-    descriptions = parse_vision_response(raw_answer)
-    if not descriptions:
-        return {}, prompt_tokens, completion_tokens
-
-    # 5. Превращаем список описаний в словарь {block_id: description}
-    desc_by_id = {
-        item["block_id"]: item["description"]
-        for item in descriptions
-        if "block_id" in item and "description" in item
-    }
-    return desc_by_id, prompt_tokens, completion_tokens
 
 
 def _strip_json_markdown(raw: str) -> str:

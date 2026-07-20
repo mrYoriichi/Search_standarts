@@ -67,3 +67,12 @@ class OpenAIError(Exception):
 def test_missing_api_key():
     exc = OpenAIError("The api_key client option must be set")
     assert "Chybí OpenAI API klíč" in classify_pipeline_error(exc)
+
+
+class VisionEmptyResponseError(Exception):
+    pass
+
+
+def test_vision_empty_response():
+    exc = VisionEmptyResponseError("stránka 3")
+    assert "indexovat znovu" in classify_pipeline_error(exc)

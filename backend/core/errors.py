@@ -26,6 +26,9 @@ def classify_pipeline_error(exc: Exception) -> str:
     if name == "OpenAIError" and "api_key" in text:
         return "Chybí OpenAI API klíč — nastavte ho v Nastavení."
 
+    if name == "VisionEmptyResponseError":
+        return "Vision nevrátil popis stránky — zkuste dokument indexovat znovu."
+
     if name == "PdfiumError":
         if "password" in text:
             return "PDF je chráněno heslem — odemkněte ho a naskenujte znovu."
