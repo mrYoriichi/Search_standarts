@@ -13,6 +13,8 @@ meta.json — паспорт папки: модель эмбеддингов, в
 """
 
 import json
+import os
+import time
 import uuid
 from pathlib import Path
 
@@ -63,6 +65,11 @@ def ensure_meta(library_path: Path, embedding_model: str) -> dict:
 
     Существующий meta НЕ перезаписывает (id и модель — постоянные свойства
     папки; конфликт модели ловит вызывающий код сравнением полей).
+
+    Создание эксклюзивное (O_EXCL, как у lock-файла): когда две машины
+    одновременно впервые открывают общую папку, паспорт записывает ровно
+    одна, вторая читает победивший — иначе папка получила бы два folder_id
+    и документы проигравшей метки осиротели бы.
     """
     meta = read_meta(library_path)
     if meta is not None:
@@ -78,8 +85,31 @@ def ensure_meta(library_path: Path, embedding_model: str) -> dict:
         raise FileNotFoundError(f"Папка библиотеки недоступна: {library_path}")
     root = index_root(library_path)
     root.mkdir(exist_ok=True)
-    save_json_atomic(root / META_FILENAME, meta)
+    try:
+        fd = os.open(root / META_FILENAME, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+    except FileExistsError:
+        return _wait_meta(library_path)  # проиграли гонку — читаем победителя
+    with os.fdopen(fd, "w", encoding="utf-8") as f:
+        json.dump(meta, f, ensure_ascii=False, indent=2)
     return meta
+
+
+def _wait_meta(library_path: Path, attempts: int = 50, delay: float = 0.1) -> dict:
+    """Читает meta.json с повторами: победитель гонки мог ещё не дописать файл.
+
+    Не дождались валидного JSON — значит это не гонка, а битый файл. Молча
+    перевыдавать id нельзя (осиротевшие документы, платная переиндексация
+    всей папки), поэтому — громкая ошибка.
+    """
+    for _ in range(attempts):
+        meta = read_meta(library_path)
+        if meta is not None:
+            return meta
+        time.sleep(delay)
+    raise OSError(
+        "Битый паспорт папки (невалидный JSON): "
+        f"{index_root(library_path) / META_FILENAME}"
+    )
 
 
 def scoped_slug(folder_id: str, filename_slug: str) -> str:

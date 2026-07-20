@@ -7,13 +7,20 @@ os.replace внутри одной папки атомарен — читате�
 
 import json
 import os
+import uuid
 from pathlib import Path
 
 
 def save_json_atomic(path: Path, data: object) -> None:
     """Записывает data в path через временный файл в той же папке."""
-    tmp = path.with_suffix(path.suffix + ".tmp")
-    with open(tmp, "w", encoding="utf-8") as f:
-        # ensure_ascii=False — чешские символы сохраняются как есть
-        json.dump(data, f, ensure_ascii=False, indent=2)
-    os.replace(tmp, path)
+    # Имя tmp уникально для каждого писателя: общий tmp (`X.tmp`) позволял
+    # двум машинам в сетевой папке «увести» файл из-под os.replace соперника.
+    tmp = path.with_suffix(f"{path.suffix}.{uuid.uuid4().hex}.tmp")
+    try:
+        with open(tmp, "w", encoding="utf-8") as f:
+            # ensure_ascii=False — чешские символы сохраняются как есть
+            json.dump(data, f, ensure_ascii=False, indent=2)
+        os.replace(tmp, path)
+    except Exception:
+        tmp.unlink(missing_ok=True)  # упавшая запись не копит мусорные tmp
+        raise
