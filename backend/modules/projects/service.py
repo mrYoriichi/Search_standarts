@@ -23,6 +23,7 @@ from backend.modules.projects.schemas import (
     ProjectGroup,
 )
 from pdf_processing.parser import make_document_id
+from pdf_processing.pdfium_lock import PDFIUM_LOCK
 
 
 @dataclass
@@ -51,11 +52,12 @@ def count_pages(pdf_path: Path) -> int:
     Кидает исключение, если файл не открывается как PDF, —
     обрабатывает вызывающий (уходит в errors скана).
     """
-    doc = pdfium.PdfDocument(pdf_path)
-    try:
-        return len(doc)
-    finally:
-        doc.close()
+    with PDFIUM_LOCK:
+        doc = pdfium.PdfDocument(pdf_path)
+        try:
+            return len(doc)
+        finally:
+            doc.close()
 
 
 def make_project_slug(project: str, filename: str) -> str:

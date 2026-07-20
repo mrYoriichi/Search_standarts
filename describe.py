@@ -34,6 +34,7 @@ from pdf_processing.image_description import (
     extract_document_metadata,
 )
 from pdf_processing.parser import VISUAL_BLOCK_TYPES, make_document_id
+from pdf_processing.pdfium_lock import PDFIUM_LOCK
 from pricing import model_cost
 
 
@@ -67,16 +68,17 @@ def _render_first_page(pdf_path: str, pages_dir: Path) -> Path | None:
     пропустим, как раньше).
     """
     try:
-        doc = pdfium.PdfDocument(pdf_path)
-        try:
-            page = doc[0]
-            width, height = page.get_size()
-            scale = RENDER_MAX_SIDE_PX / max(width, height)
-            out = pages_dir / "p001.png"
-            page.render(scale=scale).to_pil().save(out)
-            return out
-        finally:
-            doc.close()
+        with PDFIUM_LOCK:
+            doc = pdfium.PdfDocument(pdf_path)
+            try:
+                page = doc[0]
+                width, height = page.get_size()
+                scale = RENDER_MAX_SIDE_PX / max(width, height)
+                out = pages_dir / "p001.png"
+                page.render(scale=scale).to_pil().save(out)
+                return out
+            finally:
+                doc.close()
     except Exception:
         return None
 
@@ -140,17 +142,20 @@ def describe_drawings(
     if not todo:
         return in_tok, out_tok
 
-    doc = pdfium.PdfDocument(pdf_path)
+    with PDFIUM_LOCK:
+        doc = pdfium.PdfDocument(pdf_path)
     try:
         with tempfile.TemporaryDirectory() as tmp:
             tmp_dir = Path(tmp)
             for done, page_number in enumerate(todo, start=1):
                 if on_progress is not None:
                     on_progress(done, len(todo))
-                page = doc[page_number - 1]
-                width, height = page.get_size()
-                scale = RENDER_MAX_SIDE_PX / max(width, height)
-                pil = page.render(scale=scale).to_pil()
+                # Рендер под замком; vision-запрос ниже — снаружи (он долгий).
+                with PDFIUM_LOCK:
+                    page = doc[page_number - 1]
+                    width, height = page.get_size()
+                    scale = RENDER_MAX_SIDE_PX / max(width, height)
+                    pil = page.render(scale=scale).to_pil()
                 if _is_blank(pil):
                     # Пустой лист: "" = пометка «обработан», chunker пустые
                     # игнорирует, повторный запуск сюда не вернётся.
@@ -167,7 +172,8 @@ def describe_drawings(
                 if on_page_done is not None:
                     on_page_done()
     finally:
-        doc.close()
+        with PDFIUM_LOCK:
+            doc.close()
     return in_tok, out_tok
 
 

@@ -21,6 +21,7 @@ from docling.datamodel.pipeline_options import PdfPipelineOptions
 from docling.document_converter import DocumentConverter, PdfFormatOption
 
 from backend.core.paths import DOCLING_MODELS
+from pdf_processing.pdfium_lock import PDFIUM_LOCK
 
 
 # Таблица перевода: метка Docling -> наш внутренний тип блока.
@@ -369,16 +370,20 @@ def parse_prose_pages(pdf_path: str, page_types: list[str]) -> tuple[dict, dict]
             "pages": [],
         }, {}
 
-    src = pdfium.PdfDocument(pdf_path)
-    dst = pdfium.PdfDocument.new()
-    dst.import_pages(src, [n - 1 for n in prose_numbers])
+    with PDFIUM_LOCK:
+        src = pdfium.PdfDocument(pdf_path)
+        dst = pdfium.PdfDocument.new()
+        dst.import_pages(src, [n - 1 for n in prose_numbers])
     fd, temp_path = tempfile.mkstemp(suffix=".pdf")
     os.close(fd)
     try:
-        with open(temp_path, "wb") as f:
+        with open(temp_path, "wb") as f, PDFIUM_LOCK:
             dst.save(f)
-        document, page_images = parse_pdf(temp_path)
+        document, page_images = parse_pdf(temp_path)  # Docling берёт тот же замок сам
     finally:
+        with PDFIUM_LOCK:
+            dst.close()
+            src.close()
         os.remove(temp_path)
 
     _remap_to_original(document, page_images, prose_numbers, original_name)

@@ -78,19 +78,21 @@ def _render_page_b64(pdf_path: Path, page_number: int) -> str | None:
     import pypdfium2 as pdfium
 
     from pdf_processing.drawing import RENDER_MAX_SIDE_PX
+    from pdf_processing.pdfium_lock import PDFIUM_LOCK
 
     try:
-        doc = pdfium.PdfDocument(pdf_path)
-        try:
-            page = doc[page_number - 1]
-            width, height = page.get_size()
-            scale = RENDER_MAX_SIDE_PX / max(width, height)
-            pil = page.render(scale=scale).to_pil()
-            buf = io.BytesIO()
-            pil.save(buf, format="PNG")
-            return base64.b64encode(buf.getvalue()).decode("utf-8")
-        finally:
-            doc.close()
+        with PDFIUM_LOCK:
+            doc = pdfium.PdfDocument(pdf_path)
+            try:
+                page = doc[page_number - 1]
+                width, height = page.get_size()
+                scale = RENDER_MAX_SIDE_PX / max(width, height)
+                pil = page.render(scale=scale).to_pil()
+            finally:
+                doc.close()
+        buf = io.BytesIO()
+        pil.save(buf, format="PNG")
+        return base64.b64encode(buf.getvalue()).decode("utf-8")
     except Exception:
         logger.warning(
             "Сильный поиск: не отрендерилась страница %s из %s", page_number, pdf_path

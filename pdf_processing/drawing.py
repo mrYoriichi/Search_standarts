@@ -10,6 +10,8 @@ import re
 
 import pypdfium2 as pdfium
 
+from pdf_processing.pdfium_lock import PDFIUM_LOCK
+
 # Длинная сторона рендера для OCR. 2200 px хватило на большом листе gama
 # (проверено живьём); тот же размер, что в sheet-пайплайне архива.
 RENDER_MAX_SIDE_PX = 2200
@@ -58,10 +60,12 @@ def read_drawing_page(page: "pdfium.PdfPage") -> str:
     # Импорт здесь — OCR-движок тяжёлый, не грузим при импорте модуля.
     from pdf_processing.ocr import ocr_image
 
-    layer = page.get_textpage().get_text_range().strip()
-    width, height = page.get_size()
-    scale = RENDER_MAX_SIDE_PX / max(width, height)
-    image = page.render(scale=scale).to_pil()
+    with PDFIUM_LOCK:
+        layer = page.get_textpage().get_text_range().strip()
+        width, height = page.get_size()
+        scale = RENDER_MAX_SIDE_PX / max(width, height)
+        image = page.render(scale=scale).to_pil()
+    # OCR — вне замка: он медленный и pdfium не трогает.
     return build_drawing_text(layer, ocr_image(image))
 
 
@@ -79,13 +83,16 @@ def insert_drawing_pages(document: dict, pdf_path: str, page_types: list[str]) -
     for page in document["pages"]:
         page["page_type"] = "text"
 
-    doc = pdfium.PdfDocument(pdf_path)
+    with PDFIUM_LOCK:
+        doc = pdfium.PdfDocument(pdf_path)
     try:
         pages: list[dict] = []
         for i, page_type in enumerate(page_types):
             page_number = i + 1
             if page_type == "drawing":
-                drawing_text = read_drawing_page(doc[i])
+                with PDFIUM_LOCK:
+                    pdf_page = doc[i]
+                drawing_text = read_drawing_page(pdf_page)
                 pages.append(
                     {
                         "page_number": page_number,
@@ -99,4 +106,5 @@ def insert_drawing_pages(document: dict, pdf_path: str, page_types: list[str]) -
                 pages.append(prose_pages[page_number])
         document["pages"] = pages
     finally:
-        doc.close()
+        with PDFIUM_LOCK:
+            doc.close()

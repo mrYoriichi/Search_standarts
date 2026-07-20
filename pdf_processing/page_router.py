@@ -11,6 +11,8 @@
 
 import pypdfium2 as pdfium
 
+from pdf_processing.pdfium_lock import PDFIUM_LOCK
+
 # Выше этого числа векторных путей страница считается чертёжной.
 PATH_DOMINANT_THRESHOLD = 1000
 # Меньше этого текста в слое — считаем, что извлекаемого текста нет (скан/кривые).
@@ -41,13 +43,14 @@ def classify_pages(pdf_path: str) -> list[str]:
     Мост для пайплайна: считает пути и длину текстового слоя каждой
     страницы и прогоняет через classify_page.
     """
-    doc = pdfium.PdfDocument(pdf_path)
-    try:
-        result: list[str] = []
-        for i in range(len(doc)):
-            page = doc[i]
-            text_len = len(page.get_textpage().get_text_range().strip())
-            result.append(classify_page(count_paths(page), text_len))
-        return result
-    finally:
-        doc.close()
+    with PDFIUM_LOCK:
+        doc = pdfium.PdfDocument(pdf_path)
+        try:
+            result: list[str] = []
+            for i in range(len(doc)):
+                page = doc[i]
+                text_len = len(page.get_textpage().get_text_range().strip())
+                result.append(classify_page(count_paths(page), text_len))
+            return result
+        finally:
+            doc.close()
