@@ -58,3 +58,12 @@ def test_unknown_error_keeps_details():
     msg = classify_pipeline_error(ValueError("something odd"))
     assert "ValueError" in msg
     assert "something odd" in msg
+
+
+class OpenAIError(Exception):
+    pass
+
+
+def test_missing_api_key():
+    exc = OpenAIError("The api_key client option must be set")
+    assert "Chybí OpenAI API klíč" in classify_pipeline_error(exc)

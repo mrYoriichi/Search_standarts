@@ -5,9 +5,11 @@
 """
 
 from fastapi import APIRouter, Depends, HTTPException
+from openai import OpenAIError
 from sqlalchemy.orm import Session
 
 from backend.core.database import get_session
+from backend.core.errors import classify_pipeline_error
 from backend.modules.queries import service
 from backend.modules.queries.schemas import AskRequest, AskResponse, FlagRequest
 from backend.modules.telemetry.service import track_report
@@ -39,6 +41,12 @@ def create_query(
         # Пустая библиотека / несовместимые модели эмбеддингов — понятный
         # текст из library_cache вместо HTTP 500.
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except OpenAIError as exc:
+        # Ключ / сеть / лимит OpenAI: тот же классификатор, что у индексации, —
+        # понятное чешское сообщение вместо безликого HTTP 500.
+        raise HTTPException(
+            status_code=502, detail=classify_pipeline_error(exc)
+        ) from exc
 
 
 @router.post("/queries/flag")
