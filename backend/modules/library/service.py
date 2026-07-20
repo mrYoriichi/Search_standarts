@@ -201,6 +201,32 @@ def find_pdf_by_slug(paths: list[Path], slug: str) -> Path | None:
     return None
 
 
+def resolve_pdf_by_slug(db: Session, slug: str) -> Path | None:
+    """Путь к PDF документа по slug — по ВСЕМ пулам (библиотека + архив).
+
+    Единственное место, знающее оба пула: им пользуются раздача PDF
+    (`GET /library/pdf/{slug}`) и сильный поиск (рендер страниц источников).
+    """
+    from backend.modules.projects import service as projects_service
+    from backend.modules.projects.models import ProjectDocument
+    from backend.modules.settings import service as settings_service
+
+    library_paths = settings_service.get_library_paths(db)
+    if library_paths:
+        pdf_path = find_pdf_by_slug([Path(p) for p in library_paths], slug)
+        if pdf_path is not None:
+            return pdf_path
+
+    # Архив проектов: relative_path знает БД, папку — по наличию файла.
+    projects_paths = [Path(p) for p in settings_service.get_projects_paths(db)]
+    pdoc = db.scalar(select(ProjectDocument).where(ProjectDocument.slug == slug))
+    if projects_paths and pdoc is not None:
+        root = projects_service.resolve_project_root(projects_paths, pdoc.relative_path)
+        if root is not None:
+            return root / pdoc.relative_path
+    return None
+
+
 def scan_library(paths: list[Path], db: Session) -> ScanSummary:
     """Сканирует все папки библиотеки: НОВЫЕ PDF только регистрирует (pending).
 

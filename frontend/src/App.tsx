@@ -386,6 +386,9 @@ function App() {
   const [answerModel, setAnswerModel] = useState<'gpt-5.4-mini' | 'gpt-5.5'>('gpt-5.4-mini')
   // Расширять ли запрос через LLM перед поиском (диакритика/синонимы). По умолчанию да.
   const [expandQuery, setExpandQuery] = useState(true)
+  // Сильный поиск: снимки страниц топ-источников идут картинками в отвечающую
+  // LLM (тяжёлые вопросы по чертежам/таблицам). Дороже и медленнее — дефолт выкл.
+  const [strongSearch, setStrongSearch] = useState(false)
 
   // Проверяем при старте + раз в минуту: есть ли активная локальная сессия и
   // не перешла ли она в blocked (revoked / grace period истёк). Если blocked —
@@ -529,11 +532,13 @@ function App() {
         mode: string
         answer_model: string
         expand: boolean
+        strong: boolean
       } = {
         question,
         mode: searchMode,
         answer_model: answerModel,
         expand: expandQuery,
+        strong: strongSearch,
       }
       if (!searchAll) {
         body.document_ids = Array.from(selectedSlugs)
@@ -795,6 +800,15 @@ function App() {
             onChange={(e) => setExpandQuery(e.target.checked)}
           />
           Rozšířit dotaz (diakritika, synonyma) před hledáním
+        </label>
+
+        <label className="flex items-center gap-2 px-1 text-sm text-muted-foreground cursor-pointer select-none">
+          <input
+            type="checkbox"
+            checked={strongSearch}
+            onChange={(e) => setStrongSearch(e.target.checked)}
+          />
+          Silné hledání — přiložit snímky stránek zdrojů (pomalejší, dražší)
         </label>
 
         <Textarea

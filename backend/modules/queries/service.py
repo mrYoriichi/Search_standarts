@@ -7,7 +7,9 @@
 из будущего AI-агента-оркестратора.
 """
 
+import logging
 import time
+from pathlib import Path
 
 from sqlalchemy.orm import Session
 
@@ -24,6 +26,14 @@ from backend.modules.queries.schemas import AskResponse, Source, UsedChunk
 from backend.modules.telemetry.service import track_event
 
 
+logger = logging.getLogger(__name__)
+
+# Сильный поиск: максимум страниц-картинок в запросе к отвечающей LLM.
+# Каждая страница — vision-токены; топ-3 покрывает типовой вопрос
+# «что на этом листе», не раздувая стоимость и время ответа.
+STRONG_MAX_PAGES = 3
+
+
 class NoSearchableDocumentsError(Exception):
     """Фильтр не совпал ни с одним документом.
 
@@ -33,6 +43,86 @@ class NoSearchableDocumentsError(Exception):
     """
 
 
+def collect_page_refs(
+    top_chunks: list[dict], limit: int = STRONG_MAX_PAGES
+) -> list[tuple[str, int]]:
+    """Страницы топ-выдачи для сильного поиска: список (slug, страница).
+
+    Идём по чанкам в порядке релевантности, внутри чанка — по его страницам;
+    дубли (slug, страница) убираем, всего не больше limit.
+    """
+    refs: list[tuple[str, int]] = []
+    seen: set[tuple[str, int]] = set()
+    for chunk in top_chunks:
+        slug = chunk.get("document_id", "")
+        for page in chunk.get("pages", []):
+            key = (slug, page)
+            if key in seen:
+                continue
+            seen.add(key)
+            refs.append(key)
+            if len(refs) >= limit:
+                return refs
+    return refs
+
+
+def _render_page_b64(pdf_path: Path, page_number: int) -> str | None:
+    """PNG страницы PDF в base64 — на лету, без записи на диск.
+
+    Best-effort: любой сбой (битый PDF, страницы нет) → None, сильный
+    поиск просто продолжит без этой картинки.
+    """
+    import base64
+    import io
+
+    import pypdfium2 as pdfium
+
+    from pdf_processing.drawing import RENDER_MAX_SIDE_PX
+
+    try:
+        doc = pdfium.PdfDocument(pdf_path)
+        try:
+            page = doc[page_number - 1]
+            width, height = page.get_size()
+            scale = RENDER_MAX_SIDE_PX / max(width, height)
+            pil = page.render(scale=scale).to_pil()
+            buf = io.BytesIO()
+            pil.save(buf, format="PNG")
+            return base64.b64encode(buf.getvalue()).decode("utf-8")
+        finally:
+            doc.close()
+    except Exception:
+        logger.warning(
+            "Сильный поиск: не отрендерилась страница %s из %s", page_number, pdf_path
+        )
+        return None
+
+
+def _build_page_images(db: Session, top_chunks: list[dict]) -> list[dict]:
+    """Снимки страниц топ-источников: [{"label": "документ, s. N", "b64": ...}].
+
+    Путь к PDF резолвим по всем пулам (библиотека + архив, см.
+    resolve_pdf_by_slug); документ без PDF на диске или несуществующая
+    страница просто пропускаются — ответ пойдёт по тексту.
+    """
+    from backend.modules.library.service import resolve_pdf_by_slug
+
+    titles = {c.get("document_id", ""): c.get("document_title", "") for c in top_chunks}
+    pdf_paths: dict[str, Path | None] = {}
+    images: list[dict] = []
+    for slug, page in collect_page_refs(top_chunks):
+        if slug not in pdf_paths:
+            pdf_paths[slug] = resolve_pdf_by_slug(db, slug)
+        pdf_path = pdf_paths[slug]
+        if pdf_path is None:
+            continue
+        b64 = _render_page_b64(pdf_path, page)
+        if b64 is None:
+            continue
+        images.append({"label": f"{titles.get(slug, slug)}, s. {page}", "b64": b64})
+    return images
+
+
 def ask(
     question: str,
     document_ids: list[str] | None,
@@ -40,6 +130,7 @@ def ask(
     mode: str = "hybrid",
     answer_model: str = "gpt-5.4-mini",
     expand: bool = True,
+    strong: bool = False,
 ) -> AskResponse:
     """Главная функция: вопрос → ответ + источники + id записи в QueryLog.
 
@@ -47,6 +138,8 @@ def ask(
     mode — режим поиска (hybrid / vector / keyword), см. search.hybrid.
     answer_model — модель генерации ответа (gpt-5.4-mini / gpt-5.5).
     expand — расширять ли запрос через LLM перед поиском (диакритика/синонимы).
+    strong — сильный поиск: приложить к ответу снимки страниц топ-источников
+    (тяжёлые вопросы по чертежам/таблицам; дороже и медленнее).
     """
     started_at = time.perf_counter()
 
@@ -80,9 +173,15 @@ def ask(
     chunks_by_id = {c["chunk_id"]: c for c in chunks}
     top_chunks = [chunks_by_id[chunk_id] for chunk_id in found_ids]
 
+    # Сильный поиск: рендерим страницы топ-источников и отдаём их картинками
+    # в отвечающую LLM — она «видит» чертёж/таблицу, а не только текст/OCR.
+    page_images = _build_page_images(db, top_chunks) if strong else None
+
     # Время генерации ответа меряем отдельно — чтобы сравнивать скорость моделей.
     gen_start = time.perf_counter()
-    result = generate_answer(question, top_chunks, model=answer_model)
+    result = generate_answer(
+        question, top_chunks, model=answer_model, page_images=page_images
+    )
     answer_ms = int((time.perf_counter() - gen_start) * 1000)
 
     # Стоимость считаем только по ответному LLM-вызову — он доминирует.
@@ -113,6 +212,8 @@ def ask(
         answer_ms=answer_ms,
         chunks_searched=len(chunks),
         sources_returned=len(result["sources"]),
+        strong=strong,
+        images_sent=len(page_images or []),
     )
 
     return AskResponse(

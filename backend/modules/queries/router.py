@@ -30,6 +30,7 @@ def create_query(
             mode=payload.mode,
             answer_model=payload.answer_model,
             expand=payload.expand,
+            strong=payload.strong,
         )
     except service.NoSearchableDocumentsError as exc:
         # Устаревший выбор документов — юзеру нужно обновить «Kde hledat».

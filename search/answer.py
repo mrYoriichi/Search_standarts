@@ -98,16 +98,51 @@ def build_user_message(question: str, chunks: list[dict]) -> str:
     return f"Вопрос: {question}\n\nФрагменты:\n\n{formatted}"
 
 
+def build_user_content(
+    question: str,
+    chunks: list[dict],
+    page_images: list[dict] | None = None,
+) -> str | list[dict]:
+    """Содержимое user-сообщения: текст, при сильном поиске — текст + картинки.
+
+    page_images — [{"label": "документ, s. N", "b64": "..."}]: снимки страниц
+    топ-источников. Без картинок возвращаем обычную строку (старое поведение,
+    дешевле по токенам, чем список из одной текстовой части).
+    """
+    text = build_user_message(question, chunks)
+    if not page_images:
+        return text
+
+    labels = "; ".join(f"{i + 1}) {img['label']}" for i, img in enumerate(page_images))
+    text += (
+        f"\n\nAttached are page snapshots of the top sources, in order: {labels}. "
+        f"Use them to read details that the text fragments or OCR may have "
+        f"missed or garbled (dimensions, labels in drawings, table values)."
+    )
+    content: list[dict] = [{"type": "text", "text": text}]
+    for img in page_images:
+        content.append(
+            {
+                "type": "image_url",
+                "image_url": {"url": f"data:image/png;base64,{img['b64']}"},
+            }
+        )
+    return content
+
+
 def generate_answer(
     question: str,
     chunks: list[dict],
     model: str = ANSWER_MODEL,
+    page_images: list[dict] | None = None,
 ) -> dict:
     """
     Главная функция: вопрос + чанки → ответ + источники.
 
     model — id модели для генерации (по умолчанию ANSWER_MODEL). Параметр нужен,
     чтобы сравнивать модели (gpt-5.4-mini ↔ gpt-5.5) из UI.
+    page_images — снимки страниц топ-источников (сильный поиск), см.
+    build_user_content; None = обычный текстовый режим.
 
     Один вызов LLM со structured output: модель возвращает текст ответа
     и список chunk_id, на которые реально опиралась. Источники собираем
@@ -132,7 +167,10 @@ def generate_answer(
         model=model,
         messages=[
             {"role": "system", "content": SYSTEM_PROMPT},
-            {"role": "user", "content": build_user_message(question, chunks)},
+            {
+                "role": "user",
+                "content": build_user_content(question, chunks, page_images),
+            },
         ],
         response_format={
             "type": "json_schema",

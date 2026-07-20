@@ -75,26 +75,7 @@ def get_pdf(slug: str, db: Session = Depends(get_session)) -> FileResponse:
     Папки библиотеки → архив проектов — источник в ответе может быть из
     любого пула. Браузер сам поддерживает `#page=N`.
     """
-    library_paths = settings_service.get_library_paths(db)
-    pdf_path = (
-        service.find_pdf_by_slug([Path(p) for p in library_paths], slug)
-        if library_paths
-        else None
-    )
-    if pdf_path is None:
-        # Архив проектов: relative_path знает БД, папку — по наличию файла.
-        from backend.modules.projects.models import ProjectDocument
-        from backend.modules.projects import service as projects_service
-        from sqlalchemy import select
-
-        projects_paths = [Path(p) for p in settings_service.get_projects_paths(db)]
-        pdoc = db.scalar(select(ProjectDocument).where(ProjectDocument.slug == slug))
-        if projects_paths and pdoc is not None:
-            root = projects_service.resolve_project_root(
-                projects_paths, pdoc.relative_path
-            )
-            if root is not None:
-                pdf_path = root / pdoc.relative_path
+    pdf_path = service.resolve_pdf_by_slug(db, slug)
     if pdf_path is None:
         raise HTTPException(status_code=404, detail=f"PDF для slug={slug} не найден")
     return FileResponse(pdf_path, media_type="application/pdf")

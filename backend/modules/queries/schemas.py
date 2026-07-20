@@ -29,6 +29,11 @@ class AskRequest(BaseModel):
         default=True,
         description="Расширять ли запрос через LLM (диакритика/синонимы) перед поиском.",
     )
+    strong: bool = Field(
+        default=False,
+        description="Сильный поиск: приложить снимки страниц топ-источников "
+        "к отвечающей LLM (дороже и медленнее, для тяжёлых вопросов).",
+    )
 
 
 class UsedChunk(BaseModel):
