@@ -183,6 +183,8 @@ def has_complete_index(library_path: Path, slug: str) -> bool:
     document.json/descriptions.json нужны лишь при переобработке.
     Оба файла обязаны разбираться как JSON: битый/недокопированный файл не
     «усыновляем» — иначе документ станет ready, а поиск его молча пропустит.
+    Id чанков в обоих файлах обязаны совпадать: пара из разных поколений
+    (крах/гонка между двумя сохранениями) роняла бы поиск KeyError'ом.
     """
     d = doc_dir(library_path, slug)
     try:
@@ -190,6 +192,10 @@ def has_complete_index(library_path: Path, slug: str) -> bool:
             chunks = json.load(f)
         with open(d / "embeddings.json", encoding="utf-8") as f:
             emb = json.load(f)
-    except (OSError, json.JSONDecodeError):
+        if not chunks or "model" not in emb or "items" not in emb:
+            return False
+        chunk_ids = {c["chunk_id"] for c in chunks}
+        item_ids = {item["chunk_id"] for item in emb["items"]}
+    except (OSError, json.JSONDecodeError, TypeError, KeyError):
         return False
-    return bool(chunks) and "model" in emb and "items" in emb
+    return chunk_ids == item_ids

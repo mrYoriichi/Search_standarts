@@ -173,7 +173,16 @@ def ask(
     found_ids = search_by_mode(bm25, embeddings_index, search_query, mode)
 
     chunks_by_id = {c["chunk_id"]: c for c in chunks}
-    top_chunks = [chunks_by_id[chunk_id] for chunk_id in found_ids]
+    # Вектора-сироты (embeddings.json из другого поколения, чем chunks.json)
+    # пропускаем, а не роняем весь вопрос KeyError'ом — №2 аудита.
+    orphan_ids = [cid for cid in found_ids if cid not in chunks_by_id]
+    if orphan_ids:
+        logger.warning(
+            "Поиск вернул id без чанков (индекс рассинхронизирован, "
+            "нужна переиндексация): %s",
+            orphan_ids,
+        )
+    top_chunks = [chunks_by_id[cid] for cid in found_ids if cid in chunks_by_id]
 
     # Сильный поиск: рендерим страницы топ-источников и отдаём их картинками
     # в отвечающую LLM — она «видит» чертёж/таблицу, а не только текст/OCR.

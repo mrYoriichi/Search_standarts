@@ -82,9 +82,28 @@ def test_has_complete_index(tmp_path):
     (d / "chunks.json").write_text('[{"chunk_id": "mvl_649_c001"}]', encoding="utf-8")
     assert not index_store.has_complete_index(tmp_path, slug)  # нет embeddings
     (d / "embeddings.json").write_text(
-        '{"model": "text-embedding-3-large", "items": []}', encoding="utf-8"
+        '{"model": "text-embedding-3-large",'
+        ' "items": [{"chunk_id": "mvl_649_c001", "embedding": [0.1]}]}',
+        encoding="utf-8",
     )
     assert index_store.has_complete_index(tmp_path, slug)
+
+
+def test_has_complete_index_rejects_id_mismatch(tmp_path):
+    # chunks.json и embeddings.json из разных поколений (крах/гонка между
+    # двумя сохранениями): усыновив такую пару, поиск падал бы KeyError'ом.
+    slug = "mvl_649"
+    d = index_store.doc_dir(tmp_path, slug)
+    d.mkdir(parents=True)
+    (d / "chunks.json").write_text('[{"chunk_id": "mvl_649_c001"}]', encoding="utf-8")
+    (d / "embeddings.json").write_text(
+        '{"model": "x", "items": [{"chunk_id": "mvl_649_c999", "embedding": [0.1]}]}',
+        encoding="utf-8",
+    )
+    assert not index_store.has_complete_index(tmp_path, slug)
+    # Вектора нет вовсе (embeddings отстал) — тоже не полный индекс.
+    (d / "embeddings.json").write_text('{"model": "x", "items": []}', encoding="utf-8")
+    assert not index_store.has_complete_index(tmp_path, slug)
 
 
 def test_has_complete_index_rejects_broken_json(tmp_path):

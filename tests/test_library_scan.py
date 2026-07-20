@@ -39,7 +39,13 @@ def _make_index(library_path, slug: str, model: str, title: str | None = None):
         json.dumps([{"chunk_id": f"{slug}_c001", "text": "obsah"}]), encoding="utf-8"
     )
     (d / "embeddings.json").write_text(
-        json.dumps({"model": model, "items": []}), encoding="utf-8"
+        json.dumps(
+            {
+                "model": model,
+                "items": [{"chunk_id": f"{slug}_c001", "embedding": [0.1]}],
+            }
+        ),
+        encoding="utf-8",
     )
     if title:
         (d / "descriptions.json").write_text(
