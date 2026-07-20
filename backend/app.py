@@ -114,24 +114,28 @@ async def lifespan(app: FastAPI):
 
         # То же для архива проектов: застрявшие в processing после падения.
         projects_paths = [Path(p) for p in settings_service.get_projects_paths(db)]
-        if projects_paths:
-            from backend.modules.projects import service as projects_service
+        from backend.modules.projects import service as projects_service
 
-            stuck_projects = db.scalars(
-                select(ProjectDocument).where(ProjectDocument.status == "processing")
-            ).all()
-            for pdoc in stuck_projects:
-                root = projects_service.resolve_project_root(
-                    projects_paths, pdoc.relative_path
-                )
-                if root is None:
-                    continue
-                executor.submit(
-                    run_project_pipeline,
-                    pdoc.slug,
-                    str(root / pdoc.relative_path),
-                )
-                print(f"[startup] Возобновлён pipeline архива для {pdoc.slug}")
+        stuck_projects = db.scalars(
+            select(ProjectDocument).where(ProjectDocument.status == "processing")
+        ).all()
+        for pdoc in stuck_projects:
+            root = projects_service.resolve_project_root(
+                projects_paths, pdoc.relative_path
+            )
+            if root is None:
+                # Папка архива недоступна или не настроена — как у библиотеки
+                # выше: в pending, доиндексируется кнопкой, когда папка появится.
+                pdoc.status = "pending"
+                print(f"[startup] Архив {pdoc.slug}: папка недоступна — pending")
+                continue
+            executor.submit(
+                run_project_pipeline,
+                pdoc.slug,
+                str(root / pdoc.relative_path),
+            )
+            print(f"[startup] Возобновлён pipeline архива для {pdoc.slug}")
+        db.commit()
     finally:
         db.close()
 
