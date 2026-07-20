@@ -275,7 +275,8 @@ def scan_library(paths: list[Path], db: Session) -> ScanSummary:
 
         for pdf_path in pdf_paths:
             slug = slug_of(pdf_path.name)
-            relative_path = str(pdf_path.relative_to(library_path))
+            # as_posix: на Windows str() дал бы `\`; храним пути единообразно.
+            relative_path = pdf_path.relative_to(library_path).as_posix()
 
             if slug_counts[slug] > 1:
                 summary.duplicates.append(relative_path)

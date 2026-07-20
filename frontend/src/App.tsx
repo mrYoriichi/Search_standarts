@@ -99,7 +99,8 @@ function buildArchiveTree(archive: ArchiveApiResponse): LibraryFolder {
   }
   for (const project of archive.projects) {
     for (const doc of project.documents) {
-      const parts = doc.relative_path.split('/')
+      // Делим по обоим разделителям: старые записи с Windows содержат `\`.
+      const parts = doc.relative_path.split(/[\\/]/)
       let node = root
       let accPath = ''
       for (const part of parts.slice(0, -1)) {

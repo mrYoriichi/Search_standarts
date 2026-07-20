@@ -117,7 +117,8 @@ function DocumentRow({
   onChange: () => void
 }) {
   // Путь внутри проекта (без имени проекта) — короче и читабельнее.
-  const insideProject = doc.relative_path.split('/').slice(1).join('/')
+  // Делим по обоим разделителям: старые записи с Windows содержат `\`.
+  const insideProject = doc.relative_path.split(/[\\/]/).slice(1).join('/')
   return (
     <div>
       <div className="flex items-center gap-2 text-sm">

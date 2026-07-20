@@ -122,7 +122,9 @@ def scan_archive(root: Path, seen_slugs: set[str] | None = None) -> ArchiveScanR
             FoundDocument(
                 slug=slug,
                 project=project,
-                relative_path=str(relative),
+                # as_posix: на Windows str() дал бы `\` — фронт делит путь
+                # по `/`, а склейка root / path понимает `/` на всех ОС.
+                relative_path=relative.as_posix(),
                 page_count=page_count,
             )
         )
