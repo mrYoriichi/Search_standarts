@@ -8,19 +8,25 @@ RapidOCR тяжёлый (движок onnxruntime грузит модели) —
 build.spec; в dev-venv: `pip install onnxruntime`.
 """
 
+import threading
+
 import numpy as np
 from PIL import Image
 
 _engine = None
+# Документы индексируются в несколько потоков; без лока они создавали движок
+# параллельно, и на Windows одновременное чтение .onnx падало с "error 13".
+_engine_lock = threading.Lock()
 
 
 def _get_engine():
     """Ленивый синглтон движка RapidOCR (модели грузятся один раз)."""
     global _engine
-    if _engine is None:
-        from rapidocr import RapidOCR
+    with _engine_lock:
+        if _engine is None:
+            from rapidocr import RapidOCR
 
-        _engine = RapidOCR()
+            _engine = RapidOCR()
     return _engine
 
 
