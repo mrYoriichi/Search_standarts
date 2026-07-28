@@ -58,18 +58,33 @@ TEXT_BLOCK_TYPES = {
 VISUAL_BLOCK_TYPES = {"figure", "table"}
 
 
+# Кириллица → латиница. Только строчные: применяется после lower().
+# ё и й в таблице не нужны — NFD уже разложил их в е/и + диакритику
+# (поэтому «чертёж» → chertezh; менять на yo нельзя — сменятся slug'и).
+_CYR_TO_LAT = {
+    "а": "a", "б": "b", "в": "v", "г": "g", "д": "d", "е": "e", "ж": "zh",
+    "з": "z", "и": "i", "к": "k", "л": "l", "м": "m", "н": "n", "о": "o",
+    "п": "p", "р": "r", "с": "s", "т": "t", "у": "u", "ф": "f", "х": "kh",
+    "ц": "ts", "ч": "ch", "ш": "sh", "щ": "shch", "ъ": "", "ы": "y",
+    "ь": "", "э": "e", "ю": "yu", "я": "ya",
+}  # fmt: skip
+_CYR_TABLE = str.maketrans(_CYR_TO_LAT)
+
+
 def make_document_id(filename: str) -> str:
     """
     Превращает имя файла в безопасный id для использования в путях и БД.
-    'ČSN EN 1991-2.pdf' -> 'csn_en_1991_2'
+    'ČSN EN 1991-2.pdf' -> 'csn_en_1991_2', 'Чертёж моста.pdf' -> 'chertezh_mosta'
     """
     stem = Path(filename).stem
     # Раскладываем буквы с диакритикой: Č -> C + ̌
     normalized = unicodedata.normalize("NFD", stem)
     # Выкидываем все «крышки» и «хвостики», остаётся чистая латиница
     ascii_only = "".join(ch for ch in normalized if not unicodedata.combining(ch))
-    # Всё в нижний регистр, не-буквы/не-цифры заменяем на подчёркивание
-    return re.sub(r"[^a-z0-9]+", "_", ascii_only.lower()).strip("_")
+    # Кириллицу транслитерируем (для латиницы/чештины — no-op, slug'и те же)
+    transliterated = ascii_only.lower().translate(_CYR_TABLE)
+    # Не-буквы/не-цифры заменяем на подчёркивание
+    return re.sub(r"[^a-z0-9]+", "_", transliterated).strip("_")
 
 
 def map_label(docling_label) -> str:

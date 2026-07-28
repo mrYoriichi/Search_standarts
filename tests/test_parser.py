@@ -19,12 +19,21 @@ def test_parentheses_and_dots():
     assert make_document_id("příloha č.5 (výkres).pdf") == "priloha_c_5_vykres"
 
 
-def test_cyrillic_becomes_empty():
-    # Фиксируем ТЕКУЩЕЕ поведение: кириллица выбрасывается целиком -> пустой id.
-    # Это реальная дыра: два русских имени файла дадут одинаковый пустой slug
-    # и затрут друг друга. Чинить отдельным шагом (транслитерация) -
-    # тогда этот тест сознательно поменяем.
-    assert make_document_id("Чертёж моста.pdf") == ""
+def test_cyrillic_transliterated():
+    # ё → е даёт NFD ещё до таблицы, поэтому «чертёж» → chertezh, не chertyozh.
+    assert make_document_id("Чертёж моста.pdf") == "chertezh_mosta"
+
+
+def test_cyrillic_names_do_not_collide():
+    # Раньше кириллица выбрасывалась целиком — два русских имени давали
+    # одинаковый пустой slug и затирали друг друга.
+    a = make_document_id("Чертёж.pdf")
+    b = make_document_id("Расчёт.pdf")
+    assert a and b and a != b
+
+
+def test_mixed_cyrillic_latin():
+    assert make_document_id("Отчёт TP107.pdf") == "otchet_tp107"
 
 
 class _FakeTableItem:
