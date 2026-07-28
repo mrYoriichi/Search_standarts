@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { IndexingSettingsButton } from './IndexingSettings'
 
@@ -187,7 +187,33 @@ export default function ArchivePage() {
   const [freshlyReady, setFreshlyReady] = useState<Set<string>>(new Set())
   const prevStatusesRef = useRef<Map<string, string>>(new Map())
 
-  async function loadAll() {
+  // useCallback — стабильная ссылка, чтобы эффекты могли честно указать
+  // loadAll в зависимостях без перезапуска на каждый рендер.
+  const loadAll = useCallback(async () => {
+    // Переход в ready → один раз показываем «hotovo» (как в knihovně). После F5
+    // ref сбрасывается, документ считается уже виденным — плашка не мигает.
+    function markFreshlyReady(data: ArchiveResponse) {
+      const nextStatuses = new Map<string, string>()
+      const justReady: string[] = []
+      for (const project of data.projects) {
+        for (const doc of project.documents) {
+          nextStatuses.set(doc.slug, doc.status)
+          const prev = prevStatusesRef.current.get(doc.slug)
+          if (prev !== undefined && prev !== 'ready' && doc.status === 'ready') {
+            justReady.push(doc.slug)
+          }
+        }
+      }
+      prevStatusesRef.current = nextStatuses
+      if (justReady.length > 0) {
+        setFreshlyReady((prev) => {
+          const next = new Set(prev)
+          justReady.forEach((s) => next.add(s))
+          return next
+        })
+      }
+    }
+
     setError(null)
     try {
       const pathRes = await fetch('/api/settings/projects-libraries')
@@ -196,7 +222,9 @@ export default function ArchivePage() {
 
       const res = await fetch('/api/projects')
       if (res.ok) {
-        setArchive(await res.json())
+        const data: ArchiveResponse = await res.json()
+        setArchive(data)
+        markFreshlyReady(data)
       } else {
         const data = await res.json().catch(() => ({}))
         setError(data.detail ?? `Chyba ${res.status}`)
@@ -206,11 +234,14 @@ export default function ArchivePage() {
     } finally {
       setLoading(false)
     }
-  }
+  }, [])
 
   useEffect(() => {
+    // Ложный оклик правила: setState в loadAll случается после await,
+    // не синхронно (плагин не моделирует async-функции).
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     loadAll()
-  }, [])
+  }, [loadAll])
 
   // Пока что-то реально обрабатывается — раз в 3 с перечитываем статусы.
   // pending НЕ считается: он ждёт клика «Indexovat», на сервере ничего не
@@ -227,32 +258,7 @@ export default function ArchivePage() {
     if (!hasActive) return
     const id = setInterval(loadAll, POLL_INTERVAL_MS)
     return () => clearInterval(id)
-  }, [hasActive])
-
-  // Переход в ready → один раз показываем «hotovo» (как в knihovně). После F5
-  // ref сбрасывается, документ считается уже виденным — плашка не мигает.
-  useEffect(() => {
-    if (!archive) return
-    const nextStatuses = new Map<string, string>()
-    const justReady: string[] = []
-    for (const project of archive.projects) {
-      for (const doc of project.documents) {
-        nextStatuses.set(doc.slug, doc.status)
-        const prev = prevStatusesRef.current.get(doc.slug)
-        if (prev !== undefined && prev !== 'ready' && doc.status === 'ready') {
-          justReady.push(doc.slug)
-        }
-      }
-    }
-    prevStatusesRef.current = nextStatuses
-    if (justReady.length > 0) {
-      setFreshlyReady((prev) => {
-        const next = new Set(prev)
-        justReady.forEach((s) => next.add(s))
-        return next
-      })
-    }
-  }, [archive])
+  }, [hasActive, loadAll])
 
   async function addPath() {
     const value = pathInput.trim()

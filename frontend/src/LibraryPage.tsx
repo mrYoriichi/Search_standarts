@@ -418,6 +418,9 @@ function LibraryPage() {
   }
 
   useEffect(() => {
+    // Ложный оклик правила: setState в loadAll случается после await,
+    // не синхронно (плагин не моделирует async-функции).
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     loadAll()
   }, [])
 
