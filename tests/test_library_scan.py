@@ -223,3 +223,52 @@ def test_readonly_folder_heals_stuck_pending(db, tmp_path):
         assert "zapisovat" in doc.error_message
     finally:
         os.chmod(library, 0o700)
+
+
+class _FakeExecutor:
+    def __init__(self):
+        self.calls = []
+
+    def submit(self, fn, *args, **kwargs):
+        self.calls.append((fn, args))
+
+
+def test_pending_doc_with_ready_shared_index_is_adopted(db, tmp_path):
+    # Документ завис pending (зарегистрирован до того, как коллега доиндексировал
+    # общую папку). «Indexovat» должен усыновить готовый индекс, а не гнать
+    # платный пайплайн заново.
+    from indexing.embeddings_index import EMBEDDING_MODEL
+
+    from backend.modules.library.service import start_indexing
+
+    library = _make_library(tmp_path, "Norma.pdf")
+    scan_library([library], db)
+    slug = _slug(library, "norma")
+    doc = db.scalar(select(Document).where(Document.slug == slug))
+    assert doc.status == "pending"
+    _make_index(library, slug, EMBEDDING_MODEL, title="ČSN Norma 123")
+
+    executor = _FakeExecutor()
+    submitted, locked = start_indexing([library], db, executor)
+
+    assert (submitted, locked) == (0, [])
+    assert executor.calls == []  # пайплайн НЕ запускался
+    db.refresh(doc)
+    assert doc.status == "ready"
+    assert doc.title == "ČSN Norma 123"
+
+
+def test_pending_doc_without_index_still_submitted(db, tmp_path):
+    # Гард от пере-усыновления: нет готового индекса — обычный запуск пайплайна.
+    from backend.modules.library.service import start_indexing
+
+    library = _make_library(tmp_path, "Norma.pdf")
+    scan_library([library], db)
+
+    executor = _FakeExecutor()
+    submitted, _locked = start_indexing([library], db, executor)
+
+    assert submitted == 1
+    assert len(executor.calls) == 1
+    doc = db.scalar(select(Document))
+    assert doc.status == "processing"

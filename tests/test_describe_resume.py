@@ -213,3 +213,29 @@ def test_no_llm_mode_still_writes_empty_passport(tmp_path, monkeypatch):
     saved = json.loads((tmp_path / "descriptions.json").read_text(encoding="utf-8"))
     assert saved["block_descriptions"] == {}
     assert saved["document_title"] == ""
+
+
+def test_no_llm_mode_keeps_paid_descriptions(tmp_path, monkeypatch):
+    # Общая папка: коллега уже оплатил vision-описания. Наш перезапуск в
+    # режиме «Без LLM» не должен затирать их пустым паспортом.
+    _write_document(tmp_path, 1)
+    paid = {
+        "document_title": "Paid",
+        "document_summary": "",
+        "block_descriptions": {"b1": "drahý popis"},
+        "drawing_descriptions": {},
+    }
+    (tmp_path / "descriptions.json").write_text(
+        json.dumps(paid, ensure_ascii=False), encoding="utf-8"
+    )
+
+    def must_not_run(*args, **kwargs):
+        raise AssertionError("режим «без LLM» не должен звать vision")
+
+    monkeypatch.setattr(describe, "extract_document_metadata", must_not_run)
+    monkeypatch.setattr(describe, "describe_page_visuals", must_not_run)
+    describe.process("test", doc_dir=tmp_path, describe_images=False)
+
+    saved = json.loads((tmp_path / "descriptions.json").read_text(encoding="utf-8"))
+    assert saved["document_title"] == "Paid"
+    assert saved["block_descriptions"] == {"b1": "drahý popis"}

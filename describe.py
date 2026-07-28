@@ -211,17 +211,20 @@ def process(
 
     # Режим «Без LLM»: vision пропускаем целиком, оставляем пустой паспорт.
     # descriptions.json всё равно пишем — chunk.process без него не запустится.
+    # НО существующий читаемый файл не трогаем: в общей папке там могут лежать
+    # ОПЛАЧЕННЫЕ vision-описания коллеги — затирать их пустышкой нельзя.
     if not describe_images:
         print("Popis obrázků vypnut (režim bez LLM) — vision se přeskakuje.")
-        save_descriptions(
-            {
-                "document_title": "",
-                "document_summary": "",
-                "block_descriptions": {},
-                "drawing_descriptions": {},
-            },
-            descriptions_path,
-        )
+        if _read_partial(descriptions_path) is None:
+            save_descriptions(
+                {
+                    "document_title": "",
+                    "document_summary": "",
+                    "block_descriptions": {},
+                    "drawing_descriptions": {},
+                },
+                descriptions_path,
+            )
         return
 
     document = load_document(document_path)

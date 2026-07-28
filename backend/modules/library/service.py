@@ -369,6 +369,8 @@ def start_indexing(
     оставляем pending и сообщаем, кто занят. Возвращает (сколько отправлено,
     список «папка: кто индексирует»).
     """
+    from indexing.embeddings_index import EMBEDDING_MODEL
+
     with _start_indexing_lock:
         pending = db.scalars(select(Document).where(Document.status == "pending")).all()
 
@@ -382,7 +384,31 @@ def start_indexing(
 
         submitted = 0
         locked: list[str] = []
+        any_adopted = False
         for library_path, docs in by_folder.items():
+            # Перепроверка ПЕРЕД запуском: коллега мог доиндексировать документ
+            # в общей папке после нашего скана (pending-запись это не видела).
+            # Готовый индекс усыновляем бесплатно; принудительная переработка
+            # остаётся на кнопке 🔄.
+            meta = index_store.read_meta(library_path)
+            can_adopt = (
+                meta is not None and meta.get("embedding_model") == EMBEDDING_MODEL
+            )
+            to_run: list[Document] = []
+            for doc in docs:
+                if can_adopt and index_store.has_complete_index(library_path, doc.slug):
+                    doc.status = "ready"
+                    doc.error_message = None
+                    doc.title = _adopted_title(library_path, doc.slug) or doc.title
+                    any_adopted = True
+                else:
+                    to_run.append(doc)
+            if any_adopted:
+                db.commit()
+            if not to_run:
+                continue  # всё усыновлено — лок папки не нужен
+            docs = to_run
+
             busy_owner = index_lock.acquire(library_path)
             if busy_owner is not None:
                 locked.append(f"{library_path.name}: {busy_owner}")
@@ -403,6 +429,10 @@ def start_indexing(
                     index_store.doc_dir(library_path, doc.slug),
                 )
                 submitted += 1
+        if any_adopted:
+            # В пуле появились готовые документы без пайплайна — следующий
+            # вопрос должен их увидеть (зеркально scan_library).
+            library_cache.invalidate()
         return submitted, locked
 
 
