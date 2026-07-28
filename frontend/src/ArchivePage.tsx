@@ -2,8 +2,8 @@ import { useEffect, useRef, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { IndexingSettingsButton } from './IndexingSettings'
 
-// Архив проектов юзера: список папок архива, «Skenovat», документы по
-// проектам со статусами обработки. Можно подключить несколько папок.
+// Архив проектов юзера: каждая подключённая папка = один проект (все PDF
+// внутри, включая подпапки). «Skenovat», документы по проектам со статусами.
 
 type ArchiveDocument = {
   slug: string
@@ -26,7 +26,6 @@ type ScanSummary = {
   new: number
   missing: number
   duplicates: string[]
-  skipped_root: string[]
   errors: string[]
   unavailable: string[]
 }
@@ -365,12 +364,13 @@ export default function ArchivePage() {
     <div className="flex flex-col gap-6">
       <div className="rounded-md border bg-card p-4 flex flex-col gap-2">
         <h2 className="text-sm font-semibold text-muted-foreground">
-          Složky archivu projektů
+          Složky projektů
         </h2>
         <p className="text-xs text-muted-foreground">
-          Složky s dokončenými projekty: každý projekt = podsložka první úrovně
-          (TZ, statické výpočty, výkresy). Můžete připojit více složek. Soubory
-          se pouze čtou. Zpracování výkresů využívá vision model (viz „Knihovna“).
+          Každá připojená složka = jeden projekt: indexují se všechny PDF uvnitř
+          včetně podsložek (TZ, statické výpočty, výkresy). Můžete připojit více
+          projektů. Soubory se pouze čtou. Zpracování výkresů využívá vision
+          model (viz „Knihovna“).
         </p>
         {paths.length > 0 && (
           <ul className="flex flex-col gap-1">

@@ -38,11 +38,10 @@ class FoundDocument:
 
 @dataclass
 class ArchiveScanResult:
-    """Итог обхода папки архива."""
+    """Итог обхода папки проекта."""
 
     documents: list[FoundDocument]
     duplicates: list[str]  # relative_path файлов, чей slug уже занят (тёзки)
-    skipped_root: list[str]  # PDF прямо в корне архива — вне проектов, не индексируем
     errors: list[str]  # файлы, которые не удалось открыть как PDF
 
 
@@ -60,53 +59,50 @@ def count_pages(pdf_path: Path) -> int:
             doc.close()
 
 
-def make_project_slug(project: str, filename: str) -> str:
-    """Slug документа архива: {проект}__{имя файла}.
+def make_project_slug(project: str, relative_path: str) -> str:
+    """Slug документа архива: {проект}__{путь внутри проекта}.
 
-    Двойное подчёркивание — разделитель, чтобы обе части читались.
-    Имена файлов повторяются между проектами (TZ.pdf есть везде),
-    поэтому проект — обязательная часть идентичности (решение — вариант А).
+    Проект — имя подключённой папки. Путь, а не только имя файла, — потому что
+    одноимённые PDF лежат в разных подпапках проекта (TZ/, výkresy/).
+    Слэши превращаем в пробелы: make_document_id сведёт их к `_`.
     """
-    return f"{make_document_id(project)}__{make_document_id(filename)}"
+    return f"{make_document_id(project)}__{make_document_id(relative_path.replace('/', ' '))}"
 
 
-def resolve_project_root(paths: list[Path], relative_path: str) -> Path | None:
-    """Папка архива, в которой реально лежит файл по relative_path.
+def resolve_project_root(
+    paths: list[Path], project: str, relative_path: str
+) -> Path | None:
+    """Папка проекта, в которой реально лежит файл по relative_path.
 
-    Архивы не хранят метку папки (slug = `{проект}__{файл}` и так не зависит
-    от пути), поэтому папку документа определяем по наличию файла на диске.
-    Первая совпавшая — как и порядок дедупа при скане. None — файла нет нигде.
+    Сверяем и имя папки (= имя проекта), и наличие файла: relative_path
+    вида `TZ/tz.pdf` может существовать сразу в нескольких проектах, и без
+    проверки имени pipeline обработал бы чужой файл. None — не нашли.
     """
     for root in paths:
-        if (root / relative_path).exists():
+        if root.name == project and (root / relative_path).exists():
             return root
     return None
 
 
 def scan_archive(root: Path, seen_slugs: set[str] | None = None) -> ArchiveScanResult:
-    """Обходит папку архива и собирает все PDF.
+    """Обходит папку проекта и собирает все PDF.
 
-    Проект = папка первого уровня. PDF прямо в корне архива не индексируем
-    (не к чему привязать), но сообщаем о них в skipped_root.
-    Файловую систему только читаем (принцип #16). seen_slugs — общий набор
-    занятых slug'ов (при обходе нескольких папок архива): тёзки между папками
-    тоже коллизия (один и тот же проект+файл), уходят в duplicates.
+    Подключённая папка целиком = один проект с именем этой папки; PDF берём
+    с любой глубины, включая корень. Файловую систему только читаем
+    (принцип #16). seen_slugs — общий набор занятых slug'ов (при обходе
+    нескольких папок): тёзки между папками-проектами с одинаковым именем —
+    коллизия, уходят в duplicates.
     """
     documents: list[FoundDocument] = []
     duplicates: list[str] = []
-    skipped_root: list[str] = []
     errors: list[str] = []
     if seen_slugs is None:
         seen_slugs = set()
 
+    project = root.name
     for pdf_path in sorted(root.rglob("*.pdf")):
         relative = pdf_path.relative_to(root)
-        if len(relative.parts) == 1:
-            skipped_root.append(str(relative))
-            continue
-
-        project = relative.parts[0]
-        slug = make_project_slug(project, pdf_path.name)
+        slug = make_project_slug(project, relative.as_posix())
         if slug in seen_slugs:
             duplicates.append(str(relative))
             continue
@@ -132,13 +128,12 @@ def scan_archive(root: Path, seen_slugs: set[str] | None = None) -> ArchiveScanR
     return ArchiveScanResult(
         documents=documents,
         duplicates=duplicates,
-        skipped_root=skipped_root,
         errors=errors,
     )
 
 
 def sync_archive(db: Session, roots: list[Path]) -> ArchiveScanSummary:
-    """Сканирует все папки архива и синхронизирует таблицу project_documents.
+    """Сканирует все папки проектов и синхронизирует таблицу project_documents.
 
     Новые файлы — вставляем со статусом "pending".
     Существующие — обновляем путь/страницы (файл мог переехать).
@@ -149,8 +144,8 @@ def sync_archive(db: Session, roots: list[Path]) -> ArchiveScanSummary:
     Недоступная папка (сетевой диск отвалился) — НЕ «пропавшие»: она уходит
     в unavailable, и чистка в этот скан пропускается целиком.
 
-    slug (`{проект}__{файл}`) уникален по ВСЕМ папкам архива: тёзки между
-    папками — коллизия, уходят в duplicates.
+    slug (`{проект}__{путь}`) уникален по ВСЕМ папкам: тёзки между
+    папками-проектами с одинаковым именем — коллизия, уходят в duplicates.
     """
     from backend.core import library_cache
     from backend.core.paths import PROJECTS_DATA_DIR
@@ -158,7 +153,6 @@ def sync_archive(db: Session, roots: list[Path]) -> ArchiveScanSummary:
     # Общий обход всех папок с единым набором занятых slug'ов.
     documents: list[FoundDocument] = []
     duplicates: list[str] = []
-    skipped_root: list[str] = []
     errors: list[str] = []
     unavailable: list[str] = []
     seen_slugs: set[str] = set()
@@ -176,7 +170,6 @@ def sync_archive(db: Session, roots: list[Path]) -> ArchiveScanSummary:
             continue
         documents.extend(result.documents)
         duplicates.extend(result.duplicates)
-        skipped_root.extend(result.skipped_root)
         errors.extend(result.errors)
 
     existing = {doc.slug: doc for doc in db.scalars(select(ProjectDocument)).all()}
@@ -205,7 +198,7 @@ def sync_archive(db: Session, roots: list[Path]) -> ArchiveScanSummary:
             doc.page_count = found.page_count
 
     removed = 0
-    # Документы архива не несут метку папки (slug = {проект}__{файл}),
+    # Документы архива не несут метку папки (slug = {проект}__{путь}),
     # поэтому при ЛЮБОЙ недоступной папке чистку пропускаем целиком — не
     # понять, чьи «пропавшие». Вернётся диск — следующий скан дочистит.
     if not unavailable:
@@ -227,7 +220,6 @@ def sync_archive(db: Session, roots: list[Path]) -> ArchiveScanSummary:
         new=new_count,
         missing=removed,
         duplicates=duplicates,
-        skipped_root=skipped_root,
         errors=errors,
         unavailable=unavailable,
     )
@@ -266,7 +258,7 @@ def reindex_document(
             f"Документ {slug} сейчас индексируется — дождись конца обработки"
         )
 
-    root = resolve_project_root(paths, doc.relative_path)
+    root = resolve_project_root(paths, doc.project, doc.relative_path)
     if root is None:
         raise ValueError(f"PDF не найден ни в одной папке архива: {doc.relative_path}")
 

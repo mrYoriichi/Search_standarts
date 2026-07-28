@@ -221,7 +221,9 @@ def resolve_pdf_by_slug(db: Session, slug: str) -> Path | None:
     projects_paths = [Path(p) for p in settings_service.get_projects_paths(db)]
     pdoc = db.scalar(select(ProjectDocument).where(ProjectDocument.slug == slug))
     if projects_paths and pdoc is not None:
-        root = projects_service.resolve_project_root(projects_paths, pdoc.relative_path)
+        root = projects_service.resolve_project_root(
+            projects_paths, pdoc.project, pdoc.relative_path
+        )
         if root is not None:
             return root / pdoc.relative_path
     return None

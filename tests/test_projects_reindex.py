@@ -28,7 +28,7 @@ def _add_doc(db, slug: str, status: str) -> ProjectDocument:
     doc = ProjectDocument(
         slug=slug,
         project="Most",
-        relative_path="Most/TZ.pdf",
+        relative_path="TZ.pdf",
         doc_type="text",
         page_count=1,
         status=status,
@@ -68,9 +68,10 @@ def test_reindex_wipes_artifacts_and_resubmits(db, tmp_path, monkeypatch):
     monkeypatch.setattr(
         "backend.core.paths.PROJECTS_DATA_DIR", tmp_path / "projects_data"
     )
-    archive = tmp_path / "archiv"
-    (archive / "Most").mkdir(parents=True)
-    pdf_path = archive / "Most" / "TZ.pdf"
+    # Подключённая папка = сам проект «Most», PDF прямо в ней.
+    project_dir = tmp_path / "Most"
+    project_dir.mkdir(parents=True)
+    pdf_path = project_dir / "TZ.pdf"
     pdf_path.write_bytes(b"%PDF-1.4 fake")
     old_artifacts = tmp_path / "projects_data" / "most__tz"
     old_artifacts.mkdir(parents=True)
@@ -81,7 +82,7 @@ def test_reindex_wipes_artifacts_and_resubmits(db, tmp_path, monkeypatch):
     db.commit()
 
     executor = _FakeExecutor()
-    result = service.reindex_document(db, "most__tz", [archive], executor)
+    result = service.reindex_document(db, "most__tz", [project_dir], executor)
 
     assert result.status == "processing"
     assert result.error is None

@@ -121,7 +121,7 @@ async def lifespan(app: FastAPI):
         ).all()
         for pdoc in stuck_projects:
             root = projects_service.resolve_project_root(
-                projects_paths, pdoc.relative_path
+                projects_paths, pdoc.project, pdoc.relative_path
             )
             if root is None:
                 # Папка архива недоступна или не настроена — как у библиотеки

@@ -99,7 +99,7 @@ def index_archive(
 
         submitted = 0
         for doc in pending:
-            root = service.resolve_project_root(paths, doc.relative_path)
+            root = service.resolve_project_root(paths, doc.project, doc.relative_path)
             if root is None:
                 continue  # файл не найден ни в одной папке — пропускаем
             doc.status = "processing"

@@ -1,4 +1,4 @@
-"""Тесты обхода нескольких папок архива проектов."""
+"""Тесты обхода папок проектов: каждая подключённая папка = один проект."""
 
 from pathlib import Path
 
@@ -19,12 +19,35 @@ def _make_pdf(path: Path, width: float = 595, height: float = 842) -> None:
     doc.close()
 
 
+def test_scan_whole_folder_is_one_project(tmp_path):
+    # PDF в корне и в подпапках — всё один проект с именем самой папки.
+    root = tmp_path / "Beta_most"
+    _make_pdf(root / "tz.pdf")
+    _make_pdf(root / "vykresy" / "202_404.pdf")
+
+    result = scan_archive(root, set())
+    assert len(result.documents) == 2
+    assert {d.project for d in result.documents} == {"Beta_most"}
+
+
+def test_scan_same_filename_in_subfolders_both_indexed(tmp_path):
+    # Одноимённые PDF в разных подпапках проекта — разные документы,
+    # потому что slug включает путь, а не только имя файла.
+    root = tmp_path / "Beta_most"
+    _make_pdf(root / "TZ" / "plan.pdf")
+    _make_pdf(root / "vykresy" / "plan.pdf")
+
+    result = scan_archive(root, set())
+    assert len(result.documents) == 2
+    assert result.duplicates == []
+
+
 def test_scan_shared_seen_dedups_across_roots(tmp_path):
-    # Один и тот же проект+файл в двух папках архива → второй в duplicates.
-    a = tmp_path / "A"
-    b = tmp_path / "B"
-    _make_pdf(a / "Beta_most" / "tz.pdf")
-    _make_pdf(b / "Beta_most" / "tz.pdf")
+    # Две подключённые папки-тёзки с одинаковым файлом → второй в duplicates.
+    a = tmp_path / "A" / "Beta_most"
+    b = tmp_path / "B" / "Beta_most"
+    _make_pdf(a / "tz.pdf")
+    _make_pdf(b / "tz.pdf")
 
     seen: set[str] = set()
     r1 = scan_archive(a, seen)
@@ -35,10 +58,10 @@ def test_scan_shared_seen_dedups_across_roots(tmp_path):
 
 
 def test_scan_distinct_projects_in_two_roots(tmp_path):
-    a = tmp_path / "A"
-    b = tmp_path / "B"
-    _make_pdf(a / "Beta_most" / "tz.pdf")
-    _make_pdf(b / "Alfa_most" / "tz.pdf")
+    a = tmp_path / "Beta_most"
+    b = tmp_path / "Alfa_most"
+    _make_pdf(a / "tz.pdf")
+    _make_pdf(b / "tz.pdf")
 
     seen: set[str] = set()
     docs = scan_archive(a, seen).documents + scan_archive(b, seen).documents
@@ -49,10 +72,15 @@ def test_scan_distinct_projects_in_two_roots(tmp_path):
     }
 
 
-def test_resolve_project_root_by_file_presence(tmp_path):
-    a = tmp_path / "A"
-    b = tmp_path / "B"
-    _make_pdf(b / "Alfa_most" / "tz.pdf")
-    rel = "Alfa_most/tz.pdf"
-    assert resolve_project_root([a, b], rel) == b
-    assert resolve_project_root([a], rel) is None
+def test_resolve_project_root_by_name_and_file(tmp_path):
+    # Оба проекта содержат TZ/tz.pdf — вернуть надо папку СВОЕГО проекта,
+    # иначе pipeline обработает чужой файл.
+    a = tmp_path / "Beta_most"
+    b = tmp_path / "Alfa_most"
+    _make_pdf(a / "TZ" / "tz.pdf")
+    _make_pdf(b / "TZ" / "tz.pdf")
+    rel = "TZ/tz.pdf"
+
+    assert resolve_project_root([a, b], "Beta_most", rel) == a
+    assert resolve_project_root([a, b], "Alfa_most", rel) == b
+    assert resolve_project_root([a], "Alfa_most", rel) is None
