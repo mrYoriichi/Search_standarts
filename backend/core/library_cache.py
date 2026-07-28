@@ -18,7 +18,7 @@ from pathlib import Path
 
 import numpy as np
 
-from ask import load_library
+from ask import EmptyLibraryError, load_library
 from indexing.bm25_index import tokenize_chunk
 from backend.core import index_store
 from backend.core.paths import PROJECTS_DATA_DIR, RAW_DATA_DIR
@@ -86,8 +86,10 @@ def _load_merged() -> tuple[list[dict], dict]:
             continue
         try:
             chunks, index = load_library(root)
-        except RuntimeError:
+        except EmptyLibraryError:
             continue  # в этом корне нет готовых документов — не страшно
+        # Прочие RuntimeError (смешанные модели внутри корня) летят наверх:
+        # роутер отдаст 400 с текстом вместо молчаливого выпадения папки.
         if model is None:
             model = index["model"]
         elif model != index["model"]:

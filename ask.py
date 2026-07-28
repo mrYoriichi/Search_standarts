@@ -43,6 +43,11 @@ def load_index(json_path: Path) -> dict:
         return json.load(f)
 
 
+class EmptyLibraryError(RuntimeError):
+    """В корне нет ни одного готового документа — такой корень можно тихо
+    пропустить при слиянии пулов (в отличие от несовместимых моделей)."""
+
+
 def load_library(data_root: Path) -> tuple[list[dict], dict]:
     """
     Объединяет чанки и эмбеддинги всех готовых документов в один пул.
@@ -95,7 +100,7 @@ def load_library(data_root: Path) -> tuple[list[dict], dict]:
         all_items.extend(index_items)
 
     if not all_chunks:
-        raise RuntimeError(f"В {data_root} нет ни одного готового документа.")
+        raise EmptyLibraryError(f"В {data_root} нет ни одного готового документа.")
 
     return all_chunks, build_matrix_index(all_items, model)
 
