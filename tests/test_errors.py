@@ -76,3 +76,10 @@ class VisionEmptyResponseError(Exception):
 def test_vision_empty_response():
     exc = VisionEmptyResponseError("stránka 3")
     assert "indexovat znovu" in classify_pipeline_error(exc)
+
+
+def test_readonly_folder():
+    exc = PermissionError("[Errno 13] Permission denied: '/lib/.search_index'")
+    msg = classify_pipeline_error(exc)
+    assert "zapisovat" in msg
+    assert "Neočekávaná" not in msg

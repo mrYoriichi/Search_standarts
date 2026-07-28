@@ -18,6 +18,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from backend.core import index_lock, index_store, library_cache, progress
+from backend.core.errors import classify_pipeline_error
 from backend.modules.documents.models import Document
 from backend.modules.documents.pipeline import run_pipeline_locked
 from backend.modules.library.schemas import (
@@ -258,6 +259,14 @@ def scan_library(paths: list[Path], db: Session) -> ScanSummary:
     for library_path in paths:
         folder_id = folder_ids[library_path]
         slug_of = _slug_fn(folder_id)
+        # folder_id нет — в папку не удалось записать .search_index (read-only,
+        # сетевой диск без прав). Вместо вечного молчаливого «čeká» помечаем
+        # документы failed с понятной причиной.
+        ro_error = (
+            None
+            if folder_id
+            else classify_pipeline_error(PermissionError(str(library_path)))
+        )
         # Усыновлять чужие индексы можно только на нашей модели эмбеддингов.
         meta = index_store.read_meta(library_path)
         can_adopt = meta is not None and meta.get("embedding_model") == EMBEDDING_MODEL
@@ -288,6 +297,10 @@ def scan_library(paths: list[Path], db: Session) -> ScanSummary:
             if existing is not None:
                 if existing.relative_path != relative_path:
                     existing.relative_path = relative_path
+                if ro_error and existing.status == "pending":
+                    # Документ застрял «čeká» ещё до фикса — рескан лечит.
+                    existing.status = "failed"
+                    existing.error_message = ro_error
                 summary.already_indexed += 1
                 continue
 
@@ -307,8 +320,9 @@ def scan_library(paths: list[Path], db: Session) -> ScanSummary:
             doc = Document(
                 slug=slug,
                 title=pdf_path.stem,  # реальный title подменит pipeline
-                status="pending",
+                status="failed" if ro_error else "pending",
                 relative_path=relative_path,
+                error_message=ro_error,
             )
             db.add(doc)
             db.commit()

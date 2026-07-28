@@ -37,4 +37,10 @@ def classify_pipeline_error(exc: Exception) -> str:
     if name == "ConversionError":
         return "Soubor se nepodařilo přečíst jako PDF — je poškozený nebo to není PDF."
 
+    if name == "PermissionError":
+        return (
+            "Do složky knihovny nelze zapisovat — index (.search_index) "
+            "nelze uložit. Povolte zápis do složky."
+        )
+
     return f"Neočekávaná chyba ({name}): {exc}"

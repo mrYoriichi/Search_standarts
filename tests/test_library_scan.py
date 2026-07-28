@@ -1,6 +1,7 @@
 """Тесты скана библиотеки: регистрация pending и усыновление готовых индексов."""
 
 import json
+import os
 import shutil
 
 import pytest
@@ -181,3 +182,44 @@ def test_same_physical_folder_twice_keeps_folder_id(db, tmp_path):
     build_library_response([lib, link], db)
     build_library_response([lib, link], db)
     assert index_store.read_meta(lib)["folder_id"] == fid_before
+
+
+@pytest.mark.skipif(
+    hasattr(os, "geteuid") and os.geteuid() == 0,
+    reason="root игнорирует права файлов — PermissionError не воспроизвести",
+)
+def test_readonly_folder_marks_docs_failed(db, tmp_path):
+    # Read-only папка: .search_index не создать → раньше документ вечно висел
+    # «čeká» без единой ошибки. Теперь — failed с чешской причиной.
+    library = _make_library(tmp_path / "lib", "Norma.pdf")
+    os.chmod(library, 0o500)
+    try:
+        scan_library([library], db)
+        doc = db.scalar(select(Document))
+        assert doc.status == "failed"
+        assert "zapisovat" in doc.error_message
+    finally:
+        os.chmod(library, 0o700)
+
+
+@pytest.mark.skipif(
+    hasattr(os, "geteuid") and os.geteuid() == 0,
+    reason="root игнорирует права файлов — PermissionError не воспроизвести",
+)
+def test_readonly_folder_heals_stuck_pending(db, tmp_path):
+    # Документ, застрявший в pending ДО фикса, рескан переводит в failed.
+    library = _make_library(tmp_path / "lib", "Norma.pdf")
+    db.add(
+        Document(
+            slug="norma", title="Norma", status="pending", relative_path="Norma.pdf"
+        )
+    )
+    db.commit()
+    os.chmod(library, 0o500)
+    try:
+        scan_library([library], db)
+        doc = db.scalar(select(Document).where(Document.slug == "norma"))
+        assert doc.status == "failed"
+        assert "zapisovat" in doc.error_message
+    finally:
+        os.chmod(library, 0o700)
