@@ -34,6 +34,8 @@ _cache: tuple[list[dict], dict] | None = None
 # Токены BM25 по chunk_id. Считаются один раз; на каждый вопрос строим BM25 из
 # них, а не токенизируем корпус заново. Сбрасывается вместе с _cache.
 _tokens_cache: dict[str, list[str]] | None = None
+# Отпечаток общих папок на момент загрузки кеша (см. _current_fingerprint).
+_fingerprint: dict[str, int] | None = None
 
 
 def _library_index_roots() -> list[Path]:
@@ -113,12 +115,49 @@ def _load_merged() -> tuple[list[dict], dict]:
     return all_chunks, {"model": model, "chunk_ids": all_chunk_ids, "matrix": matrix}
 
 
+def _current_fingerprint() -> dict[str, int]:
+    """Отпечаток общих папок: mtime embeddings.json каждого документа.
+
+    Только корни библиотек (_library_index_roots): их может переписать ДРУГАЯ
+    машина через общую сетевую папку, и наш локальный invalidate() этого не
+    видит. Локальные пулы (data/raw_data, projects_data) мутирует только этот
+    процесс — он и так зовёт invalidate(). embeddings.json — последний файл
+    пайплайна, его смена означает завершённую переиндексацию; новый или
+    удалённый документ — появившийся/пропавший ключ.
+    """
+    fp: dict[str, int] = {}
+    for root in _library_index_roots():
+        try:
+            slug_dirs = list(root.iterdir())
+        except OSError:
+            continue  # папка недоступна — поймаем на следующем вопросе
+        for d in slug_dirs:
+            emb = d / "embeddings.json"
+            try:
+                fp[str(emb)] = emb.stat().st_mtime_ns
+            except OSError:
+                continue
+    return fp
+
+
+def _ensure_fresh_locked() -> None:
+    """Под _lock: сбрасывает и перечитывает кеш, если общие папки изменились."""
+    global _cache, _tokens_cache, _fingerprint
+    fp = _current_fingerprint()
+    if _cache is not None and fp != _fingerprint:
+        _cache = None
+        _tokens_cache = None
+    if _cache is None:
+        # Отпечаток снимаем ДО загрузки: запись, гонящаяся с чтением, даст
+        # расхождение и честную перечитку на следующем вопросе.
+        _fingerprint = fp
+        _cache = _load_merged()
+
+
 def get_library() -> tuple[list[dict], dict]:
     """Возвращает (chunks, embeddings_index). При первом обращении читает диск."""
-    global _cache
     with _lock:
-        if _cache is None:
-            _cache = _load_merged()
+        _ensure_fresh_locked()
         return _cache
 
 
@@ -131,10 +170,9 @@ def get_library_with_tokens() -> tuple[list[dict], dict, dict[str, list[str]]]:
     старого → KeyError на вопросе. Токены считаются один раз; на каждый вопрос
     BM25 собирается из них (build_bm25_from_tokens) без токенизации корпуса.
     """
-    global _cache, _tokens_cache
+    global _tokens_cache
     with _lock:
-        if _cache is None:
-            _cache = _load_merged()
+        _ensure_fresh_locked()
         if _tokens_cache is None:
             _tokens_cache = {c["chunk_id"]: tokenize_chunk(c) for c in _cache[0]}
         return _cache[0], _cache[1], _tokens_cache
@@ -142,7 +180,8 @@ def get_library_with_tokens() -> tuple[list[dict], dict, dict[str, list[str]]]:
 
 def invalidate() -> None:
     """Сбрасывает кеши — следующий get_library()/get_tokens() перечитает диск."""
-    global _cache, _tokens_cache
+    global _cache, _tokens_cache, _fingerprint
     with _lock:
         _cache = None
         _tokens_cache = None
+        _fingerprint = None
