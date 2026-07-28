@@ -40,6 +40,7 @@ class ArchiveScanSummary(BaseModel):
     found: int  # всего PDF в папках проектов (без дублей)
     new: int  # добавлено новых записей
     missing: int  # удалено: файлов больше нет на диске (индексы вычищены)
+    changed: int = 0  # заменённые PDF (новое содержимое) — сброшены в pending
     duplicates: list[str]  # файлы-тёзки (slug занят) — не индексируются
     errors: list[str]  # файлы, не открывшиеся как PDF
     unavailable: list[str]  # недоступные папки (сетевой диск) — чистка пропущена

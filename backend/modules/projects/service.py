@@ -34,6 +34,8 @@ class FoundDocument:
     project: str
     relative_path: str
     page_count: int
+    file_size: int
+    file_mtime: float
 
 
 @dataclass
@@ -109,6 +111,7 @@ def scan_archive(root: Path, seen_slugs: set[str] | None = None) -> ArchiveScanR
 
         try:
             page_count = count_pages(pdf_path)
+            stat = pdf_path.stat()
         except Exception as error:
             errors.append(f"{relative}: {error}")
             continue
@@ -122,6 +125,8 @@ def scan_archive(root: Path, seen_slugs: set[str] | None = None) -> ArchiveScanR
                 # по `/`, а склейка root / path понимает `/` на всех ОС.
                 relative_path=relative.as_posix(),
                 page_count=page_count,
+                file_size=stat.st_size,
+                file_mtime=stat.st_mtime,
             )
         )
 
@@ -175,6 +180,7 @@ def sync_archive(db: Session, roots: list[Path]) -> ArchiveScanSummary:
     existing = {doc.slug: doc for doc in db.scalars(select(ProjectDocument)).all()}
     found_slugs: set[str] = set()
     new_count = 0
+    changed = 0
 
     for found in documents:
         found_slugs.add(found.slug)
@@ -190,9 +196,36 @@ def sync_archive(db: Session, roots: list[Path]) -> ArchiveScanSummary:
                     doc_type="text",
                     page_count=found.page_count,
                     status="pending",
+                    file_size=found.file_size,
+                    file_mtime=found.file_mtime,
                 )
             )
             new_count += 1
+        elif doc.status == "processing":
+            # Обрабатывается прямо сейчас — путь/страницы обновим, stat НЕ
+            # трогаем: замену файла под пайплайном поймает следующий скан.
+            doc.relative_path = found.relative_path
+            doc.page_count = found.page_count
+        elif doc.file_size is None:
+            # Строка со старой версии (stat-колонок не было): дозаполняем БЕЗ
+            # сброса — иначе первый скан после обновления снёс бы весь архив
+            # в pending, а это повторная оплата vision.
+            doc.relative_path = found.relative_path
+            doc.page_count = found.page_count
+            doc.file_size = found.file_size
+            doc.file_mtime = found.file_mtime
+        elif (doc.file_size, doc.file_mtime) != (found.file_size, found.file_mtime):
+            # Файл заменили (тот же путь, новое содержимое): старые чанки
+            # устарели — вычищаем и возвращаем в pending. Индексация — платная,
+            # поэтому НЕ автозапуск: юзер нажмёт «Indexovat».
+            shutil.rmtree(PROJECTS_DATA_DIR / found.slug, ignore_errors=True)
+            doc.relative_path = found.relative_path
+            doc.page_count = found.page_count
+            doc.status = "pending"
+            doc.error = None
+            doc.file_size = found.file_size
+            doc.file_mtime = found.file_mtime
+            changed += 1
         else:
             doc.relative_path = found.relative_path
             doc.page_count = found.page_count
@@ -212,13 +245,16 @@ def sync_archive(db: Session, roots: list[Path]) -> ArchiveScanSummary:
             removed += 1
 
     db.commit()
-    if removed:
+    if removed or changed:
+        # С диска пропали чанки (удалённые или заменённые документы) —
+        # кеш поиска не должен их отдавать.
         library_cache.invalidate()
 
     return ArchiveScanSummary(
         found=len(documents),
         new=new_count,
         missing=removed,
+        changed=changed,
         duplicates=duplicates,
         errors=errors,
         unavailable=unavailable,
@@ -266,6 +302,11 @@ def reindex_document(
 
     doc.status = "processing"
     doc.error = None
+    # Свежий stat: иначе следующий скан сверил бы старые значения и зря
+    # сбросил бы только что переиндексированный документ в pending.
+    stat = (root / doc.relative_path).stat()
+    doc.file_size = stat.st_size
+    doc.file_mtime = stat.st_mtime
     db.commit()
 
     # Старые чанки уже удалены с диска — убираем их из кеша сразу, не дожидаясь

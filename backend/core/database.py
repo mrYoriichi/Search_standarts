@@ -74,7 +74,12 @@ def ensure_columns() -> None:
     # {таблица: {колонка: тип}} — что должно быть. Чего нет — добавим.
     wanted: dict[str, dict[str, str]] = {
         "pending_reports": {"chunks": "JSON"},  # F7: текст использованных фрагментов
-        "project_documents": {"pinned": "BOOLEAN DEFAULT 0"},  # закрепление в архиве
+        "project_documents": {
+            "pinned": "BOOLEAN DEFAULT 0",  # закрепление в архиве
+            # stat PDF для детекта замены файла (NULL у старых строк)
+            "file_size": "INTEGER",
+            "file_mtime": "FLOAT",
+        },
     }
     with engine.begin() as conn:
         for table, columns in wanted.items():

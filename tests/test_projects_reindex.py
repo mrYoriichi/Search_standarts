@@ -87,6 +87,9 @@ def test_reindex_wipes_artifacts_and_resubmits(db, tmp_path, monkeypatch):
     assert result.status == "processing"
     assert result.error is None
     assert not old_artifacts.exists()  # старые артефакты снесены
+    # Свежий stat записан — следующий скан не сбросит документ в pending.
+    assert result.file_mtime == pytest.approx(pdf_path.stat().st_mtime)
+    assert result.file_size == pdf_path.stat().st_size
     (fn, args) = executor.calls[0]
     assert fn is run_project_pipeline
     assert args == ("most__tz", str(pdf_path))
