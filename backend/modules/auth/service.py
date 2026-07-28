@@ -6,12 +6,12 @@
 import asyncio
 import os
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import timedelta
 
 import httpx
 from sqlalchemy.orm import Session
 
-from backend.core.database import SessionLocal
+from backend.core.database import SessionLocal, naive_utcnow
 from backend.modules.auth.models import AuthSession
 from backend.version import APP_VERSION
 
@@ -146,7 +146,7 @@ def _persist_session(db: Session, username: str, token: str) -> AuthSession:
             id=1,
             token=token,
             username=username,
-            last_verified_at=datetime.utcnow(),
+            last_verified_at=naive_utcnow(),
             last_verify_status="ok",
             download_url=None,
         )
@@ -154,7 +154,7 @@ def _persist_session(db: Session, username: str, token: str) -> AuthSession:
     else:
         session.token = token
         session.username = username
-        session.last_verified_at = datetime.utcnow()
+        session.last_verified_at = naive_utcnow()
         session.last_verify_status = "ok"
         session.download_url = None
     db.commit()
@@ -303,7 +303,7 @@ def verify_once() -> None:
             return  # не залогинен — нечего проверять
         result = verify_with_server(session.token)
         if result.status == "ok":
-            session.last_verified_at = datetime.utcnow()
+            session.last_verified_at = naive_utcnow()
             session.download_url = None
         else:
             # При offline/revoked/update_required НЕ обновляем last_verified_at —
@@ -339,7 +339,7 @@ def compute_effective_status(session: AuthSession) -> str:
     if session.last_verify_status in ("revoked", "update_required"):
         return "blocked"
     if session.last_verify_status == "offline":
-        age = datetime.utcnow() - session.last_verified_at
+        age = naive_utcnow() - session.last_verified_at
         if age > GRACE_PERIOD:
             return "blocked"
     return "ok"

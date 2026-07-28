@@ -9,7 +9,7 @@ from datetime import datetime
 from sqlalchemy import Boolean, DateTime, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
-from backend.core.database import Base
+from backend.core.database import Base, naive_utcnow
 
 
 class ProjectDocument(Base):
@@ -30,4 +30,4 @@ class ProjectDocument(Base):
     )  # pending|processing|ready|error
     error: Mapped[str | None] = mapped_column(Text, nullable=True)
     pinned: Mapped[bool] = mapped_column(Boolean, default=False)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=naive_utcnow)

@@ -1,11 +1,21 @@
 """БД-инфраструктура: engine, базовый класс моделей, доступ к сессии."""
 
 from collections.abc import Generator
+from datetime import UTC, datetime
 
 from sqlalchemy import create_engine, event
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 
 from backend.core.paths import DB_PATH
+
+
+def naive_utcnow() -> datetime:
+    """Текущее время UTC без tzinfo — как хранят колонки DateTime в SQLite.
+
+    Замена deprecated `datetime.utcnow()`: сравнения с наивными датами из БД
+    продолжают работать.
+    """
+    return datetime.now(UTC).replace(tzinfo=None)
 
 
 # Адрес БД. Путь к файлу app.db даёт core/paths (в dev — корень проекта,
