@@ -145,3 +145,37 @@ def test_processing_doc_not_reset(db, artifacts_dir, tmp_path):
     assert doc.status == "processing"
     assert doc.file_mtime == old_mtime
     assert summary.changed == 0
+
+
+class _FakeExecutor:
+    def __init__(self):
+        self.calls = []
+
+    def submit(self, fn, *args, **kwargs):
+        self.calls.append((fn, args))
+
+
+def test_index_archive_refreshes_stat(db, artifacts_dir, tmp_path):
+    # Файл заменён между «Skenovat» и «Indexovat»: пайплайн прочитает НОВУЮ
+    # версию с диска — stat в БД должен соответствовать ей, иначе следующий
+    # скан сочтёт свежеоплаченный индекс устаревшим и зря сбросит в pending.
+    from backend.modules.projects.service import start_archive_indexing
+
+    root = tmp_path / "Most"
+    pdf = root / "tz.pdf"
+    _make_pdf(pdf, pages=1)
+    slug = make_project_slug("Most", "tz.pdf")
+    sync_archive(db, [root])
+
+    _make_pdf(pdf, pages=2)
+    _bump_mtime(pdf)
+
+    executor = _FakeExecutor()
+    submitted = start_archive_indexing(db, [root], executor)
+
+    doc = db.scalar(select(ProjectDocument).where(ProjectDocument.slug == slug))
+    assert submitted == 1
+    assert len(executor.calls) == 1
+    assert doc.status == "processing"
+    assert doc.file_size == pdf.stat().st_size
+    assert doc.file_mtime == pytest.approx(pdf.stat().st_mtime)

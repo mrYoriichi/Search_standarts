@@ -129,6 +129,9 @@ async def lifespan(app: FastAPI):
                 pdoc.status = "pending"
                 print(f"[startup] Архив {pdoc.slug}: папка недоступна — pending")
                 continue
+            # Файл могли заменить, пока приложение лежало: stat должен
+            # соответствовать версии, которую сейчас прочитает пайплайн.
+            projects_service.refresh_file_stat(pdoc, root)
             executor.submit(
                 run_project_pipeline,
                 pdoc.slug,

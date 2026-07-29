@@ -6,6 +6,7 @@
 """
 
 import shutil
+import threading
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
@@ -261,6 +262,61 @@ def sync_archive(db: Session, roots: list[Path]) -> ArchiveScanSummary:
     )
 
 
+def refresh_file_stat(doc: ProjectDocument, root: Path) -> None:
+    """Записывает ТЕКУЩИЙ stat PDF перед отправкой в пайплайн.
+
+    Пайплайн читает файл с диска в момент обработки — stat в БД должен
+    соответствовать именно этой версии. Иначе (файл заменили между сканом
+    и запуском) следующий скан счёл бы свежеоплаченный индекс устаревшим
+    и зря сбросил бы его в pending.
+    """
+    try:
+        stat = (root / doc.relative_path).stat()
+    except OSError:
+        return  # файл исчез между resolve и stat — пайплайн упадёт сам, громко
+    doc.file_size = stat.st_size
+    doc.file_mtime = stat.st_mtime
+
+
+# Сериализует запуск индексации (даблклик по «Indexovat»): два одновременных
+# вызова иначе прочитают одни и те же pending до чужого commit — двойная
+# оплата vision.
+_start_indexing_lock = threading.Lock()
+
+
+def start_archive_indexing(
+    db: Session,
+    paths: list[Path],
+    executor: ThreadPoolExecutor,
+) -> int:
+    """Отправляет pending-документы архива в пайплайн; возвращает число.
+
+    Статус сразу processing — повторный клик не отправит те же документы
+    второй раз, а после падения их подхватит возобновление на старте.
+    Папку каждого документа находим по наличию его файла на диске.
+    """
+    from backend.modules.projects.pipeline import run_project_pipeline
+
+    with _start_indexing_lock:
+        pending = db.scalars(
+            select(ProjectDocument).where(ProjectDocument.status == "pending")
+        ).all()
+
+        submitted = 0
+        for doc in pending:
+            root = resolve_project_root(paths, doc.project, doc.relative_path)
+            if root is None:
+                continue  # файл не найден ни в одной папке — пропускаем
+            refresh_file_stat(doc, root)
+            doc.status = "processing"
+            db.commit()
+            executor.submit(
+                run_project_pipeline, doc.slug, str(root / doc.relative_path)
+            )
+            submitted += 1
+        return submitted
+
+
 class DocumentBusyError(Exception):
     """Операция отклонена: документ архива сейчас обрабатывается пайплайном.
 
@@ -302,11 +358,7 @@ def reindex_document(
 
     doc.status = "processing"
     doc.error = None
-    # Свежий stat: иначе следующий скан сверил бы старые значения и зря
-    # сбросил бы только что переиндексированный документ в pending.
-    stat = (root / doc.relative_path).stat()
-    doc.file_size = stat.st_size
-    doc.file_mtime = stat.st_mtime
+    refresh_file_stat(doc, root)
     db.commit()
 
     # Старые чанки уже удалены с диска — убираем их из кеша сразу, не дожидаясь
