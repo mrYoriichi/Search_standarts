@@ -15,6 +15,7 @@
 
 import os
 import threading
+import time
 from pathlib import Path
 
 import numpy as np
@@ -37,6 +38,12 @@ _cache: tuple[list[dict], dict] | None = None
 _tokens_cache: dict[str, list[str]] | None = None
 # Отпечаток общих папок на момент загрузки кеша (см. _current_fingerprint).
 _fingerprint: dict[str, int] | None = None
+# Троттлинг свипа: на сетевой папке 200 stat'ов стоят 0.2-10 с (SMB/VPN),
+# а свип идёт под _lock перед КАЖДЫМ вопросом. Внутри TTL отпечаток не
+# пересчитываем — чужая переиндексация заметится с задержкой до минуты
+# (допустимо); локальные изменения идут через invalidate() и TTL обходят.
+_FINGERPRINT_TTL_S = 60.0
+_last_sweep = 0.0  # time.monotonic() последнего свипа; 0 — свипа не было
 
 
 def _library_index_roots() -> list[Path]:
@@ -152,8 +159,12 @@ def _current_fingerprint(prev: dict[str, int] | None) -> dict[str, int]:
 
 def _ensure_fresh_locked() -> None:
     """Под _lock: сбрасывает и перечитывает кеш, если общие папки изменились."""
-    global _cache, _tokens_cache, _fingerprint
+    global _cache, _tokens_cache, _fingerprint, _last_sweep
+    now = time.monotonic()
+    if _cache is not None and now - _last_sweep < _FINGERPRINT_TTL_S:
+        return  # свип был недавно — отвечаем из тёплого кеша без stat'ов
     fp = _current_fingerprint(_fingerprint)
+    _last_sweep = now
     if _cache is not None and fp != _fingerprint:
         _cache = None
         _tokens_cache = None
@@ -190,8 +201,9 @@ def get_library_with_tokens() -> tuple[list[dict], dict, dict[str, list[str]]]:
 
 def invalidate() -> None:
     """Сбрасывает кеши — следующий get_library()/get_tokens() перечитает диск."""
-    global _cache, _tokens_cache, _fingerprint
+    global _cache, _tokens_cache, _fingerprint, _last_sweep
     with _lock:
         _cache = None
         _tokens_cache = None
         _fingerprint = None
+        _last_sweep = 0.0

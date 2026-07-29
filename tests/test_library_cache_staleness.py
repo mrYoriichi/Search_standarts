@@ -39,6 +39,8 @@ def shared_root(tmp_path, monkeypatch):
     monkeypatch.setattr(library_cache, "DATA_ROOT", tmp_path / "no_raw")
     monkeypatch.setattr(library_cache, "PROJECTS_DATA_DIR", tmp_path / "no_projects")
     monkeypatch.setattr(library_cache, "_library_index_roots", lambda: [root])
+    # TTL=0: тесты выше проверяют сам механизм отпечатка, без троттлинга.
+    monkeypatch.setattr(library_cache, "_FINGERPRINT_TTL_S", 0.0)
     library_cache.invalidate()
     yield root
     library_cache.invalidate()
@@ -94,5 +96,26 @@ def test_unreachable_root_keeps_serving_cache(shared_root, tmp_path):
     emb = shared_root / "doc" / "embeddings.json"
     st = emb.stat()
     os.utime(emb, ns=(st.st_atime_ns + 2_000_000_000, st.st_mtime_ns + 2_000_000_000))
+    chunks, _ = library_cache.get_library()
+    assert chunks[0]["text"] == "NEW"
+
+
+def test_fingerprint_throttled_between_questions(shared_root, monkeypatch):
+    # На сетевой папке свип stat'ов стоит 0.2-10 с — внутри TTL отпечаток
+    # не пересчитывается (минутная задержка чужих изменений допустима).
+    # Локальные изменения идут через invalidate() и троттлинг обходят.
+    monkeypatch.setattr(library_cache, "_FINGERPRINT_TTL_S", 3600.0)
+    chunks, _ = library_cache.get_library()
+    assert chunks[0]["text"] == "OLD"
+
+    _write_doc(shared_root, "doc", "NEW")
+    emb = shared_root / "doc" / "embeddings.json"
+    st = emb.stat()
+    os.utime(emb, ns=(st.st_atime_ns + 2_000_000_000, st.st_mtime_ns + 2_000_000_000))
+
+    chunks, _ = library_cache.get_library()
+    assert chunks[0]["text"] == "OLD"  # внутри TTL — без свипа, кеш как есть
+
+    library_cache.invalidate()  # локальная мутация сбрасывает и TTL
     chunks, _ = library_cache.get_library()
     assert chunks[0]["text"] == "NEW"
