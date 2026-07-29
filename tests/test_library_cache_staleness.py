@@ -72,3 +72,27 @@ def test_remote_delete_drops_doc(shared_root):
     shutil.rmtree(shared_root / "doc2")
     chunks, _ = library_cache.get_library()
     assert {c["document_id"] for c in chunks} == {"doc"}
+
+
+def test_unreachable_root_keeps_serving_cache(shared_root, tmp_path):
+    # Отвал сетевого диска ≠ «документы удалили»: тёплый кеш продолжает
+    # отвечать полным корпусом, а не молча теряет всю общую библиотеку.
+    chunks, _ = library_cache.get_library()
+    assert chunks[0]["text"] == "OLD"
+
+    hidden = tmp_path / "hidden"
+    shared_root.rename(hidden)  # «диск отвалился»
+    chunks, _ = library_cache.get_library()
+    assert chunks[0]["text"] == "OLD"  # кеш жив, без исключений
+
+    hidden.rename(shared_root)  # диск вернулся, файлы те же — кеш ещё жив
+    chunks, _ = library_cache.get_library()
+    assert chunks[0]["text"] == "OLD"
+
+    # А реальная переиндексация после возврата — ловится.
+    _write_doc(shared_root, "doc", "NEW")
+    emb = shared_root / "doc" / "embeddings.json"
+    st = emb.stat()
+    os.utime(emb, ns=(st.st_atime_ns + 2_000_000_000, st.st_mtime_ns + 2_000_000_000))
+    chunks, _ = library_cache.get_library()
+    assert chunks[0]["text"] == "NEW"

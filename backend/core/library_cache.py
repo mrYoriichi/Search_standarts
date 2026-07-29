@@ -13,6 +13,7 @@
 запросам безопасно.
 """
 
+import os
 import threading
 from pathlib import Path
 
@@ -39,11 +40,13 @@ _fingerprint: dict[str, int] | None = None
 
 
 def _library_index_roots() -> list[Path]:
-    """Корни .search_index всех папок библиотеки (существующие).
+    """Корни .search_index всех папок библиотеки (включая недоступные).
 
     Новый пул (этап 4): индексы лежат рядом с PDF юзера, не в data/raw_data.
     chunk_id несёт метку папки (`{folder_id}__…`), поэтому чанки разных папок
-    не сталкиваются в слитом пуле.
+    не сталкиваются в слитом пуле. Существование НЕ проверяем: _load_merged
+    пропускает отсутствующие корни сам, а отпечатку нужны и недоступные —
+    чтобы отличать «диск отвалился» от «документы удалили».
     """
     from backend.core.database import SessionLocal
     from backend.modules.settings import service as settings_service
@@ -60,9 +63,7 @@ def _library_index_roots() -> list[Path]:
         if any(index_store.same_dir(p, s) for s in seen):
             continue  # та же физическая папка под вторым путём — чанки не двоим
         seen.append(p)
-        root = index_store.index_root(p)
-        if root.exists():
-            roots.append(root)
+        roots.append(index_store.index_root(p))
     return roots
 
 
@@ -115,7 +116,7 @@ def _load_merged() -> tuple[list[dict], dict]:
     return all_chunks, {"model": model, "chunk_ids": all_chunk_ids, "matrix": matrix}
 
 
-def _current_fingerprint() -> dict[str, int]:
+def _current_fingerprint(prev: dict[str, int] | None) -> dict[str, int]:
     """Отпечаток общих папок: mtime embeddings.json каждого документа.
 
     Только корни библиотек (_library_index_roots): их может переписать ДРУГАЯ
@@ -124,13 +125,20 @@ def _current_fingerprint() -> dict[str, int]:
     процесс — он и так зовёт invalidate(). embeddings.json — последний файл
     пайплайна, его смена означает завершённую переиндексацию; новый или
     удалённый документ — появившийся/пропавший ключ.
+
+    НЕДОСТУПНЫЙ корень (сетевой диск отвалился, VPN) ≠ «документы удалили»:
+    переносим его записи из прошлого отпечатка prev — тёплый кеш продолжает
+    отвечать полным корпусом, а после возврата диска сравнение честное.
     """
     fp: dict[str, int] = {}
     for root in _library_index_roots():
         try:
             slug_dirs = list(root.iterdir())
         except OSError:
-            continue  # папка недоступна — поймаем на следующем вопросе
+            if prev:
+                prefix = str(root) + os.sep
+                fp.update({k: v for k, v in prev.items() if k.startswith(prefix)})
+            continue
         for d in slug_dirs:
             emb = d / "embeddings.json"
             try:
@@ -143,7 +151,7 @@ def _current_fingerprint() -> dict[str, int]:
 def _ensure_fresh_locked() -> None:
     """Под _lock: сбрасывает и перечитывает кеш, если общие папки изменились."""
     global _cache, _tokens_cache, _fingerprint
-    fp = _current_fingerprint()
+    fp = _current_fingerprint(_fingerprint)
     if _cache is not None and fp != _fingerprint:
         _cache = None
         _tokens_cache = None
