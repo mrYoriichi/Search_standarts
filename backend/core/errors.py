@@ -37,10 +37,14 @@ def classify_pipeline_error(exc: Exception) -> str:
     if name == "ConversionError":
         return "Soubor se nepodařilo přečíst jako PDF — je poškozený nebo to není PDF."
 
+    # Нейтральный текст: классификатор общий для библиотеки, архива и поиска.
+    # Типовой Windows-кейс — файл держит Acrobat/антивирус/OneDrive, поэтому
+    # путь из исключения оставляем видимым. Специфичный текст про read-only
+    # папку библиотеки даёт сам scan_library.
     if name == "PermissionError":
         return (
-            "Do složky knihovny nelze zapisovat — index (.search_index) "
-            "nelze uložit. Povolte zápis do složky."
+            "Soubor nebo složka je uzamčena, nebo chybí oprávnění k zápisu — "
+            f"zavřete soubor v jiném programu a zkuste to znovu. ({exc})"
         )
 
     return f"Neočekávaná chyba ({name}): {exc}"

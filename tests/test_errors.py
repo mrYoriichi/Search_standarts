@@ -78,8 +78,12 @@ def test_vision_empty_response():
     assert "indexovat znovu" in classify_pipeline_error(exc)
 
 
-def test_readonly_folder():
-    exc = PermissionError("[Errno 13] Permission denied: '/lib/.search_index'")
+def test_permission_error_neutral_with_path():
+    # Классификатор общий для библиотеки, архива и поиска — текст не должен
+    # сваливать всё на «папку библиотеки», а путь из исключения должен
+    # остаться виден (Windows: PDF залочен Acrobat'ом/антивирусом).
+    exc = PermissionError("[Errno 13] Permission denied: 'projects_data/x.json'")
     msg = classify_pipeline_error(exc)
-    assert "zapisovat" in msg
+    assert "oprávnění" in msg
+    assert "projects_data/x.json" in msg
     assert "Neočekávaná" not in msg

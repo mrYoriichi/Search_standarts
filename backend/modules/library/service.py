@@ -18,7 +18,6 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from backend.core import index_lock, index_store, library_cache, progress
-from backend.core.errors import classify_pipeline_error
 from backend.modules.documents.models import Document
 from backend.modules.documents.pipeline import run_pipeline_locked
 from backend.modules.library.schemas import (
@@ -265,7 +264,10 @@ def scan_library(paths: list[Path], db: Session) -> ScanSummary:
         ro_error = (
             None
             if folder_id
-            else classify_pipeline_error(PermissionError(str(library_path)))
+            else (
+                "Do složky knihovny nelze zapisovat — index (.search_index) "
+                "nelze uložit. Povolte zápis do složky."
+            )
         )
         # Усыновлять чужие индексы можно только на нашей модели эмбеддингов.
         meta = index_store.read_meta(library_path)

@@ -25,6 +25,7 @@ type ScanSummary = {
   found: number
   new: number
   missing: number
+  changed: number // заменённые PDF (новое содержимое) — вернулись в «čeká»
   duplicates: string[]
   errors: string[]
   unavailable: string[]
@@ -515,6 +516,8 @@ export default function ArchivePage() {
                 {summary && (
                   <p className="text-xs text-muted-foreground">
                     Nalezeno {summary.found}, nových {summary.new}
+                    {summary.changed > 0 &&
+                      `, nahrazeno ${summary.changed} (vráceno k indexaci)`}
                     {summary.missing > 0 && `, odstraněno ${summary.missing}`}
                     {summary.duplicates.length > 0 &&
                       `, duplicit ${summary.duplicates.length}`}

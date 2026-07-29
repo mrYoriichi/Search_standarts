@@ -96,9 +96,11 @@ def _load_merged() -> tuple[list[dict], dict]:
         if model is None:
             model = index["model"]
         elif model != index["model"]:
+            # Текст уходит юзеру в UI (роутер отдаёт его как detail) — по-чешски.
             raise RuntimeError(
-                "Пулы построены разными моделями эмбеддингов "
-                f"({model} ≠ {index['model']}). Они несовместимы."
+                "Části knihovny jsou indexovány různými modely embeddingů "
+                f"({model} ≠ {index['model']}) a nejsou kompatibilní — "
+                "přeindexujte starší složku."
             )
         all_chunks.extend(chunks)
         all_chunk_ids.extend(index["chunk_ids"])

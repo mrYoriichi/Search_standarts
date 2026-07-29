@@ -45,7 +45,7 @@ def test_mixed_models_in_one_folder_fail_loudly(tmp_path, monkeypatch, isolated_
     _make_doc(mixed, "doc_b", "model-b", 3)
     monkeypatch.setattr(library_cache, "_library_index_roots", lambda: [mixed])
 
-    with pytest.raises(RuntimeError, match="модел"):
+    with pytest.raises(RuntimeError, match="jiným modelem"):
         library_cache._load_merged()
 
 
@@ -57,7 +57,7 @@ def test_pools_on_different_models_fail_loudly(tmp_path, monkeypatch, isolated_c
     _make_doc(root_b, "doc_b", "model-b", 2)
     monkeypatch.setattr(library_cache, "_library_index_roots", lambda: [root_a, root_b])
 
-    with pytest.raises(RuntimeError, match="разными моделями"):
+    with pytest.raises(RuntimeError, match="různými modely"):
         library_cache._load_merged()
 
 

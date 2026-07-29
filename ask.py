@@ -87,13 +87,13 @@ def load_library(data_root: Path) -> tuple[list[dict], dict]:
             print(f"[!] Битый индекс, пропускаю документ: {doc_dir.name}")
             continue
 
-        # Сверяем модель эмбеддингов
+        # Сверяем модель эмбеддингов. Текст летит в UI через 400 — по-чешски.
         if model is None:
             model = index_model
         elif model != index_model:
             raise RuntimeError(
-                f"Документ {doc_dir.name} построен на модели {index_model}, "
-                f"а раньше встретилась модель {model}. Перестрой векторный индекс."
+                f"Dokument {doc_dir.name} je indexován jiným modelem embeddingů "
+                f"({index_model} ≠ {model}) — přeindexujte ho (🔄)."
             )
 
         all_chunks.extend(chunks)
