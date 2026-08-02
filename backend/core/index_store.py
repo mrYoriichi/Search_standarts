@@ -1,15 +1,17 @@
-"""Индексы в папке библиотеки: <папка>/.search_index/{slug}/.
+"""Indexes inside the library folder: <folder>/.search_index/{slug}/.
 
-Источник правды публичной версии — сама папка с PDF: артефакты индекса лежат
-рядом с документами в скрытой подпапке .search_index, БД — только локальный
-кеш статусов. Один юзер индексирует папку на сетевом диске — остальные
-подключают её и ищут без трат («усыновление» готовых индексов при скане).
+The public version's source of truth is the PDF folder itself: index
+artifacts live next to the documents in the hidden .search_index
+subfolder, the DB is only a local status cache. One user indexes a
+network folder — everyone else attaches it and searches at no cost
+("adoption" of ready indexes at scan time).
 
-meta.json — паспорт папки: модель эмбеддингов, версия формата, постоянный id
-папки. Id одинаков у всех машин независимо от пути монтирования — им будем
-префиксовать chunk_id в кеше поиска, когда папок станет несколько.
+meta.json is the folder passport: embedding model, format version, a
+permanent folder id. The id is identical on every machine regardless of
+the mount path — it prefixes chunk ids so multiple folders coexist.
 
-Файлы юзера не трогаем (решение №16): пишем ТОЛЬКО внутрь .search_index/.
+User files are never touched (decision #16): writes go ONLY inside
+.search_index/.
 """
 
 import json
@@ -22,22 +24,22 @@ from common.jsonio import save_json_atomic
 
 INDEX_DIR_NAME = ".search_index"
 META_FILENAME = "meta.json"
-# Поднимать при несовместимой смене формата артефактов — старые индексы
-# перестанут «усыновляться» и будут переиндексированы.
+# Bump on an incompatible artifact-format change — old indexes stop being
+# adopted and get re-indexed.
 FORMAT_VERSION = 1
 
 
 def index_root(library_path: Path) -> Path:
-    """Корень индексов папки библиотеки."""
+    """Index root of a library folder."""
     return library_path / INDEX_DIR_NAME
 
 
 def same_dir(a: Path, b: Path) -> bool:
-    """Один и тот же каталог на диске (симлинк / второй маунт)?
+    """Same directory on disk (symlink / second mount)?
 
-    Одну физическую папку, добавленную под двумя путями, нельзя считать
-    двумя папками: скан регистрировал бы файлы дважды, кеш двоил бы чанки,
-    а метка folder_id перевыдавалась бы «пинг-понгом» на каждый запрос.
+    One physical folder attached under two paths must not count as two:
+    the scan would register files twice, the cache would double chunks,
+    and the folder_id would be re-issued ping-pong on every request.
     """
     try:
         return a.samefile(b)
@@ -46,12 +48,12 @@ def same_dir(a: Path, b: Path) -> bool:
 
 
 def doc_dir(library_path: Path, slug: str) -> Path:
-    """Папка артефактов одного документа."""
+    """Artifact folder of one document."""
     return index_root(library_path) / slug
 
 
 def read_meta(library_path: Path) -> dict | None:
-    """Читает meta.json папки. Нет файла или битый JSON — None."""
+    """Read the folder's meta.json. Missing file or broken JSON — None."""
     meta_path = index_root(library_path) / META_FILENAME
     try:
         with open(meta_path, encoding="utf-8") as f:
@@ -61,15 +63,16 @@ def read_meta(library_path: Path) -> dict | None:
 
 
 def ensure_meta(library_path: Path, embedding_model: str) -> dict:
-    """Возвращает meta.json папки, создав его при первом обращении.
+    """Return the folder's meta.json, creating it on first use.
 
-    Существующий meta НЕ перезаписывает (id и модель — постоянные свойства
-    папки; конфликт модели ловит вызывающий код сравнением полей).
+    An existing meta is NOT overwritten (the id and model are permanent
+    folder properties; a model conflict is caught by the caller).
 
-    Создание эксклюзивное (O_EXCL, как у lock-файла): когда две машины
-    одновременно впервые открывают общую папку, паспорт записывает ровно
-    одна, вторая читает победивший — иначе папка получила бы два folder_id
-    и документы проигравшей метки осиротели бы.
+    Creation is exclusive (O_EXCL, like the lock file): when two machines
+    open a shared folder for the first time simultaneously, exactly one
+    writes the passport and the other reads the winner's — otherwise the
+    folder would get two folder_ids and the loser's documents would be
+    orphaned.
     """
     meta = read_meta(library_path)
     if meta is not None:
@@ -80,26 +83,27 @@ def ensure_meta(library_path: Path, embedding_model: str) -> dict:
         "embedding_model": embedding_model,
     }
     if not library_path.is_dir():
-        # Папку библиотеки НЕ создаём (принцип №16): её отсутствие — это
-        # опечатка в пути или отвалившийся сетевой диск, маскировать нельзя.
-        raise FileNotFoundError(f"Папка библиотеки недоступна: {library_path}")
+        # The library folder is NOT created here (decision #16): its
+        # absence means a path typo or a dropped network drive — masking
+        # that is wrong.
+        raise FileNotFoundError(f"Library folder unavailable: {library_path}")
     root = index_root(library_path)
     root.mkdir(exist_ok=True)
     try:
         fd = os.open(root / META_FILENAME, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
     except FileExistsError:
-        return _wait_meta(library_path)  # проиграли гонку — читаем победителя
+        return _wait_meta(library_path)  # lost the race — read the winner's
     with os.fdopen(fd, "w", encoding="utf-8") as f:
         json.dump(meta, f, ensure_ascii=False, indent=2)
     return meta
 
 
 def _wait_meta(library_path: Path, attempts: int = 50, delay: float = 0.1) -> dict:
-    """Читает meta.json с повторами: победитель гонки мог ещё не дописать файл.
+    """Read meta.json with retries: the race winner may still be writing.
 
-    Не дождались валидного JSON — значит это не гонка, а битый файл. Молча
-    перевыдавать id нельзя (осиротевшие документы, платная переиндексация
-    всей папки), поэтому — громкая ошибка.
+    No valid JSON after the retries means it is not a race but a broken
+    file. Silently re-issuing the id is forbidden (orphaned documents,
+    paid re-indexing of the whole folder) — so a loud error.
     """
     for _ in range(attempts):
         meta = read_meta(library_path)
@@ -107,34 +111,35 @@ def _wait_meta(library_path: Path, attempts: int = 50, delay: float = 0.1) -> di
             return meta
         time.sleep(delay)
     raise OSError(
-        "Битый паспорт папки (невалидный JSON): "
+        "Broken folder passport (invalid JSON): "
         f"{index_root(library_path) / META_FILENAME}"
     )
 
 
 def scoped_slug(folder_id: str, filename_slug: str) -> str:
-    """Id документа = метка папки + slug имени файла (`{folder_id}__{file}`).
+    """Document id = folder tag + file-name slug (`{folder_id}__{file}`).
 
-    Так один и тот же файл в разных папках даёт разные id — не путаются
-    (тот же приём, что в архиве проектов: `{проект}__{файл}`). folder_id —
-    постоянная метка папки из meta.json, одинаковая на всех машинах, поэтому
-    id не зависит от того, куда папка примонтирована.
+    The same file in different folders gets different ids (same trick as
+    the project archive: `{project}__{file}`). folder_id is the permanent
+    folder tag from meta.json, identical on all machines, so the id does
+    not depend on where the folder is mounted.
     """
     return f"{folder_id}__{filename_slug}"
 
 
 def folder_id_of(slug: str) -> str | None:
-    """Достаёт метку папки из id документа. Нет разделителя `__` — None
-    (slug без метки папки — из сборки до scoped-slug)."""
+    """Folder tag from a document id. No `__` separator — None
+    (untagged slug from a build before scoped slugs)."""
     folder_id, sep, _ = slug.partition("__")
     return folder_id if sep else None
 
 
 def resolve_folder(paths: list[Path], slug: str) -> Path | None:
-    """Находит папку из списка, которой принадлежит документ (по метке в slug).
+    """Find which folder in the list owns the document (by the slug tag).
 
-    slug = `{folder_id}__{файл}`; folder_id сверяем с meta.json каждой папки.
-    None — папка отключена или slug легаси (без метки).
+    slug = `{folder_id}__{file}`; folder_id is checked against each
+    folder's meta.json. None — the folder is detached or the slug is
+    legacy (untagged).
     """
     fid = folder_id_of(slug)
     if fid is None:
@@ -149,15 +154,16 @@ def resolve_folder(paths: list[Path], slug: str) -> Path | None:
 def ensure_unique_folder_id(
     library_path: Path, taken: set[str], embedding_model: str
 ) -> str | None:
-    """Метка папки, гарантированно не совпадающая с taken (уже занятыми).
+    """Folder tag guaranteed not to collide with `taken`.
 
-    Если папку скопировали вместе со скрытой `.search_index` (meta.json тоже
-    скопировался), у двух папок окажется одинаковый folder_id — метка должна
-    быть уникальной, иначе документы одной папки полезут искать PDF в другой.
-    В таком случае перевыдаём метку и переписываем meta.json.
+    If a folder was copied together with its hidden `.search_index`
+    (meta.json included), two folders end up with the same folder_id —
+    the tag must be unique, otherwise one folder's documents would look
+    for PDFs in the other. In that case the tag is re-issued and
+    meta.json rewritten.
 
-    read-only папка без возможности записать meta.json → None (метку не
-    выдать; такая папка не индексируется).
+    A read-only folder where meta.json cannot be written → None (no tag
+    can be issued; such a folder does not index).
     """
     meta = read_meta(library_path)
     if meta is None:
@@ -172,19 +178,20 @@ def ensure_unique_folder_id(
         try:
             save_json_atomic(index_root(library_path) / META_FILENAME, meta)
         except OSError:
-            return None  # папка только для чтения — коллизию не починить
+            return None  # read-only folder — the collision cannot be fixed
     return fid
 
 
 def has_complete_index(library_path: Path, slug: str) -> bool:
-    """Есть ли у документа полный ЧИТАЕМЫЙ индекс (нужный поиску минимум).
+    """Does the document have a complete READABLE index (search minimum)?
 
-    chunks.json + embeddings.json достаточно: поиск читает только их,
-    document.json/descriptions.json нужны лишь при переобработке.
-    Оба файла обязаны разбираться как JSON: битый/недокопированный файл не
-    «усыновляем» — иначе документ станет ready, а поиск его молча пропустит.
-    Id чанков в обоих файлах обязаны совпадать: пара из разных поколений
-    (крах/гонка между двумя сохранениями) роняла бы поиск KeyError'ом.
+    chunks.json + embeddings.json suffice: search reads only them;
+    document.json/descriptions.json matter only for re-processing.
+    Both files must parse as JSON: a broken/half-copied file is not
+    adopted — the document would go ready and search would silently skip
+    it. Chunk ids in both files must match: a pair from different
+    generations (crash/race between two saves) would crash search with a
+    KeyError.
     """
     d = doc_dir(library_path, slug)
     try:
