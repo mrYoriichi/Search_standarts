@@ -8,7 +8,7 @@ import sys
 from pathlib import Path
 
 from backend.core.paths import CLI_OUTPUT_DIR, CLI_PDF_DIR
-from jsonio import save_json_atomic
+from common.jsonio import save_json_atomic
 from pdf_processing.drawing import insert_drawing_pages
 from pdf_processing.page_router import classify_pages
 from pdf_processing.parser import (
@@ -129,7 +129,7 @@ def process(
 
 if __name__ == "__main__":
     if len(sys.argv) < 2:
-        print("Использование: python main.py <pdf_name>")
-        print("Пример:        python main.py MVL649")
+        print("Использование: python -m pipeline.parse <pdf_name>")
+        print("Пример:        python -m pipeline.parse MVL649")
         sys.exit(1)
     process(sys.argv[1])

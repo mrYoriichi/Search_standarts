@@ -58,10 +58,10 @@ def run_pipeline(slug: str, pdf_path: str | None, doc_dir: Path) -> None:
     # Если импортировать наверху, всё это тянется при старте сервера
     # и при каждом --reload, что превращает разработку в пытку.
     # Здесь же грузится только при первом реальном вызове pipeline.
-    import main as parser_step
-    import describe as describe_step
-    import chunk as chunk_step
-    import index as index_step
+    from pipeline import chunk as chunk_step
+    from pipeline import describe as describe_step
+    from pipeline import embed as index_step
+    from pipeline import parse as parser_step
 
     # Импорт здесь (не наверху) — избегаем цикла с модулем settings.
     from backend.modules.settings import service as settings_service

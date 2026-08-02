@@ -18,7 +18,7 @@ from docling.datamodel.pipeline_options import PdfPipelineOptions
 from docling.document_converter import DocumentConverter, PdfFormatOption
 
 from pdf_processing.parser import build_document_dict, VISUAL_BLOCK_TYPES
-from pricing import AVG_VISION_COST_PER_IMAGE_PAGE, AVG_EMBEDDING_COST_PER_PAGE
+from common.pricing import AVG_VISION_COST_PER_IMAGE_PAGE, AVG_EMBEDDING_COST_PER_PAGE
 
 
 def parse_for_forecast(pdf_path: str) -> dict:

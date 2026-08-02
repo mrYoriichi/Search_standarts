@@ -9,7 +9,7 @@ from pathlib import Path
 import pytest
 
 from backend.core import library_cache
-from jsonio import save_json_atomic
+from common.jsonio import save_json_atomic
 
 
 def _make_doc(root: Path, slug: str, model: str, dim: int) -> None:

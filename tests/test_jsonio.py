@@ -2,7 +2,7 @@
 
 import json
 
-from jsonio import save_json_atomic
+from common.jsonio import save_json_atomic
 
 
 def test_writes_valid_json_with_czech_chars(tmp_path):

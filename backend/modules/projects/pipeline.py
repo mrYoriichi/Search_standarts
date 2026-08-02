@@ -19,7 +19,7 @@ from backend.core.errors import classify_pipeline_error
 from backend.core.paths import PROJECTS_DATA_DIR
 from backend.modules.projects.models import ProjectDocument
 
-from jsonio import save_json_atomic
+from common.jsonio import save_json_atomic
 
 
 logger = logging.getLogger(__name__)
@@ -56,10 +56,10 @@ def process_text_document(
     """
     # Lazy import — Docling тяжёлый, грузим только при реальной обработке
     # (та же причина, что в documents/pipeline.py).
-    import main as parser_step
-    import describe as describe_step
-    import chunk as chunk_step
-    import index as index_step
+    from pipeline import chunk as chunk_step
+    from pipeline import describe as describe_step
+    from pipeline import embed as index_step
+    from pipeline import parse as parser_step
 
     doc_dir = PROJECTS_DATA_DIR / slug
     progress.set_progress(slug, "čtení PDF…")

@@ -10,7 +10,7 @@ import json
 import pypdfium2 as pdfium
 import pytest
 
-import describe
+from pipeline import describe
 
 
 def _write_document(doc_dir, n_pages: int) -> None:

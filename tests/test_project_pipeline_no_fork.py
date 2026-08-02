@@ -9,15 +9,12 @@ import json
 from sqlalchemy import create_engine, select
 from sqlalchemy.orm import sessionmaker
 
-import chunk
-import describe
-import index
-import main
+from pipeline import chunk, describe, embed, parse
 from backend.core.database import Base
 from backend.modules.projects import pipeline
 from backend.modules.projects.models import ProjectDocument
 from backend.modules.settings import models as settings_models  # noqa: F401 — таблица settings для create_all
-from jsonio import save_json_atomic
+from common.jsonio import save_json_atomic
 
 
 def test_sheet_goes_through_common_pipeline(monkeypatch, tmp_path):
@@ -61,10 +58,10 @@ def test_sheet_goes_through_common_pipeline(monkeypatch, tmp_path):
             [{"chunk_id": f"{slug}_c000", "document_title": "vykres_202"}],
         )
 
-    monkeypatch.setattr(main, "process", fake_parse)
+    monkeypatch.setattr(parse, "process", fake_parse)
     monkeypatch.setattr(describe, "process", lambda *args, **kwargs: None)
     monkeypatch.setattr(chunk, "process", fake_chunk)
-    monkeypatch.setattr(index, "process", lambda *args, **kwargs: None)
+    monkeypatch.setattr(embed, "process", lambda *args, **kwargs: None)
 
     pipeline.run_project_pipeline(slug, pdf_path=str(tmp_path / "vykres_202.pdf"))
 

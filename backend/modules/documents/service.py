@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 from backend.core import index_lock, index_store, library_cache
 from backend.modules.documents.models import Document
 from backend.modules.documents.pipeline import run_pipeline_locked
-from jsonio import save_json_atomic
+from common.jsonio import save_json_atomic
 
 
 class DocumentBusyError(Exception):

@@ -25,7 +25,7 @@ load_dotenv()
 import pypdfium2 as pdfium
 
 from backend.core.paths import CLI_OUTPUT_DIR
-from jsonio import save_json_atomic
+from common.jsonio import save_json_atomic
 from pdf_processing.drawing import RENDER_MAX_SIDE_PX
 from pdf_processing.image_description import (
     VISION_MODEL,
@@ -35,7 +35,7 @@ from pdf_processing.image_description import (
 )
 from pdf_processing.parser import VISUAL_BLOCK_TYPES, make_document_id
 from pdf_processing.pdfium_lock import PDFIUM_LOCK
-from pricing import model_cost
+from common.pricing import model_cost
 
 
 def load_document(json_path: Path) -> dict:

@@ -20,7 +20,7 @@ from pathlib import Path
 
 import numpy as np
 
-from ask import EmptyLibraryError, load_library
+from search.library import EmptyLibraryError, load_library
 from indexing.bm25_index import tokenize_chunk
 from backend.core import index_store
 from backend.core.paths import PROJECTS_DATA_DIR

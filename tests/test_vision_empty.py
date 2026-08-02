@@ -9,7 +9,7 @@ import json
 
 import pytest
 
-import describe
+from pipeline import describe
 from pdf_processing import image_description
 from pdf_processing.image_description import (
     VisionEmptyResponseError,

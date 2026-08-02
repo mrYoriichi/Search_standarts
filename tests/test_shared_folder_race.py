@@ -14,7 +14,7 @@ from multiprocessing.synchronize import Barrier
 from pathlib import Path
 
 from backend.core import index_store
-from jsonio import save_json_atomic
+from common.jsonio import save_json_atomic
 
 # Раундов достаточно, чтобы гонка воспроизводилась стабильно,
 # и мало настолько, чтобы тест шёл секунды.

@@ -18,7 +18,7 @@ import time
 import uuid
 from pathlib import Path
 
-from jsonio import save_json_atomic
+from common.jsonio import save_json_atomic
 
 INDEX_DIR_NAME = ".search_index"
 META_FILENAME = "meta.json"

@@ -3,9 +3,9 @@ target-version = "py312"
 
 [tool.ruff.lint.per-file-ignores]
 # load_dotenv() должен выполниться ДО импортов, читающих окружение (ленивые OpenAI-клиенты)
-"ask.py" = ["E402"]
-"describe.py" = ["E402"]
-"index.py" = ["E402"]
+"cli/ask.py" = ["E402"]
+"pipeline/describe.py" = ["E402"]
+"pipeline/embed.py" = ["E402"]
 "backend/app.py" = ["E402"]
 
 [tool.pytest.ini_options]

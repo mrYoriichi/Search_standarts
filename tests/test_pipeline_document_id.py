@@ -12,10 +12,7 @@ import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
-import chunk
-import describe
-import index
-import main
+from pipeline import chunk, describe, embed, parse
 from backend.core.database import Base
 from backend.modules.documents import pipeline
 from backend.modules.settings import models as settings_models  # noqa: F401 — таблица settings для create_all
@@ -41,10 +38,10 @@ def test_run_pipeline_passes_scoped_document_id(fake_db, monkeypatch, tmp_path):
     ) -> None:
         recorded["document_id"] = document_id
 
-    monkeypatch.setattr(main, "process", fake_parse)
+    monkeypatch.setattr(parse, "process", fake_parse)
     monkeypatch.setattr(describe, "process", lambda *args, **kwargs: None)
     monkeypatch.setattr(chunk, "process", lambda *args, **kwargs: None)
-    monkeypatch.setattr(index, "process", lambda *args, **kwargs: None)
+    monkeypatch.setattr(embed, "process", lambda *args, **kwargs: None)
     # Телеметрия пишет в реальный app.db — в тесте глушим
     monkeypatch.setattr(pipeline, "track_event", lambda *args, **kwargs: None)
 

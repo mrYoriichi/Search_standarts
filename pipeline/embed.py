@@ -24,9 +24,9 @@ load_dotenv()
 
 from backend.core.paths import CLI_OUTPUT_DIR
 from indexing.embeddings_index import build_embeddings_index, EMBEDDING_MODEL
-from jsonio import save_json_atomic
+from common.jsonio import save_json_atomic
 from pdf_processing.parser import make_document_id
-from pricing import embedding_cost
+from common.pricing import embedding_cost
 
 
 def load_chunks(json_path: Path) -> list[dict]:

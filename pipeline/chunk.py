@@ -16,7 +16,7 @@ import sys
 from pathlib import Path
 
 from backend.core.paths import CLI_OUTPUT_DIR
-from jsonio import save_json_atomic
+from common.jsonio import save_json_atomic
 from pdf_processing.chunker import build_chunks_routed
 from pdf_processing.parser import make_document_id
 
