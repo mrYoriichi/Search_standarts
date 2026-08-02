@@ -1,10 +1,10 @@
-"""Бизнес-логика «Вопрос → Ответ».
+"""Business logic of "question -> answer".
 
-Тонкая обёртка над существующим кодом (`ask.py`, `search/*`, `indexing/*`):
-загрузить библиотеку → отфильтровать → гибридный поиск → LLM → запись в БД.
+A thin wrapper over the existing code (`ask.py`, `search/*`, `indexing/*`):
+load the library -> filter -> hybrid search -> LLM -> write to the DB.
 
-Никакого HTTP здесь нет — функцию `ask` можно вызывать из роутера, из тестов,
-из будущего AI-агента-оркестратора.
+No HTTP here — `ask` can be called from the router, from tests,
+or from a future AI orchestrator agent.
 """
 
 import logging
@@ -30,28 +30,28 @@ from backend.modules.telemetry.service import track_event
 
 logger = logging.getLogger(__name__)
 
-# Сильный поиск: максимум страниц-картинок в запросе к отвечающей LLM.
-# Каждая страница — vision-токены; топ-3 покрывает типовой вопрос
-# «что на этом листе», не раздувая стоимость и время ответа.
+# Strong search: max page images attached to the answering LLM request.
+# Each page costs vision tokens; top 3 covers the typical "what is on this
+# sheet" question without inflating cost and answer time.
 STRONG_MAX_PAGES = 3
 
 
 class NoSearchableDocumentsError(Exception):
-    """Фильтр не совпал ни с одним документом.
+    """The filter matched no documents.
 
-    Типовая причина: юзер держал вкладку открытой, документы из его выбора
-    успели удалиться/переименоваться — фронт прислал устаревшие document_ids.
-    Без этой проверки пустой корпус ронял BM25 (ZeroDivisionError → HTTP 500).
+    Typical cause: the user kept the tab open while the selected documents
+    got deleted/renamed — the frontend sent stale document_ids. Without this
+    check an empty corpus crashed BM25 (ZeroDivisionError -> HTTP 500).
     """
 
 
 def collect_page_refs(
     top_chunks: list[dict], limit: int = STRONG_MAX_PAGES
 ) -> list[tuple[str, int]]:
-    """Страницы топ-выдачи для сильного поиска: список (slug, страница).
+    """Pages of the top results for strong search: a list of (slug, page).
 
-    Идём по чанкам в порядке релевантности, внутри чанка — по его страницам;
-    дубли (slug, страница) убираем, всего не больше limit.
+    Walk the chunks in relevance order, within a chunk — over its pages;
+    drop duplicate (slug, page) pairs, at most `limit` in total.
     """
     refs: list[tuple[str, int]] = []
     seen: set[tuple[str, int]] = set()
@@ -69,10 +69,10 @@ def collect_page_refs(
 
 
 def _render_page_b64(pdf_path: Path, page_number: int) -> str | None:
-    """PNG страницы PDF в base64 — на лету, без записи на диск.
+    """PNG of a PDF page as base64 — rendered on the fly, no disk writes.
 
-    Best-effort: любой сбой (битый PDF, страницы нет) → None, сильный
-    поиск просто продолжит без этой картинки.
+    Best-effort: any failure (broken PDF, missing page) -> None, strong
+    search just continues without this image.
     """
     import base64
     import io
@@ -97,17 +97,17 @@ def _render_page_b64(pdf_path: Path, page_number: int) -> str | None:
         return base64.b64encode(buf.getvalue()).decode("utf-8")
     except Exception:
         logger.warning(
-            "Сильный поиск: не отрендерилась страница %s из %s", page_number, pdf_path
+            "Strong search: failed to render page %s of %s", page_number, pdf_path
         )
         return None
 
 
 def _build_page_images(db: Session, top_chunks: list[dict]) -> list[dict]:
-    """Снимки страниц топ-источников: [{"label": "документ, s. N", "b64": ...}].
+    """Page snapshots of the top sources: [{"label": "document, s. N", "b64": ...}].
 
-    Путь к PDF резолвим по всем пулам (библиотека + архив, см.
-    resolve_pdf_by_slug); документ без PDF на диске или несуществующая
-    страница просто пропускаются — ответ пойдёт по тексту.
+    The PDF path is resolved across all pools (library + archive, see
+    resolve_pdf_by_slug); a document without a PDF on disk or a nonexistent
+    page is simply skipped — the answer falls back to text.
     """
     from backend.modules.library.service import resolve_pdf_by_slug
 
@@ -137,22 +137,22 @@ def ask(
     strong: bool = False,
     answer_language: str | None = None,
 ) -> AskResponse:
-    """Главная функция: вопрос → ответ + источники + id записи в QueryLog.
+    """The main function: question -> answer + sources + QueryLog record id.
 
-    document_ids=None — искать по всей библиотеке.
-    mode — режим поиска (hybrid / vector / keyword), см. search.hybrid.
-    answer_model — модель генерации ответа (gpt-5.4-mini / gpt-5.5).
-    expand — расширять ли запрос через LLM перед поиском (диакритика/синонимы).
-    strong — сильный поиск: приложить к ответу снимки страниц топ-источников
-    (тяжёлые вопросы по чертежам/таблицам; дороже и медленнее).
-    answer_language — язык ответа LLM (cs/en/de); None — сохранённая
-    настройка юзера (см. settings.get_answer_language).
+    document_ids=None — search the whole library.
+    mode — search mode (hybrid / vector / keyword), see search.hybrid.
+    answer_model — answer generation model (gpt-5.4-mini / gpt-5.5).
+    expand — expand the query via LLM before searching (diacritics/synonyms).
+    strong — strong search: attach page snapshots of the top sources to the
+    answer (heavy questions about drawings/tables; slower and pricier).
+    answer_language — LLM answer language (cs/en/de); None — the user's
+    saved setting (see settings.get_answer_language).
     """
     started_at = time.perf_counter()
 
-    # Библиотека лежит в памяти (см. backend/core/library_cache.py) — с диска
-    # читаем только при первом вопросе и после изменений библиотеки. Чанки и
-    # токены берём одним вызовом — они гарантированно одного поколения кеша.
+    # The library lives in memory (see backend/core/library_cache.py) — we hit
+    # the disk only on the first question and after library changes. Chunks and
+    # tokens come from a single call — guaranteed same cache generation.
     chunks, embeddings_index, tokens_by_id = library_cache.get_library_with_tokens()
 
     if document_ids:
@@ -162,46 +162,47 @@ def ask(
         if not chunks:
             raise NoSearchableDocumentsError(msg("lib.stale_selection"))
 
-    # Расширяем запрос для поиска (диакритика, термины, синонимы), но ответ
-    # генерим по ОРИГИНАЛЬНОМУ вопросу — чтобы отвечать на то, что спросил юзер.
-    # Расширение можно отключить галочкой (expand=False) — тогда ищем как есть.
-    # Языки корпуса считаем по УЖЕ отфильтрованным чанкам: если юзер ищет
-    # только в чешской папке, английские термины в запросе не нужны.
+    # Expand the query for search (diacritics, terms, synonyms), but generate
+    # the answer from the ORIGINAL question — answer what the user asked.
+    # Expansion can be turned off (expand=False) — then search as is.
+    # Corpus languages are computed from the ALREADY filtered chunks: if the
+    # user searches only a Czech folder, English terms are not needed.
     search_query = (
         expand_query(question, corpus_languages(chunks)) if expand else question
     )
 
-    # BM25 собираем из закешированных токенов текущего набора чанков (с учётом
-    # фильтра) — IDF считается по этому же набору, как и раньше.
+    # BM25 is built from the cached tokens of the current chunk set (filter
+    # applied) — IDF is computed over this same set, as before.
     tokenized = [tokens_by_id[c["chunk_id"]] for c in chunks]
     chunk_ids = [c["chunk_id"] for c in chunks]
     bm25 = build_bm25_from_tokens(tokenized, chunk_ids)
     found_ids = search_by_mode(bm25, embeddings_index, search_query, mode)
 
     chunks_by_id = {c["chunk_id"]: c for c in chunks}
-    # Вектора-сироты (embeddings.json из другого поколения, чем chunks.json)
-    # пропускаем, а не роняем весь вопрос KeyError'ом — №2 аудита.
+    # Orphan vectors (embeddings.json from a different generation than
+    # chunks.json) are skipped instead of failing the whole question with
+    # a KeyError — audit item #2.
     orphan_ids = [cid for cid in found_ids if cid not in chunks_by_id]
     if orphan_ids:
         logger.warning(
-            "Поиск вернул id без чанков (индекс рассинхронизирован, "
-            "нужна переиндексация): %s",
+            "Search returned ids without chunks (index out of sync, "
+            "reindex needed): %s",
             orphan_ids,
         )
     top_chunks = [chunks_by_id[cid] for cid in found_ids if cid in chunks_by_id]
 
-    # Сильный поиск: рендерим страницы топ-источников и отдаём их картинками
-    # в отвечающую LLM — она «видит» чертёж/таблицу, а не только текст/OCR.
+    # Strong search: render pages of the top sources and pass them as images
+    # to the answering LLM — it "sees" the drawing/table, not just text/OCR.
     page_images = _build_page_images(db, top_chunks) if strong else None
 
     if answer_language is None:
-        # Настройка живёт в профиле; запрос может переопределить её явно
-        # (API agent-ready: агенту не нужно трогать настройки).
+        # The setting lives in the profile; a request may override it
+        # explicitly (agent-ready API: an agent need not touch settings).
         from backend.modules.settings import service as settings_service
 
         answer_language = settings_service.get_answer_language(db)
 
-    # Время генерации ответа меряем отдельно — чтобы сравнивать скорость моделей.
+    # Answer generation time is measured separately — to compare model speed.
     gen_start = time.perf_counter()
     result = generate_answer(
         question,
@@ -212,8 +213,8 @@ def ask(
     )
     answer_ms = int((time.perf_counter() - gen_start) * 1000)
 
-    # Стоимость считаем только по ответному LLM-вызову — он доминирует.
-    # Цена берётся из таблицы по имени модели (pricing.MODEL_PRICES_PER_M).
+    # Cost counts only the answering LLM call — it dominates.
+    # The price comes from the table by model name (pricing.MODEL_PRICES_PER_M).
     cost_usd = model_cost(
         answer_model, result["prompt_tokens"], result["completion_tokens"]
     )
@@ -229,7 +230,7 @@ def ask(
     db.commit()
     db.refresh(log)
 
-    # Анонимная техническая телеметрия: цифры, без текста вопроса/ответа.
+    # Anonymous technical telemetry: numbers only, no question/answer text.
     track_event(
         "query_asked",
         duration_ms=duration_ms,
