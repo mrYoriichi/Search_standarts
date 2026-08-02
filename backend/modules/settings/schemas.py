@@ -1,5 +1,7 @@
 """Pydantic-схемы для эндпоинтов модуля settings."""
 
+from typing import Literal
+
 from pydantic import BaseModel
 
 
@@ -51,3 +53,9 @@ class DescribeImagesSetting(BaseModel):
     """Тумблер описания картинок vision. False = «Без LLM» (бесплатно)."""
 
     enabled: bool
+
+
+class UiLanguageSetting(BaseModel):
+    """Язык интерфейса — бэкенд использует его для текстов ошибок."""
+
+    language: Literal["cs", "en", "de"]

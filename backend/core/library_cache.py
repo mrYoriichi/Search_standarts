@@ -24,6 +24,7 @@ from search.library import EmptyLibraryError, load_library
 from indexing.bm25_index import tokenize_chunk
 from backend.core import index_store
 from backend.core.paths import PROJECTS_DATA_DIR
+from backend.core.ui_messages import msg
 
 
 # Кеш и замок к нему. Запросы FastAPI и фоновый pipeline работают в разных
@@ -99,22 +100,17 @@ def _load_merged() -> tuple[list[dict], dict]:
         if model is None:
             model = index["model"]
         elif model != index["model"]:
-            # Текст уходит юзеру в UI (роутер отдаёт его как detail) — по-чешски.
+            # Текст уходит юзеру в UI (роутер отдаёт его как detail).
             raise RuntimeError(
-                "Části knihovny jsou indexovány různými modely embeddingů "
-                f"({model} ≠ {index['model']}) a nejsou kompatibilní — "
-                "přeindexujte starší složku."
+                msg("lib.mixed_models_pools", model_a=model, model_b=index["model"])
             )
         all_chunks.extend(chunks)
         all_chunk_ids.extend(index["chunk_ids"])
         matrices.append(index["matrix"])
 
     if not all_chunks:
-        # Текст уходит юзеру в UI (роутер отдаёт его как detail) — по-чешски.
-        raise RuntimeError(
-            "V knihovně zatím není žádný hotový dokument — "
-            "nejdřív složku naskenujte a naindexujte."
-        )
+        # Текст уходит юзеру в UI (роутер отдаёт его как detail).
+        raise RuntimeError(msg("lib.empty_library"))
     # Матрицы пулов уже нормированы (build_matrix_index) — просто составляем их
     # в одну. Порядок строк совпадает с порядком all_chunk_ids.
     matrix = np.vstack(matrices)

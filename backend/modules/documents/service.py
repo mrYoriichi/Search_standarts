@@ -9,6 +9,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from backend.core import index_lock, index_store, library_cache
+from backend.core.ui_messages import msg
 from backend.modules.documents.models import Document
 from backend.modules.documents.pipeline import run_pipeline_locked
 from common.jsonio import save_json_atomic
@@ -60,7 +61,7 @@ def _ensure_folder_not_locked(library_path: Path | None) -> None:
         return  # папка библиотеки неизвестна — координировать нечего
     busy = index_lock.holder(library_path)
     if busy is not None:
-        raise DocumentBusyError(f"Složku právě indexuje jiný počítač: {busy}")
+        raise DocumentBusyError(msg("lib.folder_busy", owner=busy))
 
 
 def list_documents(db: Session) -> list[Document]:
@@ -102,7 +103,7 @@ def reindex_document(
     # писал бы в .search_index параллельно с другой машиной.
     busy = index_lock.acquire(library_path)
     if busy is not None:
-        raise DocumentBusyError(f"Složku právě indexuje jiný počítač: {busy}")
+        raise DocumentBusyError(msg("lib.folder_busy", owner=busy))
 
     # Сносим старые артефакты — новые лягут в .search_index папки библиотеки.
     for artifacts_dir in _artifact_dirs(slug, library_path):

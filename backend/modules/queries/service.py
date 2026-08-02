@@ -21,6 +21,7 @@ from search.hybrid import search_by_mode
 from search.answer import generate_answer
 
 from backend.core import library_cache
+from backend.core.ui_messages import msg
 from backend.modules.queries.models import QueryLog
 from backend.modules.queries.schemas import AskResponse, Source, UsedChunk
 from backend.modules.telemetry.service import track_event
@@ -157,10 +158,7 @@ def ask(
             chunks, embeddings_index, set(document_ids)
         )
         if not chunks:
-            raise NoSearchableDocumentsError(
-                "Vybrané dokumenty už v knihovně nejsou — "
-                "obnovte výběr v poli „Kde hledat“."
-            )
+            raise NoSearchableDocumentsError(msg("lib.stale_selection"))
 
     # Расширяем запрос для поиска (диакритика, термины, синонимы), но ответ
     # генерим по ОРИГИНАЛЬНОМУ вопросу — чтобы отвечать на то, что спросил юзер.

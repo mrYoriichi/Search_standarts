@@ -12,6 +12,7 @@ import httpx
 from sqlalchemy.orm import Session
 
 from backend.core.database import SessionLocal, naive_utcnow
+from backend.core.ui_messages import msg
 from backend.modules.auth.models import AuthSession
 from backend.version import APP_VERSION, PUBLIC_BUILD
 
@@ -203,7 +204,7 @@ def get_profile(db: Session) -> dict:
         raise LicenseServerUnavailable(str(exc)) from exc
 
     if response.status_code != 200:
-        raise ProfileError(response.status_code, "Nepodařilo se načíst profil.")
+        raise ProfileError(response.status_code, msg("profile.load_failed"))
     return response.json()
 
 
@@ -223,7 +224,7 @@ def update_profile(db: Session, fields: dict) -> dict:
         raise LicenseServerUnavailable(str(exc)) from exc
 
     if response.status_code != 200:
-        raise ProfileError(response.status_code, "Nepodařilo se uložit profil.")
+        raise ProfileError(response.status_code, msg("profile.save_failed"))
     return response.json()
 
 
@@ -244,10 +245,10 @@ def change_password(db: Session, old_password: str, new_password: str) -> None:
 
     if response.status_code == 400:
         # Серверный текст («неверный старый пароль» / «слишком короткий») — наружу.
-        detail = response.json().get("detail", "Změna hesla selhala.")
+        detail = response.json().get("detail", msg("profile.password_change_failed"))
         raise ProfileError(400, detail)
     if response.status_code != 200:
-        raise ProfileError(response.status_code, "Změna hesla selhala.")
+        raise ProfileError(response.status_code, msg("profile.password_change_failed"))
 
 
 def logout(db: Session) -> None:

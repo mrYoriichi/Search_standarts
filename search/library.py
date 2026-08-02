@@ -9,6 +9,7 @@ from pathlib import Path
 
 import numpy as np
 
+from backend.core.ui_messages import msg
 from indexing.embeddings_index import build_matrix_index
 
 
@@ -68,13 +69,17 @@ def load_library(data_root: Path) -> tuple[list[dict], dict]:
             print(f"[!] Битый индекс, пропускаю документ: {doc_dir.name}")
             continue
 
-        # Сверяем модель эмбеддингов. Текст летит в UI через 400 — по-чешски.
+        # Сверяем модель эмбеддингов. Текст летит в UI через 400.
         if model is None:
             model = index_model
         elif model != index_model:
             raise RuntimeError(
-                f"Dokument {doc_dir.name} je indexován jiným modelem embeddingů "
-                f"({index_model} ≠ {model}) — přeindexujte ho (🔄)."
+                msg(
+                    "lib.mixed_models_doc",
+                    doc=doc_dir.name,
+                    model_a=index_model,
+                    model_b=model,
+                )
             )
 
         all_chunks.extend(chunks)

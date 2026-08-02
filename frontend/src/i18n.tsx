@@ -43,6 +43,13 @@ export function LangProvider({ children }: { children: ReactNode }) {
     currentLang = next
     localStorage.setItem('lang', next)
     setLangState(next)
+    // Бэкенд использует язык для текстов ошибок — шлём best-effort,
+    // неудача не мешает переключению интерфейса.
+    fetch('/api/settings/language', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ language: next }),
+    }).catch(() => {})
   }
 
   return (

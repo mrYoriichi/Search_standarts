@@ -7,7 +7,7 @@ from pathlib import Path
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from backend.core import library_cache
+from backend.core import library_cache, ui_messages
 from backend.modules.settings.models import Setting
 
 
@@ -28,6 +28,9 @@ DEFAULT_VISION_MODEL = "gpt-5.4-mini"  # дешевле; gpt-5.5 — по выб
 # чертежи), ВЫКЛ = «Без LLM» (только OCR/текст, бесплатно). Хранится как "1"/"0".
 DESCRIBE_IMAGES_KEY = "describe_images"
 OPENAI_KEY_KEY = "openai_api_key"
+# Язык интерфейса (cs/en/de): фронт шлёт при переключении, бэкенд использует
+# для текстов ошибок (backend/core/ui_messages.py). Дефолт — чешский.
+UI_LANGUAGE_KEY = "ui_language"
 
 
 def _validate_dir(raw_path: str) -> Path:
@@ -290,3 +293,31 @@ def apply_openai_key_to_env(db: Session) -> None:
     key = get_openai_key(db)
     if key:
         os.environ["OPENAI_API_KEY"] = key
+
+
+def get_ui_language(db: Session) -> str:
+    """Язык интерфейса/ошибок бэкенда. Дефолт — чешский."""
+    setting = db.scalar(select(Setting).where(Setting.key == UI_LANGUAGE_KEY))
+    return setting.value if setting and setting.value in ui_messages.LANGS else "cs"
+
+
+def set_ui_language(db: Session, lang: str) -> str:
+    """Сохраняет язык и сразу применяет его к текстам бэкенда.
+
+    Бросает ValueError на неизвестный код (эндпоинт отдаст 400).
+    """
+    if lang not in ui_messages.LANGS:
+        raise ValueError(f"Неизвестный язык: {lang}")
+    setting = db.scalar(select(Setting).where(Setting.key == UI_LANGUAGE_KEY))
+    if setting is None:
+        db.add(Setting(key=UI_LANGUAGE_KEY, value=lang))
+    else:
+        setting.value = lang
+    db.commit()
+    ui_messages.set_language(lang)
+    return lang
+
+
+def apply_ui_language(db: Session) -> None:
+    """Читает сохранённый язык и ставит его в ui_messages (вызов на старте)."""
+    ui_messages.set_language(get_ui_language(db))

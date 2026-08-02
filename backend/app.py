@@ -74,6 +74,8 @@ async def lifespan(app: FastAPI):
     try:
         # Ключ OpenAI из БД (если задан) кладём в окружение до первых LLM-вызовов.
         settings_service.apply_openai_key_to_env(db)
+        # Язык текстов бэкенда — из настроек (фронт обновляет его при переключении).
+        settings_service.apply_ui_language(db)
 
         library_paths = [Path(p) for p in settings_service.get_library_paths(db)]
         stuck = db.scalars(

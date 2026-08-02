@@ -13,6 +13,7 @@ from backend.modules.settings.schemas import (
     LibraryPathUpdate,
     OpenAIKeyRequest,
     OpenAIKeyStatus,
+    UiLanguageSetting,
     VisionModelSetting,
 )
 
@@ -179,3 +180,18 @@ def set_openai_key(
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return OpenAIKeyStatus(is_set=True, masked=service.mask_key(saved))
+
+
+@router.get("/settings/language", response_model=UiLanguageSetting)
+def get_ui_language(db: Session = Depends(get_session)) -> UiLanguageSetting:
+    """Текущий язык интерфейса (для текстов ошибок бэкенда)."""
+    return UiLanguageSetting(language=service.get_ui_language(db))
+
+
+@router.put("/settings/language", response_model=UiLanguageSetting)
+def set_ui_language(
+    body: UiLanguageSetting,
+    db: Session = Depends(get_session),
+) -> UiLanguageSetting:
+    """Сохраняет язык интерфейса; Literal в схеме отсекает мусор."""
+    return UiLanguageSetting(language=service.set_ui_language(db, body.language))

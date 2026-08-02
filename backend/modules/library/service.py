@@ -18,6 +18,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from backend.core import index_lock, index_store, library_cache, limits, progress
+from backend.core.ui_messages import msg
 from backend.modules.documents.models import Document
 from backend.modules.documents.pipeline import run_pipeline_locked
 from backend.modules.library.schemas import (
@@ -265,14 +266,7 @@ def scan_library(paths: list[Path], db: Session) -> ScanSummary:
         # folder_id нет — в папку не удалось записать .search_index (read-only,
         # сетевой диск без прав). Вместо вечного молчаливого «čeká» помечаем
         # документы failed с понятной причиной.
-        ro_error = (
-            None
-            if folder_id
-            else (
-                "Do složky knihovny nelze zapisovat — index (.search_index) "
-                "nelze uložit. Povolte zápis do složky."
-            )
-        )
+        ro_error = None if folder_id else msg("lib.readonly_folder")
         # Усыновлять чужие индексы можно только на нашей модели эмбеддингов.
         meta = index_store.read_meta(library_path)
         can_adopt = meta is not None and meta.get("embedding_model") == EMBEDDING_MODEL
