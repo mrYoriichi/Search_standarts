@@ -1,47 +1,46 @@
-"""
-Нарезка структурированного документа (document.json) на смысловые чанки.
+"""Splitting the structured document (document.json) into semantic chunks.
 
-Чанк — это один раздел нормы (заголовок 2-го уровня и его содержимое),
-обогащённый контекстом: название документа, краткое описание,
-родительский раздел. Большие чанки дробятся по заголовкам уровня 3,
-а при их отсутствии — по границам абзацев.
+A chunk is one section of a norm (a level-2 heading and its content),
+enriched with context: document title, summary, parent section. Large
+chunks are split at level-3 headings, or at paragraph boundaries when
+there are none.
 
-Главная функция: build_chunks(document) -> list[dict]
+Main entry: build_chunks(document) -> list[dict]
 """
 
 import re
 
 from pdf_processing.drawing import extract_stupen
 
-# Типы блоков-мусора, которые не идут в чанки.
+# Junk block types that never enter chunks.
 SKIP_BLOCK_TYPES = {"document_index", "header", "footer"}
 
-# Фразы-маркеры нетехнического контента (логотипы, штампы). Модель не всегда
-# пишет каноническую метку дословно (например «Logo... bez technického obsahu»),
-# поэтому матчим по подстроке без учёта регистра, а не точным равенством.
+# Marker phrases of non-technical content (logos, stamps). The model does
+# not always write the canonical label verbatim ("Logo... bez technického
+# obsahu"), so we match case-insensitive substrings, not exact equality.
 NON_TECHNICAL_SUBSTRINGS = (
-    "není technický obsah",  # каноническая метка из промпта
-    "bez technického",  # частая перефразировка модели
+    "není technický obsah",  # the canonical label from the prompt
+    "bez technického",  # frequent model paraphrase
 )
 
-# Слово 'logo' проверяем отдельно — как целое слово (\b), а не подстроку:
-# подстрока ловила бы инфлектированные 'katalogové', 'dialogový' и т.п.
+# 'logo' is matched as a whole word (\b), not a substring: a substring
+# would catch inflected 'katalogové', 'dialogový' etc.
 _LOGO_WORD = re.compile(r"\blogo\b")
 
-# Порог: чанки длиннее этого числа символов — кандидаты на дробление.
+# Chunks longer than this are candidates for splitting.
 MAX_CHUNK_CHARS = 2500
 
-# Жёсткий предел для частей без заголовка-границы: если текст между заголовками
-# ур.3 разросся больше этого, режем по абзацу принудительно — иначе раздел со
-# скудными подзаголовками упёрся бы в лимит эмбеддинга (~8000 токенов). С запасом
-# под колебания «символов на токен».
+# Hard limit for parts without a heading boundary: text between level-3
+# headings that grows beyond this is force-split at a paragraph — a
+# section with sparse subheadings would otherwise hit the embedding limit
+# (~8000 tokens). Sized with margin for chars-per-token variation.
 HARD_SPLIT_CHARS = 6000
 
 
 def is_block_useful(block: dict) -> bool:
-    """
-    Решает, годится ли блок для попадания в чанк.
-    Отсекает мусор: оглавление, колонтитулы, логотипы, пустые блоки.
+    """Does the block belong in a chunk?
+
+    Filters junk: table of contents, headers/footers, logos, empties.
     """
     block_type = block["type"]
 
@@ -51,9 +50,9 @@ def is_block_useful(block: dict) -> bool:
     if block_type in ("figure", "table"):
         description = block.get("description")
         if not description:
-            # Таблица без vision-описания, но с текстом ячеек (markdown из
-            # Docling) — полезна: точные значения ищутся по тексту. Так
-            # таблицы не выпадают из поиска в режиме «Без LLM».
+            # A table without a vision description but with cell text
+            # (Docling markdown) is useful: exact values are searchable.
+            # This keeps tables in the index in no-LLM mode.
             if block_type == "table":
                 text = block.get("text")
                 return bool(text and text.strip())
@@ -70,10 +69,10 @@ def is_block_useful(block: dict) -> bool:
 
 
 def build_chunk_text(blocks: list[dict]) -> str:
-    """
-    Собирает текст чанка из списка блоков.
-    Описания figure/table вливаются с пометкой [SCHÉMA: ...] / [TABULKA: ...].
-    Принимает только полезные блоки (отфильтрованные через is_block_useful).
+    """Assemble chunk text from blocks.
+
+    Figure/table descriptions are inlined as [SCHÉMA: ...] / [TABULKA: ...].
+    Expects blocks already filtered through is_block_useful.
     """
     pieces = []
     for block in blocks:
@@ -81,9 +80,9 @@ def build_chunk_text(blocks: list[dict]) -> str:
         if block_type == "figure":
             pieces.append(f"[SCHÉMA: {block['description']}]")
         elif block_type == "table":
-            # Пересказ vision (тема таблицы) + сам текст ячеек (точные
-            # значения) — что из этого есть. Старые индексы без text и
-            # режим «Без LLM» без description работают одинаково честно.
+            # Vision paraphrase (table topic) + the cell text (exact
+            # values) — whichever exists. Old indexes without text and
+            # no-LLM mode without description both behave honestly.
             description = block.get("description")
             text = (block.get("text") or "").strip()
             if description and text:
@@ -98,25 +97,18 @@ def build_chunk_text(blocks: list[dict]) -> str:
 
 
 def page_of_block(block: dict) -> int:
-    """
-    Достаёт номер страницы из block_id.
-    'p12_b03' -> 12
-    """
-    # block_id вида 'p12_b03': берём часть до '_', отрезаем 'p', переводим в int
+    """Page number from a block_id: 'p12_b03' -> 12."""
     return int(block["block_id"].split("_")[0][1:])
 
 
 def split_large_chunk(chunk: dict) -> list[dict]:
-    """
-    Дробит большой чанк на под-чанки, чтобы они влезали в лимит эмбеддинга.
+    """Split a large chunk into sub-chunks that fit the embedding limit.
 
-    Правила:
-      - чанк короче порога -> возвращаем как есть;
-      - есть заголовки ур.3 -> режем у них, дойдя до порога; но если между
-        заголовками текст разросся сверх HARD_SPLIT_CHARS — режем по абзацу;
-      - заголовков ур.3 нет -> режем по границам абзацев (порог MAX_CHUNK_CHARS).
-
-    Возвращает список чанков (один или несколько).
+    Rules:
+      - below the threshold -> returned as is;
+      - level-3 headings present -> cut at them once past the threshold;
+        text between headings past HARD_SPLIT_CHARS is cut at a paragraph;
+      - no level-3 headings -> cut at paragraph boundaries (MAX_CHUNK_CHARS).
     """
     blocks = chunk["_blocks"]
 
@@ -125,18 +117,16 @@ def split_large_chunk(chunk: dict) -> list[dict]:
 
     has_level3 = any(b["type"] == "heading" and b.get("level") == 3 for b in blocks)
 
-    # Накапливаем блоки в части. Режем у заголовков ур.3; если их нет —
-    # по границам абзацев (тем же порогом), иначе гигантский раздел без
-    # подзаголовков остался бы одним куском и обрезался при эмбеддинге.
+    # Accumulate blocks into parts. Without headings we cut at paragraphs
+    # already at MAX_CHUNK_CHARS; with headings a part may grow to
+    # HARD_SPLIT_CHARS before a paragraph cut — preserving the binding of
+    # sub-chunks to their subheadings.
     parts = []
     current_blocks = []
     current_len = 0
 
     for block in blocks:
         is_heading = block["type"] == "heading" and block.get("level") == 3
-        # Без заголовков режем по абзацам уже на MAX_CHUNK_CHARS. При заголовках
-        # даём части дорасти до HARD_SPLIT_CHARS, прежде чем резать по абзацу, —
-        # бережём привязку под-чанков к подзаголовкам.
         hard_limit = HARD_SPLIT_CHARS if has_level3 else MAX_CHUNK_CHARS
         should_cut = current_blocks and (
             (is_heading and current_len >= MAX_CHUNK_CHARS) or current_len >= hard_limit
@@ -157,7 +147,6 @@ def split_large_chunk(chunk: dict) -> list[dict]:
     if len(parts) <= 1:
         return [chunk]
 
-    # Собираем под-чанки
     sub_chunks = []
     for part_blocks in parts:
         part_pages = sorted({page_of_block(b) for b in part_blocks})
@@ -180,24 +169,22 @@ def split_large_chunk(chunk: dict) -> list[dict]:
 
 
 def build_chunks(document: dict) -> list[dict]:
-    """
-    Нарезает документ на чанки по разделам.
+    """Split the document into chunks by section.
 
-    Логика:
-      - заголовок уровня 1 -> запоминается как родительский раздел;
-      - заголовок уровня 2 -> закрывает текущий чанк, начинает новый;
-      - если у раздела ур.1 нет подразделов ур.2 -> он сам становится чанком;
-      - остальные блоки -> идут в текущий чанк.
-    Большие чанки в конце дробятся через split_large_chunk.
-
-    Возвращает список чанков (словарей).
+    Logic:
+      - a level-1 heading is remembered as the parent section;
+      - a level-2 heading closes the current chunk and starts a new one;
+      - a level-1 section without level-2 subsections becomes its own chunk;
+      - other blocks join the current chunk.
+    Large chunks are split afterwards via split_large_chunk.
     """
     document_id = document["document_id"]
     doc_title = document.get("document_title", "")
     doc_summary = document.get("document_summary", "")
 
-    # Есть ли в документе нумерованные разделы вообще: если нет — весь текст
-    # соберёт фоллбек «страница = чанк» ниже, чанк-преамбула не нужен.
+    # Does the document have numbered sections at all? If not, the
+    # "page = chunk" fallback below collects everything and no preamble
+    # chunk is needed.
     has_sections = any(
         block["type"] == "heading" and block.get("level") in (1, 2)
         for page in document["pages"]
@@ -209,7 +196,7 @@ def build_chunks(document: dict) -> list[dict]:
     parent_section = ""
 
     def close_current():
-        """Закрывает текущий чанк: достраивает и кладёт в chunks."""
+        """Finish the current chunk and append it to chunks."""
         if current is None:
             return
         if not current["blocks"]:
@@ -230,7 +217,7 @@ def build_chunks(document: dict) -> list[dict]:
         )
 
     def start_chunk(section_number, section_title, parent):
-        """Создаёт новый пустой чанк-заготовку."""
+        """Create a new empty chunk shell."""
         return {
             "section_number": section_number,
             "section_title": section_title,
@@ -264,15 +251,15 @@ def build_chunks(document: dict) -> list[dict]:
                     )
                     continue
 
-                # Уровень 3 (или без уровня) — содержимое, идёт в чанк.
+                # Level 3 (or unnumbered) is content — joins the chunk.
 
             if not is_block_useful(block):
                 continue
             if current is None:
                 if not has_sections:
                     continue
-                # Преамбула: титул и předmluva до первого нумерованного
-                # заголовка — раньше молча выпадали из индекса (№8 аудита).
+                # Preamble: the title page and preface before the first
+                # numbered heading used to fall out of the index silently.
                 current = start_chunk("", "", "")
 
             current["blocks"].append(block)
@@ -280,9 +267,10 @@ def build_chunks(document: dict) -> list[dict]:
 
     close_current()
 
-    # Фоллбек: документ без заголовков ур.1/2 (в архивах проектов — частое
-    # дело: seznam příloh, выписки). Нарезка выше дала 0 чанков, но контент
-    # есть — берём «страница = чанк», чтобы документ не потерялся молча.
+    # Fallback: a document without level-1/2 headings (common in project
+    # archives: attachment lists, extracts). Chunking above produced
+    # nothing but content exists — "page = chunk" keeps the document from
+    # vanishing silently.
     if not chunks:
         for page in document["pages"]:
             useful = [b for b in page["blocks"] if is_block_useful(b)]
@@ -306,19 +294,19 @@ def build_chunks(document: dict) -> list[dict]:
                 }
             )
 
-    # Дробим большие чанки
+    # Split the large chunks.
     result = []
     for chunk in chunks:
         result.extend(split_large_chunk(chunk))
 
-    # Уникальный chunk_id: сквозной счётчик внутри документа.
-    # Старая схема (документ + номер раздела) давала дубликаты в нормах
-    # с приложениями, где нумерация разделов начинается заново. Номер
-    # раздела остаётся в поле section_number.
+    # Unique chunk_id: a running counter within the document. The old
+    # scheme (document + section number) produced duplicates in norms
+    # with annexes where section numbering restarts. The section number
+    # stays in section_number.
     for i, chunk in enumerate(result, start=1):
         chunk["chunk_id"] = f"{document_id}_c{i:03d}"
 
-    # Убираем служебное поле _blocks
+    # Drop the internal _blocks field.
     for chunk in result:
         chunk.pop("_blocks", None)
 
@@ -326,13 +314,14 @@ def build_chunks(document: dict) -> list[dict]:
 
 
 def build_drawing_chunk(page: dict, document: dict) -> dict:
-    """Чанк одной чертёжной страницы.
+    """Chunk for one drawing page.
 
-    text = vision-паспорт листа (чистая семантика: тип, объект, что нарисовано)
-    + ступень из текста + сырой drawing_text (OCR + текстовый слой: точные
-    строки штампа и термины с чертежа). Паспорт есть только в стандартном
-    режиме; в «Без LLM» остаётся один drawing_text. У чертежа нет разделов —
-    страница целиком = чанк, контекст объекта даёт document_title.
+    text = the vision passport of the sheet (pure semantics: type,
+    object, what is drawn) + the stage extracted from text + the raw
+    drawing_text (OCR + text layer: exact title-block lines and terms).
+    The passport exists only in standard mode; no-LLM mode keeps just
+    drawing_text. Drawings have no sections — the whole page is one
+    chunk; object context comes from document_title.
     """
     drawing_text = page.get("drawing_text", "")
 
@@ -360,13 +349,13 @@ def build_drawing_chunk(page: dict, document: dict) -> dict:
 
 
 def build_chunks_routed(document: dict) -> list[dict]:
-    """Нарезка с учётом типа страниц (по-страничный роутер).
+    """Chunking aware of page types (the per-page router).
 
-    Прозаические страницы (page_type != 'drawing') режет обычный build_chunks;
-    чертёжные (page_type == 'drawing') — по одному чанку на страницу из
-    drawing_text. Результаты сливает и заново нумерует chunk_id сквозным
-    счётчиком по всему документу. Без page_type ведёт себя как build_chunks
-    (все страницы — проза) — обратная совместимость.
+    Prose pages (page_type != 'drawing') go through the regular
+    build_chunks; drawing pages get one chunk per page from drawing_text.
+    Results are merged and chunk_id renumbered with one counter across
+    the document. Without page_type behaves exactly like build_chunks
+    (all pages prose) — backward compatible.
     """
     pages = document["pages"]
     prose_pages = [p for p in pages if p.get("page_type") != "drawing"]
@@ -379,7 +368,7 @@ def build_chunks_routed(document: dict) -> list[dict]:
         if has_text or has_paspport:
             chunks.append(build_drawing_chunk(page, document))
 
-    # Сквозной chunk_id по всему объединённому списку (проза + чертежи).
+    # One chunk_id counter across the merged list (prose + drawings).
     document_id = document["document_id"]
     for i, chunk in enumerate(chunks, start=1):
         chunk["chunk_id"] = f"{document_id}_c{i:03d}"
