@@ -1,9 +1,11 @@
-"""Модель PendingEvent — локальная очередь телеметрии перед отправкой.
+"""PendingEvent — the local telemetry queue before sending.
 
-Складываем сюда события через `track_event()`. Фоновая корутина
-`run_telemetry_sender` берёт батч, шлёт на сервер лицензий, при успехе удаляет.
+Events land here via `track_event()`. The background coroutine
+`run_telemetry_sender` takes a batch, sends it to the license server and
+deletes on success.
 
-Если сервер недоступен или юзер не залогинен — события копятся, ничего не теряется.
+When the server is unreachable or the user is not logged in, events
+accumulate — nothing is lost.
 """
 
 from datetime import datetime
@@ -19,20 +21,21 @@ class PendingEvent(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     name: Mapped[str] = mapped_column(String)
-    # SQLAlchemy сериализует dict ↔ JSON автоматом (TEXT в SQLite).
+    # SQLAlchemy serializes dict ↔ JSON automatically (TEXT in SQLite).
     props: Mapped[dict | None] = mapped_column(JSON, nullable=True)
-    # Время события у клиента (когда оно реально случилось).
+    # Client-side event time (when it actually happened).
     client_timestamp: Mapped[datetime] = mapped_column(
         DateTime, server_default=func.now()
     )
 
 
 class PendingReport(Base):
-    """Очередь отчётов «Nahlásit» (F7): помеченный юзером плохой/ненайденный ответ.
+    """Queue of "Report" complaints (F7): answers the user flagged as bad.
 
-    Отдельная от PendingEvent — это персональные данные, складываем сюда ТОЛЬКО
-    когда юзер явно нажал «Nahlásit» на ответе. Sender шлёт на /telemetry/flagged
-    и при успехе удаляет. note — необязательная заметка юзера («почему не так»).
+    Separate from PendingEvent — this is personal data, stored ONLY when
+    the user explicitly clicked "Report" on an answer. The sender posts
+    to /telemetry/flagged and deletes on success. note — the user's
+    optional remark ("why it is wrong").
     """
 
     __tablename__ = "pending_reports"
@@ -42,7 +45,7 @@ class PendingReport(Base):
     answer: Mapped[str] = mapped_column(String)
     answer_model: Mapped[str | None] = mapped_column(String, nullable=True)
     note: Mapped[str | None] = mapped_column(String, nullable=True)
-    # Использованные фрагменты (с текстом) — list[dict]. SQLAlchemy ↔ JSON сам.
+    # The used fragments (with text) — list[dict]; SQLAlchemy ↔ JSON.
     chunks: Mapped[list | None] = mapped_column(JSON, nullable=True)
     client_timestamp: Mapped[datetime] = mapped_column(
         DateTime, server_default=func.now()

@@ -1,14 +1,14 @@
-"""Сервис телеметрии: складываем события в очередь, фоновая корутина их отправляет.
+"""Telemetry service: queue events locally, a background coroutine sends them.
 
-Главный публичный API:
-- `track_event(name, **props)` — кладёт событие в pending_events. Дёшево, безопасно.
-- `run_telemetry_sender()` — фоновый цикл, запускается в lifespan.
+Public API:
+- `track_event(name, **props)` — enqueue an event. Cheap and safe.
+- `run_telemetry_sender()` — background loop, started in the lifespan.
 
-Принципы:
-- Если юзер не залогинен — не отправляем. События копятся.
-- Если сервер недоступен — не удаляем из очереди. Попробуем в следующий раз.
-- Если сервер вернул 200 — удаляем отправленные ровно по id.
-- Поломка отправки не должна ронять основной процесс (вокруг tracker и sender — try/except).
+Principles:
+- Not logged in — nothing is sent; events accumulate.
+- Server unreachable — nothing is deleted; retried next tick.
+- Server returned 200 — exactly the sent rows are deleted by id.
+- A sending failure must never take down the app (try/except all around).
 """
 
 import asyncio
@@ -27,17 +27,17 @@ from backend.modules.auth.service import (
 from backend.modules.telemetry.models import PendingEvent, PendingReport
 
 
-# Шлём раз в минуту. Чаще — лишний трафик, реже — отчёты «слепые» дольше.
+# Send once a minute. More often — needless traffic; less — staler reports.
 SEND_INTERVAL_SECONDS = 60
 
-# Максимум в одном батче. Берём с запасом — обычно событий не накапливается много.
+# Batch cap; generous — events rarely pile up.
 BATCH_LIMIT = 100
 
 
 def track_event(name: str, **props: Any) -> None:
-    """Кладёт событие в локальную очередь.
+    """Put an event into the local queue.
 
-    Любые проблемы (БД, диск) глотаются: телеметрия НЕ должна ронять приложение.
+    Any failure (DB, disk) is swallowed: telemetry must NOT crash the app.
     """
     try:
         db = SessionLocal()
@@ -57,11 +57,11 @@ def track_report(
     note: str | None = None,
     chunks: list[dict] | None = None,
 ) -> None:
-    """Кладёт помеченный ответ («Nahlásit») в очередь отчётов (F7).
+    """Queue a flagged answer ("Report", F7).
 
-    Вызывается по явному действию юзера (кнопка под ответом), поэтому согласие
-    не проверяем — сам клик и есть согласие. chunks — использованные фрагменты с
-    текстом. Ошибки глотаем, как в track_event.
+    Triggered by an explicit user action (the button under the answer),
+    so no consent check — the click is the consent. chunks — the used
+    fragments with text. Errors are swallowed like in track_event.
     """
     try:
         db = SessionLocal()
@@ -83,10 +83,10 @@ def track_report(
 
 
 def _post_batch(endpoint: str, body: dict, token: str) -> bool:
-    """POST батча на сервер лицензий. True — сервер принял (200), очередь чистим.
+    """POST a batch to the license server. True — accepted (200), queue clears.
 
-    На не-200 / сетевую ошибку возвращаем False: батч остаётся в очереди до
-    следующего тика. 401 (токен), 426 (устарел), 5xx — стратегия одна.
+    Non-200 / network error returns False: the batch stays queued until
+    the next tick. 401 (token), 426 (outdated), 5xx — same strategy.
     """
     headers = {"Authorization": f"Bearer {token}", **VERSION_HEADERS}
     try:
@@ -106,16 +106,15 @@ def _post_batch(endpoint: str, body: dict, token: str) -> bool:
 
 
 def send_pending_batch() -> int:
-    """Шлёт один батч анонимных событий (Уровень 1). Возвращает число отправленных.
+    """Send one batch of anonymous events. Returns how many were sent.
 
-    Если юзер не залогинен — возвращает 0. Если сервер ответил не-200 —
-    оставляет события в очереди.
+    Not logged in — 0. Non-200 from the server — events stay queued.
     """
     db = SessionLocal()
     try:
         session = db.get(AuthSession, 1)
         if session is None:
-            return 0  # некому слать — пользователь не залогинен
+            return 0  # nobody to send as — not logged in
 
         rows = db.scalars(
             select(PendingEvent).order_by(PendingEvent.id).limit(BATCH_LIMIT)
@@ -147,9 +146,10 @@ def send_pending_batch() -> int:
 
 
 def send_pending_report_batch() -> int:
-    """Шлёт один батч помеченных ответов (F7). Возвращает число отправленных.
+    """Send one batch of flagged answers (F7). Returns how many were sent.
 
-    Поведение как у send_pending_batch, но эндпоинт /telemetry/flagged и текст q/a.
+    Same behaviour as send_pending_batch, but the /telemetry/flagged
+    endpoint and the q/a text.
     """
     db = SessionLocal()
     try:
@@ -190,7 +190,7 @@ def send_pending_report_batch() -> int:
 
 
 async def run_telemetry_sender() -> None:
-    """Фоновая корутина: раз в минуту шлёт события и помеченные ответы."""
+    """Background coroutine: send events and flagged answers once a minute."""
     while True:
         try:
             await asyncio.to_thread(send_pending_batch)

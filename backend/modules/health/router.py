@@ -1,10 +1,4 @@
-"""
-Health-check эндпоинт.
-
-Возвращает {"status": "ok"} — простая проверка живости сервера.
-Используется чтобы убедиться, что FastAPI и роутинг работают,
-до подключения реальных модулей.
-"""
+"""Health-check endpoint: {"status": "ok"} — a simple liveness probe."""
 
 from fastapi import APIRouter
 
@@ -14,5 +8,5 @@ router = APIRouter()
 
 @router.get("/health")
 def health() -> dict:
-    """Простая проверка живости backend."""
+    """Simple backend liveness check."""
     return {"status": "ok"}
