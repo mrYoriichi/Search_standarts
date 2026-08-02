@@ -13,7 +13,7 @@ from sqlalchemy.orm import Session
 
 from backend.core.database import SessionLocal, naive_utcnow
 from backend.modules.auth.models import AuthSession
-from backend.version import APP_VERSION
+from backend.version import APP_VERSION, PUBLIC_BUILD
 
 
 # Хедер для всех запросов к серверу лицензий. Сервер сверяет с MIN_SUPPORTED_VERSION
@@ -332,13 +332,16 @@ def compute_effective_status(session: AuthSession) -> str:
 
     Возвращает 'ok' или 'blocked'. UI блокируется при 'blocked'.
 
-    - revoked → blocked мгновенно (сервер явно сказал «нет»).
-    - offline → blocked, если последний успешный verify был >1 дня назад.
+    - revoked / update_required → blocked мгновенно (сервер явно сказал «нет» —
+      это осознанное решение владельца, действует в обеих сборках).
+    - offline → в пилотной сборке blocked, если последний успешный verify был
+      >1 дня назад; в публичной (PUBLIC_BUILD, fail-open) офлайн НЕ блокирует
+      никогда — недоступность сервера лицензий не должна мешать работе.
     - ok      → ok.
     """
     if session.last_verify_status in ("revoked", "update_required"):
         return "blocked"
-    if session.last_verify_status == "offline":
+    if session.last_verify_status == "offline" and not PUBLIC_BUILD:
         age = naive_utcnow() - session.last_verified_at
         if age > GRACE_PERIOD:
             return "blocked"
