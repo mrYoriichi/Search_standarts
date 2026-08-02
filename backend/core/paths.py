@@ -1,12 +1,12 @@
-"""Где приложение хранит данные юзера: БД, индексы, настройки.
+"""Where the app stores user data: the DB, indexes, settings.
 
-Зачем: в .exe бинарник лежит в Program Files (при обновлении перезаписывается
-целиком), а данные юзера должны это обновление пережить → их место — системный
-user-data каталог ОС. В dev (запуск из исходников) держим данные в корне проекта,
-как было всегда, чтобы ничего не сломалось.
+Why: in the .exe the binary sits in Program Files (overwritten wholesale
+on update), while user data must survive updates → it belongs in the
+OS user-data directory. In dev (running from source) data stays in the
+project root.
 
-Один источник правды для путей. Все потребители (database, pipeline, library)
-строят пути от DATA_DIR, а не от текущей рабочей директории.
+Single source of truth for paths. Every consumer (database, pipeline,
+library) builds paths from DATA_DIR, never from the working directory.
 """
 
 import os
@@ -17,28 +17,28 @@ APP_NAME = "Search_standarts"
 
 
 def _project_root() -> Path:
-    """Корень репозитория: backend/core/paths.py → ../../.."""
+    """Repository root: backend/core/paths.py → ../../.."""
     return Path(__file__).resolve().parents[2]
 
 
 def _system_user_data_dir() -> Path:
-    """Системный каталог данных приложения для текущей ОС."""
+    """OS-specific application data directory."""
     if sys.platform == "win32":
         base = os.environ.get("APPDATA") or str(Path.home() / "AppData" / "Roaming")
         return Path(base) / APP_NAME
     if sys.platform == "darwin":
         return Path.home() / "Library" / "Application Support" / APP_NAME
-    # Linux/прочее: XDG_DATA_HOME или ~/.local/share
+    # Linux/other: XDG_DATA_HOME or ~/.local/share
     base = os.environ.get("XDG_DATA_HOME") or str(Path.home() / ".local" / "share")
     return Path(base) / APP_NAME
 
 
 def _bundle_root() -> Path:
-    """Корень с упакованными ресурсами (код, собранный фронтенд).
+    """Root of the bundled resources (code, built frontend).
 
-    В .exe PyInstaller распаковывает данные во временную папку sys._MEIPASS.
-    В dev — корень проекта. Отличается от DATA_DIR: тут код/статика (только
-    чтение), там данные юзера (запись).
+    In the .exe PyInstaller unpacks into the temp folder sys._MEIPASS.
+    In dev it is the project root. Distinct from DATA_DIR: this side is
+    read-only code/static, that side is writable user data.
     """
     meipass = getattr(sys, "_MEIPASS", None)
     if meipass:
@@ -47,11 +47,11 @@ def _bundle_root() -> Path:
 
 
 def _resolve_data_dir() -> Path:
-    """Каталог данных.
+    """Data directory.
 
-    Приоритет: явная переменная окружения (её выставляет лаунчер .exe) →
-    системный каталог, если запущены из .exe (PyInstaller ставит sys.frozen) →
-    корень проекта (dev).
+    Priority: explicit env var (set by the .exe launcher) → the system
+    directory when frozen (PyInstaller sets sys.frozen) → the project
+    root (dev).
     """
     env = os.environ.get("SEARCH_STANDARTS_DATA_DIR")
     if env:
@@ -61,24 +61,23 @@ def _resolve_data_dir() -> Path:
     return _project_root()
 
 
-# Каталог данных и производные пути. Вычисляются один раз при импорте.
+# Data directory and derived paths, computed once at import.
 DATA_DIR = _resolve_data_dir()
 DB_PATH = DATA_DIR / "app.db"
-# CLI-сценарии пайплайна (main.py → describe.py → chunk.py → index.py →
-# ask.py): вход и выход. Только для запуска из исходников — приложение сюда
-# не смотрит, его документы живут в `<папка юзера>/.search_index/` и в пуле
-# архива.
+# CLI pipeline scripts (parse → describe → chunk → embed → ask): input and
+# output. Source-run only — the app never looks here; its documents live
+# in `<user folder>/.search_index/` and the archive pool.
 CLI_PDF_DIR = DATA_DIR / "data" / "pdfs"
 CLI_OUTPUT_DIR = DATA_DIR / "data" / "cli_output"
-# Пул архива проектов: индексы по slug.
+# Project-archive pool: per-slug indexes.
 PROJECTS_DATA_DIR = DATA_DIR / "data" / "projects_data"
 
-# Собранный фронтенд (Vite кладёт сюда; в .exe попадает как bundled-ресурс).
+# Built frontend (Vite output; a bundled resource in the .exe).
 FRONTEND_DIST = _bundle_root() / "frontend" / "dist"
 
-# Предзагруженные модели docling (download_models.py → docling_models/).
-# Если папка есть — парсер берёт модели из неё и ничего не качает (вариант 2).
+# Pre-downloaded docling models (download_models.py → docling_models/).
+# When present, the parser uses them and downloads nothing.
 DOCLING_MODELS = _bundle_root() / "docling_models"
 
-# Гарантируем, что каталог данных существует (подпапки создаются по мере надобности).
+# Make sure the data directory exists (subfolders are created on demand).
 DATA_DIR.mkdir(parents=True, exist_ok=True)

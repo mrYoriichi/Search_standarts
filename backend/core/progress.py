@@ -1,10 +1,11 @@
-"""Прогресс фоновой обработки документов — для отображения в UI.
+"""Background-processing progress per document — shown in the UI.
 
-Эфемерное состояние в памяти процесса: {slug: "popis obrázků: strana 12/47"}.
-В БД сознательно не пишем: прогресс живёт, пока живёт пайплайн; после
-рестарта обработка возобновляется и прогресс появится снова.
+Ephemeral in-process state: {slug: "describing images: page 12/47"}.
+Deliberately not persisted: progress lives as long as the pipeline;
+after a restart processing resumes and progress reappears.
 
-Пайплайны пишут из потоков ThreadPoolExecutor, API читает из своих — поэтому lock.
+Pipelines write from ThreadPoolExecutor threads, the API reads from its
+own — hence the lock.
 """
 
 import threading
