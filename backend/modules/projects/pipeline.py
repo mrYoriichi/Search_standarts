@@ -1,10 +1,10 @@
-"""Пайплайн обработки документов архива проектов.
+"""Processing pipeline for project archive documents.
 
-Все документы (TZ, статика, чертежи) идут через общий по-страничный
-пайплайн норм (main→describe→chunk→index): роутер сам решает, что
-проза (Docling), а что чертёж (OCR + vision-паспорт). Специфика архива —
-только id чанков от slug `{проект}__{файл}`, проект в «шапке» чанка и
-хранилище PROJECTS_DATA_DIR.
+All documents (technical reports, statics, drawings) go through the shared
+per-page standards pipeline (main->describe->chunk->index): the router itself
+decides what is prose (Docling) and what is a drawing (OCR + vision passport).
+Archive specifics are only chunk ids derived from the `{project}__{file}`
+slug, the project in the chunk "header", and the PROJECTS_DATA_DIR storage.
 """
 
 import json
@@ -27,10 +27,11 @@ logger = logging.getLogger(__name__)
 
 
 def _prefix_project_context(doc_dir: Path, project: str) -> None:
-    """Добавляет проект в document_title всех чанков (перед эмбеддингом).
+    """Prefix the project into document_title of all chunks (before embedding).
 
-    document_title входит в «шапку» чанка при индексации — так чанк
-    «zatížení větrem» из статики ищется в контексте своего проекта/объекта.
+    document_title is part of the chunk "header" at indexing time — so a
+    "zatížení větrem" chunk from statics is searchable in the context of its
+    project/structure.
     """
     chunks_path = doc_dir / "chunks.json"
     chunks = json.loads(chunks_path.read_text(encoding="utf-8"))
@@ -48,15 +49,15 @@ def process_text_document(
     vision_model: str,
     describe_images: bool = True,
 ) -> None:
-    """Текстовый документ архива (TZ, статика): существующий пайплайн норм.
+    """Text archive document (report, statics): the existing standards pipeline.
 
-    Docling → vision-описания картинок (модели/эпюры в статике — тоже сюда)
-    → нарезка по заголовкам → проект в шапку → эмбеддинги.
-    Всё пишется в PROJECTS_DATA_DIR/{slug}/, id чанков — от нашего slug.
-    describe_images=False → режим «Без LLM»: vision пропускается.
+    Docling -> vision descriptions of images (models/diagrams in statics too)
+    -> chunking by headings -> project into the header -> embeddings.
+    Everything is written to PROJECTS_DATA_DIR/{slug}/, chunk ids come from
+    our slug. describe_images=False -> "No LLM" mode: vision is skipped.
     """
-    # Lazy import — Docling тяжёлый, грузим только при реальной обработке
-    # (та же причина, что в documents/pipeline.py).
+    # Lazy import — Docling is heavy, load it only for actual processing
+    # (same reason as in documents/pipeline.py).
     from pipeline import chunk as chunk_step
     from pipeline import describe as describe_step
     from pipeline import embed as index_step
@@ -87,10 +88,11 @@ def process_text_document(
 
 
 def run_project_pipeline(slug: str, pdf_path: str) -> None:
-    """Полная обработка одного документа архива (вызов из ThreadPoolExecutor).
+    """Full processing of one archive document (called from ThreadPoolExecutor).
 
-    Статусы: processing → ready | error (+ текст ошибки в error).
-    Сессию БД открываем сами — FastAPI-зависимости в фоновом потоке не работают.
+    Statuses: processing -> ready | error (+ error text in `error`).
+    We open the DB session ourselves — FastAPI dependencies do not work
+    in a background thread.
     """
     from backend.modules.settings import service as settings_service
 
@@ -98,7 +100,7 @@ def run_project_pipeline(slug: str, pdf_path: str) -> None:
     try:
         doc = db.scalar(select(ProjectDocument).where(ProjectDocument.slug == slug))
         if doc is None:
-            logger.error("run_project_pipeline: slug %s не найден в БД", slug)
+            logger.error("run_project_pipeline: slug %s not found in the DB", slug)
             return
         doc.status = "processing"
         db.commit()
@@ -114,7 +116,7 @@ def run_project_pipeline(slug: str, pdf_path: str) -> None:
                 describe_images=describe_images,
             )
         except Exception as exc:
-            logger.exception("Пайплайн архива для %s упал", slug)
+            logger.exception("Archive pipeline for %s failed", slug)
             doc.status = "error"
             doc.error = classify_pipeline_error(exc)
             db.commit()
@@ -124,8 +126,9 @@ def run_project_pipeline(slug: str, pdf_path: str) -> None:
         doc.error = None
         db.commit()
 
-        # Новые чанки/эмбеддинги на диске — сбрасываем кеш, чтобы следующий
-        # вопрос увидел свежий документ (пул архива влит в общий кеш поиска).
+        # New chunks/embeddings on disk — invalidate the cache so the next
+        # question sees the fresh document (the archive pool is merged into
+        # the shared search cache).
         from backend.core import library_cache
 
         library_cache.invalidate()

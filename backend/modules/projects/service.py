@@ -1,8 +1,8 @@
-"""Сканирование папки архива проектов: обход PDF, slug'и.
+"""Scanning of the project archive folders: PDF walk, slugs.
 
-Классификации sheet/text больше нет (шаг 3 универсального пайплайна):
-все документы идут через общий по-страничный роутер, при скане только
-считаем страницы и отсеиваем битые PDF.
+There is no sheet/text classification anymore (step 3 of the universal
+pipeline): all documents go through the shared per-page router; the scan
+only counts pages and filters out broken PDFs.
 """
 
 import shutil
@@ -15,6 +15,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from backend.core import limits, progress
+from backend.core.ui_messages import msg
 from backend.core.paths import PROJECTS_DATA_DIR
 from backend.modules.projects.models import ProjectDocument
 from backend.modules.projects.schemas import (
@@ -29,7 +30,7 @@ from pdf_processing.parser import make_document_id
 
 @dataclass
 class FoundDocument:
-    """PDF, найденный при сканировании архива (ещё не в БД)."""
+    """A PDF found while scanning the archive (not in the DB yet)."""
 
     slug: str
     project: str
@@ -41,19 +42,20 @@ class FoundDocument:
 
 @dataclass
 class ArchiveScanResult:
-    """Итог обхода папки проекта."""
+    """Result of walking a project folder."""
 
     documents: list[FoundDocument]
-    duplicates: list[str]  # relative_path файлов, чей slug уже занят (тёзки)
-    errors: list[str]  # файлы, которые не удалось открыть как PDF
+    duplicates: list[str]  # relative_path of files whose slug is taken (namesakes)
+    errors: list[str]  # files that could not be opened as PDFs
 
 
 def make_project_slug(project: str, relative_path: str) -> str:
-    """Slug документа архива: {проект}__{путь внутри проекта}.
+    """Slug of an archive document: {project}__{path inside the project}.
 
-    Проект — имя подключённой папки. Путь, а не только имя файла, — потому что
-    одноимённые PDF лежат в разных подпапках проекта (TZ/, výkresy/).
-    Слэши превращаем в пробелы: make_document_id сведёт их к `_`.
+    The project is the name of the connected folder. The path, not just the
+    file name — because same-named PDFs live in different subfolders of the
+    project (TZ/, výkresy/). Slashes become spaces: make_document_id will
+    collapse them to `_`.
     """
     return f"{make_document_id(project)}__{make_document_id(relative_path.replace('/', ' '))}"
 
@@ -61,11 +63,12 @@ def make_project_slug(project: str, relative_path: str) -> str:
 def resolve_project_root(
     paths: list[Path], project: str, relative_path: str
 ) -> Path | None:
-    """Папка проекта, в которой реально лежит файл по relative_path.
+    """The project folder that actually holds the file at relative_path.
 
-    Сверяем и имя папки (= имя проекта), и наличие файла: relative_path
-    вида `TZ/tz.pdf` может существовать сразу в нескольких проектах, и без
-    проверки имени pipeline обработал бы чужой файл. None — не нашли.
+    Check both the folder name (= project name) and file presence: a
+    relative_path like `TZ/tz.pdf` may exist in several projects at once,
+    and without the name check the pipeline would process someone else's
+    file. None — not found.
     """
     for root in paths:
         if root.name == project and (root / relative_path).exists():
@@ -74,13 +77,13 @@ def resolve_project_root(
 
 
 def scan_archive(root: Path, seen_slugs: set[str] | None = None) -> ArchiveScanResult:
-    """Обходит папку проекта и собирает все PDF.
+    """Walk a project folder and collect all PDFs.
 
-    Подключённая папка целиком = один проект с именем этой папки; PDF берём
-    с любой глубины, включая корень. Файловую систему только читаем
-    (принцип #16). seen_slugs — общий набор занятых slug'ов (при обходе
-    нескольких папок): тёзки между папками-проектами с одинаковым именем —
-    коллизия, уходят в duplicates.
+    The whole connected folder = one project named after that folder; PDFs
+    are taken from any depth, including the root. The file system is only
+    read (principle #16). seen_slugs — the shared set of taken slugs (when
+    walking several folders): namesakes between same-named project folders
+    are a collision and go to duplicates.
     """
     documents: list[FoundDocument] = []
     duplicates: list[str] = []
@@ -108,8 +111,8 @@ def scan_archive(root: Path, seen_slugs: set[str] | None = None) -> ArchiveScanR
             FoundDocument(
                 slug=slug,
                 project=project,
-                # as_posix: на Windows str() дал бы `\` — фронт делит путь
-                # по `/`, а склейка root / path понимает `/` на всех ОС.
+                # as_posix: on Windows str() would give `\` — the frontend
+                # splits by `/`, and root / path joins handle `/` on all OSes.
                 relative_path=relative.as_posix(),
                 page_count=page_count,
                 file_size=stat.st_size,
@@ -125,32 +128,33 @@ def scan_archive(root: Path, seen_slugs: set[str] | None = None) -> ArchiveScanR
 
 
 def sync_archive(db: Session, roots: list[Path]) -> ArchiveScanSummary:
-    """Сканирует все папки проектов и синхронизирует таблицу project_documents.
+    """Scan all project folders and sync the project_documents table.
 
-    Новые файлы — вставляем со статусом "pending".
-    Существующие — обновляем путь/страницы (файл мог переехать).
-    Пропавшие с диска — удаляем из БД вместе с индексами (наши артефакты
-    в projects_data; файлы юзера не трогаем). Удалил проект из папки →
-    «Skenovat» → проект ушёл и из поиска. Повторная обработка — заново
-    за деньги, поэтому удаление папки = осознанное действие юзера.
-    Недоступная папка (сетевой диск отвалился) — НЕ «пропавшие»: она уходит
-    в unavailable, и чистка в этот скан пропускается целиком.
+    New files — inserted with the "pending" status.
+    Existing — path/pages updated (the file may have moved).
+    Gone from disk — deleted from the DB together with the indexes (our
+    artifacts in projects_data; the user's files are untouched). Removed a
+    project from the folder -> "Skenovat" -> the project leaves search too.
+    Reprocessing costs money again, so deleting a folder is a deliberate
+    user action. An unavailable folder (network drive dropped) is NOT
+    "gone": it goes to unavailable and cleanup is skipped entirely this scan.
 
-    slug (`{проект}__{путь}`) уникален по ВСЕМ папкам: тёзки между
-    папками-проектами с одинаковым именем — коллизия, уходят в duplicates.
+    The slug (`{project}__{path}`) is unique across ALL folders: namesakes
+    between same-named project folders are a collision, go to duplicates.
     """
     from backend.core import library_cache
 
-    # Общий обход всех папок с единым набором занятых slug'ов.
+    # A shared walk over all folders with one set of taken slugs.
     documents: list[FoundDocument] = []
     duplicates: list[str] = []
     errors: list[str] = []
     unavailable: list[str] = []
     seen_slugs: set[str] = set()
     for root in roots:
-        # Недоступная папка (отвалился сетевой диск) неотличима от пустой:
-        # rglob по несуществующему пути молча даёт пустой список — и чистка
-        # ниже снесла бы записи и индексы живых документов.
+        # An unavailable folder (network drive dropped) is indistinguishable
+        # from an empty one: rglob on a nonexistent path silently yields an
+        # empty list — and the cleanup below would wipe the records and
+        # indexes of live documents.
         if not root.is_dir():
             unavailable.append(str(root))
             continue
@@ -177,8 +181,8 @@ def sync_archive(db: Session, roots: list[Path]) -> ArchiveScanSummary:
                     slug=found.slug,
                     project=found.project,
                     relative_path=found.relative_path,
-                    # Колонка NOT NULL без default в живых БД (SQLite не умеет
-                    # снять NOT NULL) — пишем константу, развилки больше нет.
+                    # NOT NULL column without a default in live DBs (SQLite
+                    # can't drop NOT NULL) — write the constant, no fork left.
                     doc_type="text",
                     page_count=found.page_count,
                     status="pending",
@@ -188,22 +192,23 @@ def sync_archive(db: Session, roots: list[Path]) -> ArchiveScanSummary:
             )
             new_count += 1
         elif doc.status == "processing":
-            # Обрабатывается прямо сейчас — путь/страницы обновим, stat НЕ
-            # трогаем: замену файла под пайплайном поймает следующий скан.
+            # Being processed right now — update path/pages, do NOT touch
+            # stat: a file replaced under the pipeline is caught by the
+            # next scan.
             doc.relative_path = found.relative_path
             doc.page_count = found.page_count
         elif doc.file_size is None:
-            # Строка со старой версии (stat-колонок не было): дозаполняем БЕЗ
-            # сброса — иначе первый скан после обновления снёс бы весь архив
-            # в pending, а это повторная оплата vision.
+            # A row from an old version (no stat columns yet): fill in WITHOUT
+            # resetting — otherwise the first scan after the upgrade would
+            # dump the whole archive to pending, i.e. paying vision again.
             doc.relative_path = found.relative_path
             doc.page_count = found.page_count
             doc.file_size = found.file_size
             doc.file_mtime = found.file_mtime
         elif (doc.file_size, doc.file_mtime) != (found.file_size, found.file_mtime):
-            # Файл заменили (тот же путь, новое содержимое): старые чанки
-            # устарели — вычищаем и возвращаем в pending. Индексация — платная,
-            # поэтому НЕ автозапуск: юзер нажмёт «Indexovat».
+            # The file was replaced (same path, new content): old chunks are
+            # stale — clean up and return to pending. Indexing is paid, so
+            # NO auto-start: the user clicks "Indexovat".
             shutil.rmtree(PROJECTS_DATA_DIR / found.slug, ignore_errors=True)
             doc.relative_path = found.relative_path
             doc.page_count = found.page_count
@@ -217,23 +222,24 @@ def sync_archive(db: Session, roots: list[Path]) -> ArchiveScanSummary:
             doc.page_count = found.page_count
 
     removed = 0
-    # Документы архива не несут метку папки (slug = {проект}__{путь}),
-    # поэтому при ЛЮБОЙ недоступной папке чистку пропускаем целиком — не
-    # понять, чьи «пропавшие». Вернётся диск — следующий скан дочистит.
+    # Archive documents carry no folder label (slug = {project}__{path}), so
+    # with ANY unavailable folder cleanup is skipped entirely — no way to
+    # tell whose files are "gone". Once the drive is back, the next scan
+    # finishes the cleanup.
     if not unavailable:
         for slug, doc in existing.items():
             if slug in found_slugs:
                 continue
             if doc.status == "processing":
-                continue  # обрабатывается прямо сейчас — не выдёргиваем из-под ног
+                continue  # being processed right now — don't pull the rug
             shutil.rmtree(PROJECTS_DATA_DIR / slug, ignore_errors=True)
             db.delete(doc)
             removed += 1
 
     db.commit()
     if removed or changed:
-        # С диска пропали чанки (удалённые или заменённые документы) —
-        # кеш поиска не должен их отдавать.
+        # Chunks disappeared from disk (deleted or replaced documents) —
+        # the search cache must not serve them.
         library_cache.invalidate()
 
     return ArchiveScanSummary(
@@ -248,24 +254,24 @@ def sync_archive(db: Session, roots: list[Path]) -> ArchiveScanSummary:
 
 
 def refresh_file_stat(doc: ProjectDocument, root: Path) -> None:
-    """Записывает ТЕКУЩИЙ stat PDF перед отправкой в пайплайн.
+    """Record the CURRENT PDF stat before sending to the pipeline.
 
-    Пайплайн читает файл с диска в момент обработки — stat в БД должен
-    соответствовать именно этой версии. Иначе (файл заменили между сканом
-    и запуском) следующий скан счёл бы свежеоплаченный индекс устаревшим
-    и зря сбросил бы его в pending.
+    The pipeline reads the file from disk at processing time — the stat in
+    the DB must match exactly that version. Otherwise (file replaced between
+    scan and launch) the next scan would consider the freshly paid index
+    stale and needlessly reset it to pending.
     """
     try:
         stat = (root / doc.relative_path).stat()
     except OSError:
-        return  # файл исчез между resolve и stat — пайплайн упадёт сам, громко
+        return  # file vanished between resolve and stat — pipeline fails loudly
     doc.file_size = stat.st_size
     doc.file_mtime = stat.st_mtime
 
 
-# Сериализует запуск индексации (даблклик по «Indexovat»): два одновременных
-# вызова иначе прочитают одни и те же pending до чужого commit — двойная
-# оплата vision.
+# Serializes indexing launches ("Indexovat" double-click): two concurrent
+# calls would otherwise read the same pending rows before the other's
+# commit — vision paid twice.
 _start_indexing_lock = threading.Lock()
 
 
@@ -274,16 +280,16 @@ def start_archive_indexing(
     paths: list[Path],
     executor: ThreadPoolExecutor,
 ) -> tuple[int, int]:
-    """Отправляет pending-документы архива в пайплайн.
+    """Send pending archive documents to the pipeline.
 
-    Статус сразу processing — повторный клик не отправит те же документы
-    второй раз, а после падения их подхватит возобновление на старте.
-    Папку каждого документа находим по наличию его файла на диске.
+    Status flips to processing right away — a repeated click will not send
+    the same documents twice, and after a crash the startup resume picks
+    them up. Each document's folder is found by its file's presence on disk.
 
-    Лимит страниц публичной сборки (backend/core/limits.py) общий с
-    библиотекой: документы сверх остатка остаются pending.
+    The public build page limit (backend/core/limits.py) is shared with the
+    library: documents over the remainder stay pending.
 
-    Возвращает (отправлено, сверх лимита).
+    Returns (submitted, over limit).
     """
     from backend.modules.projects.pipeline import run_project_pipeline
 
@@ -294,14 +300,14 @@ def start_archive_indexing(
 
         submitted = 0
         over_limit = 0
-        remaining = limits.pages_remaining(db)  # None — лимита нет (пилот)
+        remaining = limits.pages_remaining(db)  # None — no limit (pilot)
         for doc in pending:
             root = resolve_project_root(paths, doc.project, doc.relative_path)
             if root is None:
-                continue  # файл не найден ни в одной папке — пропускаем
-            pages = doc.page_count or 0  # скан заполняет всегда; 0 — битый PDF
+                continue  # file not found in any folder — skip
+            pages = doc.page_count or 0  # scan always fills it; 0 — broken PDF
             if remaining is not None and pages > remaining:
-                over_limit += 1  # остаётся pending
+                over_limit += 1  # stays pending
                 continue
             if remaining is not None:
                 remaining -= pages
@@ -316,10 +322,11 @@ def start_archive_indexing(
 
 
 class DocumentBusyError(Exception):
-    """Операция отклонена: документ архива сейчас обрабатывается пайплайном.
+    """Operation rejected: the archive document is being processed right now.
 
-    Переиндексация во время работы фонового pipeline даёт гонку: пайплайн
-    дописал бы артефакты уже ПОСЛЕ rmtree — файлы и статус разъехались бы.
+    Reindexing while the background pipeline runs creates a race: the
+    pipeline would finish writing artifacts AFTER the rmtree — files and
+    status would drift apart.
     """
 
 
@@ -329,32 +336,31 @@ def reindex_document(
     paths: list[Path],
     executor: ThreadPoolExecutor,
 ) -> ProjectDocument:
-    """Полностью переобрабатывает документ архива: старые артефакты удаляются.
+    """Fully reprocess an archive document: old artifacts are removed.
 
-    Нужно после смены пайплайна (шаг 3: бывшие sheet-документы) или когда
-    юзер заменил содержимое PDF. Сам PDF в папке архива НЕ трогаем.
-    Межмашинный лок не нужен: артефакты архива лежат в локальной
-    PROJECTS_DATA_DIR, а не в общей сетевой папке.
+    Needed after a pipeline change (step 3: former sheet documents) or when
+    the user replaced the PDF's content. The PDF itself in the archive
+    folder is NOT touched. No cross-machine lock needed: archive artifacts
+    live in the local PROJECTS_DATA_DIR, not in a shared network folder.
     """
     from backend.core import library_cache
     from backend.modules.projects.pipeline import run_project_pipeline
 
     doc = db.scalar(select(ProjectDocument).where(ProjectDocument.slug == slug))
     if doc is None:
-        raise ValueError(f"Документ архива {slug} не найден")
+        raise ValueError(msg("projects.doc_not_found", slug=slug))
     if doc.status == "processing":
-        raise DocumentBusyError(
-            f"Документ {slug} сейчас индексируется — дождись конца обработки"
-        )
+        raise DocumentBusyError(msg("lib.doc_busy", slug=slug))
 
     root = resolve_project_root(paths, doc.project, doc.relative_path)
     if root is None:
-        raise ValueError(f"PDF не найден ни в одной папке архива: {doc.relative_path}")
+        raise ValueError(msg("projects.pdf_not_found", path=doc.relative_path))
 
-    # Готовый документ пересобираем с нуля. Упавший (error) — ПРОДОЛЖАЕМ с
-    # чекпоинта: описания оплаченных страниц лежат в descriptions.json, resume
-    # в describe их пропустит. Живой случай 2026-08-02: vision упал на стр.
-    # 166 из ~189 — rmtree выбрасывал ~165 оплаченных страниц.
+    # A ready document is rebuilt from scratch. A failed one (error) —
+    # CONTINUE from the checkpoint: descriptions of the paid pages sit in
+    # descriptions.json, the describe resume skips them. Live case
+    # 2026-08-02: vision failed on page 166 of ~189 — rmtree was throwing
+    # away ~165 paid pages.
     if doc.status == "ready":
         shutil.rmtree(PROJECTS_DATA_DIR / slug, ignore_errors=True)
 
@@ -363,8 +369,9 @@ def reindex_document(
     refresh_file_stat(doc, root)
     db.commit()
 
-    # Старые чанки уже удалены с диска — убираем их из кеша сразу, не дожидаясь
-    # конца переобработки (pipeline сбросит кеш ещё раз, когда документ готов).
+    # Old chunks are already gone from disk — drop them from the cache now,
+    # without waiting for reprocessing to finish (the pipeline invalidates
+    # the cache again when the document is ready).
     library_cache.invalidate()
 
     executor.submit(run_project_pipeline, slug, str(root / doc.relative_path))
@@ -372,17 +379,17 @@ def reindex_document(
 
 
 def toggle_pin(db: Session, slug: str) -> ProjectDocument:
-    """Переключает закреплённость документа архива. ValueError, если не найден."""
+    """Toggle the pinned state of an archive document. ValueError if not found."""
     doc = db.scalar(select(ProjectDocument).where(ProjectDocument.slug == slug))
     if doc is None:
-        raise ValueError(f"Документ архива {slug} не найден")
+        raise ValueError(msg("projects.doc_not_found", slug=slug))
     doc.pinned = not doc.pinned
     db.commit()
     return doc
 
 
 def build_archive_response(db: Session, paths: list[str]) -> ArchiveResponse:
-    """Документы архива из БД, сгруппированные по проектам (для UI)."""
+    """Archive documents from the DB, grouped by project (for the UI)."""
     docs = db.scalars(
         select(ProjectDocument).order_by(
             ProjectDocument.project, ProjectDocument.relative_path

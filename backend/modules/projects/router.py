@@ -1,4 +1,4 @@
-"""HTTP-эндпоинты модуля projects (архив проектов)."""
+"""HTTP endpoints of the projects module (project archive)."""
 
 from pathlib import Path
 
@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.orm import Session
 
 from backend.core.database import get_session
+from backend.core.ui_messages import msg
 from backend.modules.projects import service
 from backend.modules.projects.schemas import (
     ArchiveResponse,
@@ -19,16 +20,16 @@ router = APIRouter()
 
 
 def _projects_paths(db: Session) -> list[Path]:
-    """Список папок архива как Path. HTTP 400, если ни одной не задано."""
+    """Archive folders as Path objects. HTTP 400 if none is configured."""
     paths = settings_service.get_projects_paths(db)
     if not paths:
-        raise HTTPException(status_code=400, detail="Папка архива не задана")
+        raise HTTPException(status_code=400, detail=msg("projects.no_archive_path"))
     return [Path(p) for p in paths]
 
 
 @router.get("/projects", response_model=ArchiveResponse)
 def get_archive(db: Session = Depends(get_session)) -> ArchiveResponse:
-    """Документы архива по проектам + текущие папки."""
+    """Archive documents grouped by project + the current folders."""
     return service.build_archive_response(db, settings_service.get_projects_paths(db))
 
 
@@ -36,17 +37,17 @@ def get_archive(db: Session = Depends(get_session)) -> ArchiveResponse:
 def scan_archive(
     db: Session = Depends(get_session),
 ) -> ArchiveScanSummary:
-    """Сканирует папки архива: новые PDF получают статус pending (čeká).
+    """Scan the archive folders: new PDFs get the pending status (čeká).
 
-    Скан бесплатный, индексация платная (vision) — запускается отдельным
-    POST /projects/index, чтобы юзер видел список ДО траты денег.
+    Scanning is free, indexing is paid (vision) — launched by a separate
+    POST /projects/index so the user sees the list BEFORE spending money.
     """
     return service.sync_archive(db, _projects_paths(db))
 
 
 @router.post("/projects/{slug}/pin", response_model=ProjectDocumentOut)
 def toggle_pin(slug: str, db: Session = Depends(get_session)) -> ProjectDocumentOut:
-    """Переключает закреплённость документа архива."""
+    """Toggle the pinned state of an archive document."""
     try:
         return service.toggle_pin(db, slug)
     except ValueError as exc:
@@ -59,7 +60,7 @@ def reindex_document(
     request: Request,
     db: Session = Depends(get_session),
 ) -> ProjectDocumentOut:
-    """Полная переобработка документа архива: артефакты удаляем, pipeline заново."""
+    """Full reprocessing of an archive document: artifacts removed, pipeline rerun."""
     try:
         return service.reindex_document(
             db, slug, _projects_paths(db), request.app.state.executor
@@ -75,7 +76,7 @@ def index_archive(
     request: Request,
     db: Session = Depends(get_session),
 ) -> dict:
-    """Отправляет обнаруженные (pending) документы архива в обработку."""
+    """Send discovered (pending) archive documents to processing."""
     submitted, over_limit = service.start_archive_indexing(
         db, _projects_paths(db), request.app.state.executor
     )

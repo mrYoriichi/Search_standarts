@@ -206,6 +206,22 @@ MESSAGES: dict[str, dict[str, str]] = {
         "en": "File not found: {path}",
         "de": "Datei nicht gefunden: {path}",
     },
+    # --- project archive ---
+    "projects.no_archive_path": {
+        "cs": "Složka archivu není nastavena.",
+        "en": "The archive folder is not set.",
+        "de": "Der Archivordner ist nicht festgelegt.",
+    },
+    "projects.doc_not_found": {
+        "cs": "Dokument archivu {slug} nebyl nalezen.",
+        "en": "Archive document {slug} was not found.",
+        "de": "Archivdokument {slug} wurde nicht gefunden.",
+    },
+    "projects.pdf_not_found": {
+        "cs": "PDF nebylo nalezeno v žádné složce archivu: {path}",
+        "en": "PDF not found in any archive folder: {path}",
+        "de": "PDF in keinem Archivordner gefunden: {path}",
+    },
     # --- indexing progress (pipeline stages) ---
     "progress.reading": {
         "cs": "čtení PDF…",
