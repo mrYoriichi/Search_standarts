@@ -134,7 +134,7 @@ def ask(
     answer_model: str = "gpt-5.4-mini",
     expand: bool = True,
     strong: bool = False,
-    answer_language: str = "cs",
+    answer_language: str = "en",
 ) -> AskResponse:
     """Главная функция: вопрос → ответ + источники + id записи в QueryLog.
 

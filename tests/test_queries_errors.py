@@ -8,10 +8,20 @@ Exception: неверный ключ, обрыв сети или исчерпа�
 import httpx
 import openai
 import pytest
+
+from backend.core import ui_messages
 from fastapi import HTTPException
 
 from backend.modules.queries import router as queries_router
 from backend.modules.queries.schemas import AskRequest
+
+
+@pytest.fixture(autouse=True)
+def czech_messages():
+    """Тексты в тестах — чешские эталоны; дефолт приложения теперь английский."""
+    ui_messages.set_language("cs")
+    yield
+    ui_messages.set_language("en")
 
 
 def _raise_from_ask(monkeypatch, exc: Exception) -> None:

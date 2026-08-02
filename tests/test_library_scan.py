@@ -5,6 +5,8 @@ import os
 import shutil
 
 import pytest
+
+from backend.core import ui_messages
 from sqlalchemy import create_engine, select
 from sqlalchemy.orm import sessionmaker
 
@@ -12,6 +14,14 @@ from backend.core import index_store
 from backend.core.database import Base
 from backend.modules.documents.models import Document
 from backend.modules.library.service import build_library_response, scan_library
+
+
+@pytest.fixture(autouse=True)
+def czech_messages():
+    """Тексты в тестах — чешские эталоны; дефолт приложения теперь английский."""
+    ui_messages.set_language("cs")
+    yield
+    ui_messages.set_language("en")
 
 
 @pytest.fixture

@@ -35,7 +35,7 @@ class AskRequest(BaseModel):
         "к отвечающей LLM (дороже и медленнее, для тяжёлых вопросов).",
     )
     answer_language: Literal["cs", "en", "de"] = Field(
-        default="cs",
+        default="en",
         description="Язык ответа LLM. Независим от языка интерфейса.",
     )
 

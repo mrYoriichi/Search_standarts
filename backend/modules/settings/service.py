@@ -29,7 +29,7 @@ DEFAULT_VISION_MODEL = "gpt-5.4-mini"  # дешевле; gpt-5.5 — по выб
 DESCRIBE_IMAGES_KEY = "describe_images"
 OPENAI_KEY_KEY = "openai_api_key"
 # Язык интерфейса (cs/en/de): фронт шлёт при переключении, бэкенд использует
-# для текстов ошибок (backend/core/ui_messages.py). Дефолт — чешский.
+# для текстов ошибок (backend/core/ui_messages.py). Дефолт — английский.
 UI_LANGUAGE_KEY = "ui_language"
 
 
@@ -296,9 +296,9 @@ def apply_openai_key_to_env(db: Session) -> None:
 
 
 def get_ui_language(db: Session) -> str:
-    """Язык интерфейса/ошибок бэкенда. Дефолт — чешский."""
+    """Язык интерфейса/ошибок бэкенда. Дефолт — английский."""
     setting = db.scalar(select(Setting).where(Setting.key == UI_LANGUAGE_KEY))
-    return setting.value if setting and setting.value in ui_messages.LANGS else "cs"
+    return setting.value if setting and setting.value in ui_messages.LANGS else "en"
 
 
 def set_ui_language(db: Session, lang: str) -> str:

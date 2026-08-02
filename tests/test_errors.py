@@ -1,6 +1,18 @@
 """Тесты классификатора ошибок пайплайна."""
 
+import pytest
+
+from backend.core import ui_messages
+
 from backend.core.errors import classify_pipeline_error
+
+
+@pytest.fixture(autouse=True)
+def czech_messages():
+    """Тексты в тестах — чешские эталоны; дефолт приложения теперь английский."""
+    ui_messages.set_language("cs")
+    yield
+    ui_messages.set_language("en")
 
 
 class AuthenticationError(Exception):

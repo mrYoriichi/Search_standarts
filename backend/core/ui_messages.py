@@ -1,4 +1,4 @@
-"""Тексты бэкенда для UI на трёх языках (cs — дефолт и fallback).
+"""Тексты бэкенда для UI на трёх языках (en — дефолт и fallback).
 
 Бэкенд не знает язык каждого HTTP-запроса, поэтому язык хранится одним
 значением: фронт при переключении шлёт PUT /api/settings/language,
@@ -12,7 +12,7 @@
 
 LANGS = ("cs", "en", "de")
 
-_current = "cs"
+_current = "en"
 
 
 def set_language(lang: str) -> None:
@@ -191,7 +191,7 @@ MESSAGES: dict[str, dict[str, str]] = {
 
 
 def msg(key: str, **params: object) -> str:
-    """Текст сообщения на текущем языке; чешский — fallback."""
+    """Текст сообщения на текущем языке; английский — fallback."""
     entry = MESSAGES[key]
-    template = entry.get(_current) or entry["cs"]
+    template = entry.get(_current) or entry["en"]
     return template.format(**params) if params else template

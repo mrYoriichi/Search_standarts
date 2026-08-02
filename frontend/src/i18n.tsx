@@ -16,7 +16,7 @@ const LANGS: Lang[] = ['cs', 'en', 'de']
 
 function initialLang(): Lang {
   const saved = localStorage.getItem('lang')
-  return LANGS.includes(saved as Lang) ? (saved as Lang) : 'cs'
+  return LANGS.includes(saved as Lang) ? (saved as Lang) : 'en'
 }
 
 // Текущий язык на уровне модуля — его читает t(). Меняется только через
@@ -24,7 +24,7 @@ function initialLang(): Lang {
 let currentLang: Lang = initialLang()
 
 export function t(key: MsgKey, params?: Record<string, string | number>): string {
-  const template = dictionaries[currentLang][key] ?? dictionaries.cs[key]
+  const template = dictionaries[currentLang][key] ?? dictionaries.en[key]
   if (!params) return template
   return template.replace(/\{(\w+)\}/g, (match, name) =>
     name in params ? String(params[name]) : match,

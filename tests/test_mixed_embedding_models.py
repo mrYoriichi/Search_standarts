@@ -8,8 +8,18 @@ from pathlib import Path
 
 import pytest
 
+from backend.core import ui_messages
+
 from backend.core import library_cache
 from common.jsonio import save_json_atomic
+
+
+@pytest.fixture(autouse=True)
+def czech_messages():
+    """Тексты в тестах — чешские эталоны; дефолт приложения теперь английский."""
+    ui_messages.set_language("cs")
+    yield
+    ui_messages.set_language("en")
 
 
 def _make_doc(root: Path, slug: str, model: str, dim: int) -> None:

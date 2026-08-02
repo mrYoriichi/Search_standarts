@@ -2,7 +2,7 @@
 Этап 6, часть 2: генерация ответа по найденным чанкам.
 
 На входе: вопрос + список топ-чанков (от hybrid_search через сценарий).
-На выходе: краткий ответ на выбранном языке (дефолт — чешский, см.
+На выходе: краткий ответ на выбранном языке (дефолт — английский, см.
 build_system_prompt) + источники (документ, раздел, страницы) только для
 тех чанков, на которые модель реально опиралась.
 
@@ -56,8 +56,8 @@ RESPONSE_SCHEMA = {
 }
 
 
-# Языки ответа: код из UI → имя языка в промпте. Дефолт — чешский
-# (решение №12 смягчено 2026-08-02: жёсткое требование стало дефолтом).
+# Языки ответа: код из UI → имя языка в промпте. Дефолт — английский
+# (решение №12 снято 2026-08-02: чешский — полноценный выбор, не дефолт).
 ANSWER_LANGUAGES = {"cs": "Czech", "en": "English", "de": "German"}
 
 # Системный промпт по-английски (нейтрализует языковой bias модели);
@@ -77,13 +77,13 @@ Rules:
 8. Be brief and concrete."""
 
 
-def build_system_prompt(answer_language: str = "cs") -> str:
+def build_system_prompt(answer_language: str = "en") -> str:
     """Системный промпт с требуемым языком ответа.
 
-    Неизвестный код языка тихо падает на чешский — мусор в запросе не должен
-    ронять генерацию (эндпоинт и так валидирует Literal, это второй рубеж).
+    Неизвестный код языка тихо падает на английский — мусор в запросе не
+    должен ронять генерацию (эндпоинт и так валидирует Literal, второй рубеж).
     """
-    language = ANSWER_LANGUAGES.get(answer_language, ANSWER_LANGUAGES["cs"])
+    language = ANSWER_LANGUAGES.get(answer_language, ANSWER_LANGUAGES["en"])
     return SYSTEM_PROMPT_TEMPLATE.format(language=language)
 
 
@@ -151,7 +151,7 @@ def generate_answer(
     chunks: list[dict],
     model: str = ANSWER_MODEL,
     page_images: list[dict] | None = None,
-    answer_language: str = "cs",
+    answer_language: str = "en",
 ) -> dict:
     """
     Главная функция: вопрос + чанки → ответ + источники.
@@ -160,7 +160,7 @@ def generate_answer(
     чтобы сравнивать модели (gpt-5.4-mini ↔ gpt-5.5) из UI.
     page_images — снимки страниц топ-источников (сильный поиск), см.
     build_user_content; None = обычный текстовый режим.
-    answer_language — язык ответа ("cs"/"en"/"de", дефолт чешский).
+    answer_language — язык ответа ("cs"/"en"/"de", дефолт английский).
 
     Один вызов LLM со structured output: модель возвращает текст ответа
     и список chunk_id, на которые реально опиралась. Источники собираем
