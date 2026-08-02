@@ -24,7 +24,7 @@ load_dotenv()
 
 import pypdfium2 as pdfium
 
-from backend.core.paths import RAW_DATA_DIR
+from backend.core.paths import CLI_OUTPUT_DIR
 from jsonio import save_json_atomic
 from pdf_processing.drawing import RENDER_MAX_SIDE_PX
 from pdf_processing.image_description import (
@@ -191,7 +191,7 @@ def process(
     Описывает схемы и метаданные документа, результат пишет в descriptions.json.
     pdf_name — то же имя, что передавалось в main.py (например, MVL649).
     vision_model — модель vision LLM (рычаг стоимости; см. настройку vision_model).
-    doc_dir — папка документа; по умолчанию data/raw_data/<id> (нормы),
+    doc_dir — папка документа; по умолчанию data/cli_output/<id>,
     архив проектов передаёт свою (projects_data/<slug>).
     on_progress — необязательный колбэк (номер страницы по счёту, всего страниц):
     бэкенд показывает прогресс в UI, CLI живёт без него.
@@ -204,7 +204,7 @@ def process(
     вовсе (ни метаданные, ни схемы прозы, ни чертежи): пишем пустой
     descriptions.json, чанки соберутся из OCR/текста — бесплатно.
     """
-    doc_dir = doc_dir or (RAW_DATA_DIR / make_document_id(pdf_name))
+    doc_dir = doc_dir or (CLI_OUTPUT_DIR / make_document_id(pdf_name))
     document_path = doc_dir / "document.json"
     descriptions_path = doc_dir / "descriptions.json"
     pages_dir = pages_dir or (doc_dir / "pages")

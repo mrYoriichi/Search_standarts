@@ -1,7 +1,7 @@
 """
 Этап 6: запрос к системе.
 
-Сканирует data/raw_data/, подгружает чанки и эмбеддинги ВСЕХ подготовленных
+Сканирует data/cli_output/, подгружает чанки и эмбеддинги ВСЕХ подготовленных
 документов, ищет гибридным поиском по объединённой библиотеке, генерирует
 ответ через LLM со ссылками на источник.
 
@@ -19,7 +19,7 @@ load_dotenv()
 
 import numpy as np
 
-from backend.core.paths import RAW_DATA_DIR
+from backend.core.paths import CLI_OUTPUT_DIR
 from indexing.bm25_index import build_bm25_index
 from indexing.embeddings_index import build_matrix_index
 from search.hybrid import hybrid_search
@@ -28,7 +28,7 @@ from search.answer import generate_answer
 
 # Сколько чанков подаём в LLM (договорились на 5)
 TOP_K = 5
-DATA_ROOT = RAW_DATA_DIR
+DATA_ROOT = CLI_OUTPUT_DIR
 
 
 def load_chunks(json_path: Path) -> list[dict]:

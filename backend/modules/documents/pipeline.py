@@ -15,7 +15,6 @@ from sqlalchemy import select
 from backend.core import index_lock, library_cache, progress
 from backend.core.database import SessionLocal
 from backend.core.errors import classify_pipeline_error
-from backend.core.paths import RAW_DATA_DIR
 from backend.modules.documents.models import Document
 from backend.modules.telemetry.service import track_event
 
@@ -40,17 +39,14 @@ def run_pipeline_locked(
         index_lock.done(library_path)
 
 
-def run_pipeline(
-    slug: str, pdf_path: str | None = None, doc_dir: Path | None = None
-) -> None:
+def run_pipeline(slug: str, pdf_path: str | None, doc_dir: Path) -> None:
     """Прогоняет полный пайплайн для одного документа.
 
     slug — id документа, совпадает с именем папки артефактов.
-    pdf_path — полный путь к PDF. Если не задан, main.py возьмёт по старой
-    логике из data/pdfs/{slug}.pdf (upload-flow). Сканирование папки
-    библиотеки передаёт сюда путь к PDF прямо из папки юзера.
-    doc_dir — папка артефактов. Библиотека передаёт
-    <папка>/.search_index/{slug}; без него — старый пул data/raw_data/{slug}.
+    pdf_path — полный путь к PDF в папке юзера.
+    doc_dir — папка артефактов: `<папка библиотеки>/.search_index/{slug}`.
+    Оба задаёт вызывающий код — дефолтов нет намеренно: молчаливый фолбэк на
+    локальный пул уводил документы мимо папки библиотеки.
 
     Скриншоты страниц живут во ВРЕМЕННОЙ локальной папке: нужны только
     vision-шагу, в артефактах не хранятся (и не ездят на сетевой диск).
@@ -71,7 +67,6 @@ def run_pipeline(
     from backend.modules.settings import service as settings_service
 
     db = SessionLocal()
-    doc_dir = doc_dir or (RAW_DATA_DIR / slug)
     try:
         # Vision-модель — рычаг стоимости, юзер выбирает в «Knihovna». Читаем на
         # старте обработки документа, чтобы применить актуальный выбор.

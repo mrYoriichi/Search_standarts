@@ -42,7 +42,7 @@ from backend.modules.telemetry.models import (  # noqa: F401 — для create_a
     PendingReport,
 )
 from backend.modules.documents.models import Document
-from backend.modules.documents.pipeline import run_pipeline, run_pipeline_locked
+from backend.modules.documents.pipeline import run_pipeline_locked
 from backend.modules.documents.router import router as documents_router
 from backend.modules.health.router import router as health_router
 from backend.modules.projects.models import ProjectDocument
@@ -69,8 +69,7 @@ async def lifespan(app: FastAPI):
     app.state.executor = executor
 
     # Возобновляем документы, которые остались processing после прошлого падения.
-    # Если у документа есть relative_path — он добавлен через scan, PDF лежит
-    # в папке библиотеки юзера. Иначе старый upload-flow, путь по умолчанию.
+    # PDF лежит в папке библиотеки юзера, путь берём из relative_path.
     db = SessionLocal()
     try:
         # Ключ OpenAI из БД (если задан) кладём в окружение до первых LLM-вызовов.
@@ -81,17 +80,11 @@ async def lifespan(app: FastAPI):
             select(Document).where(Document.status == "processing")
         ).all()
         for doc in stuck:
-            if not doc.relative_path:
-                # Легаси upload-flow: PDF в data/pdfs, артефакты в data/raw_data.
-                executor.submit(run_pipeline, doc.slug, None, None)
-                print(f"[startup] Возобновлён pipeline для {doc.slug}")
-                continue
             folder = index_store.resolve_folder(library_paths, doc.slug)
             if folder is None:
-                # Папка отключена или сетевой диск ещё не смонтирован — раньше
-                # пайплайн уходил в легаси-путь и честный документ помечался
-                # failed. Возвращаем в pending: доиндексируется кнопкой
-                # «Indexovat», когда папка появится.
+                # Папка отключена или сетевой диск ещё не смонтирован.
+                # Возвращаем в pending: доиндексируется кнопкой «Indexovat»,
+                # когда папка появится.
                 doc.status = "pending"
                 print(f"[startup] Папка {doc.slug} недоступна — вернул в pending")
                 continue

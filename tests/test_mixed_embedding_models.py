@@ -32,7 +32,6 @@ def _make_doc(root: Path, slug: str, model: str, dim: int) -> None:
 @pytest.fixture
 def isolated_cache(tmp_path, monkeypatch):
     """Отключает реальные пулы и чистит module-global кеш до/после теста."""
-    monkeypatch.setattr(library_cache, "DATA_ROOT", tmp_path / "no_raw")
     monkeypatch.setattr(library_cache, "PROJECTS_DATA_DIR", tmp_path / "no_projects")
     library_cache.invalidate()
     yield

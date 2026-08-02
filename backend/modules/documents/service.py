@@ -5,21 +5,13 @@ import shutil
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
-from fastapi import UploadFile
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from backend.core import index_lock, index_store, library_cache
-from backend.core.paths import PDF_STORAGE_DIR, RAW_DATA_DIR
 from backend.modules.documents.models import Document
-from backend.modules.documents.pipeline import run_pipeline, run_pipeline_locked
-from backend.modules.documents.schemas import UploadItem
+from backend.modules.documents.pipeline import run_pipeline_locked
 from jsonio import save_json_atomic
-from pdf_processing.parser import make_document_id
-
-
-# Пути к данным юзера (raw_data, pdfs) — единый источник в backend.core.paths.
-# main.py ищет загруженный PDF как PDF_STORAGE_DIR/{pdf_name}.pdf.
 
 
 class DocumentBusyError(Exception):
@@ -40,13 +32,15 @@ def _ensure_not_processing(doc: Document) -> None:
 
 
 def _artifact_dirs(slug: str, library_path: Path | None) -> list[Path]:
-    """Кандидаты на папку артефактов документа: новый пул .search_index
-    (если папка библиотеки известна) и легаси-пул data/raw_data."""
-    dirs: list[Path] = []
-    if library_path is not None:
-        dirs.append(index_store.doc_dir(library_path, slug))
-    dirs.append(RAW_DATA_DIR / slug)
-    return dirs
+    """Папка артефактов документа в пуле .search_index его папки библиотеки.
+
+    Список (а не один путь) — вызывающий код чистит все кандидаты подряд и не
+    обязан знать, что кандидат сейчас один; отключённая папка даёт пустой
+    список, а не ошибку.
+    """
+    if library_path is None:
+        return []
+    return [index_store.doc_dir(library_path, slug)]
 
 
 def _doc_folder(paths: list[Path], slug: str) -> Path | None:
@@ -63,7 +57,7 @@ def _ensure_folder_not_locked(library_path: Path | None) -> None:
     которые прямо сейчас индексирует наша собственная машина.
     """
     if library_path is None:
-        return  # легаси-пул data/raw_data — локальный, координировать нечего
+        return  # папка библиотеки неизвестна — координировать нечего
     busy = index_lock.holder(library_path)
     if busy is not None:
         raise DocumentBusyError(f"Složku právě indexuje jiný počítač: {busy}")
@@ -110,8 +104,7 @@ def reindex_document(
     if busy is not None:
         raise DocumentBusyError(f"Složku právě indexuje jiný počítač: {busy}")
 
-    # Сносим старые артефакты в обоих пулах (легаси data/raw_data и
-    # .search_index) — новые лягут в .search_index.
+    # Сносим старые артефакты — новые лягут в .search_index папки библиотеки.
     for artifacts_dir in _artifact_dirs(slug, library_path):
         if artifacts_dir.exists():
             shutil.rmtree(artifacts_dir)
@@ -144,7 +137,7 @@ def delete_document(db: Session, slug: str, paths: list[Path] | None = None) -> 
 
     PDF в папке юзера НЕ трогаем — программа никогда не модифицирует
     файлы пользователя (см. PROJECT_STATE.md, принцип 16). Пишем только
-    внутрь своей подпапки .search_index (и легаси data/raw_data).
+    внутрь своей подпапки .search_index.
     """
     doc = db.scalar(select(Document).where(Document.slug == slug))
     if doc is None:
@@ -183,7 +176,7 @@ def relink_document(
 
     Шаги:
     1. Переименовать папку артефактов {old_slug}/ -> {new_slug}/ в том пуле,
-       где она лежит (.search_index или легаси data/raw_data)
+       где она лежит (.search_index папки библиотеки)
     2. В chunks.json заменить document_id и префикс chunk_id со старого на новый
     3. В embeddings.json заменить префикс chunk_id
     4. Обновить Document.slug в БД
@@ -246,47 +239,3 @@ def _replace_prefix(value: str, old: str, new: str) -> str:
     if value.startswith(old):
         return new + value[len(old) :]
     return value
-
-
-def create_documents_from_uploads(
-    files: list[UploadFile],
-    db: Session,
-    executor: ThreadPoolExecutor,
-) -> list[UploadItem]:
-    """Принимает пачку PDF, для каждого нового запускает pipeline в фоне.
-
-    Для существующих slug — пропускаем (action=skipped), чтобы случайная
-    повторная загрузка не затёрла уже обработанный документ.
-    """
-    PDF_STORAGE_DIR.mkdir(parents=True, exist_ok=True)
-    items: list[UploadItem] = []
-
-    for upload in files:
-        original_name = upload.filename or "untitled.pdf"
-        title = Path(original_name).stem  # имя без расширения — для UI
-        slug = make_document_id(original_name)
-
-        existing = db.scalar(select(Document).where(Document.slug == slug))
-        if existing is not None:
-            items.append(UploadItem(slug=slug, title=existing.title, action="skipped"))
-            continue
-
-        # Сохраняем PDF на диск под именем {slug}.pdf — main.py смотрит сюда
-        pdf_path = PDF_STORAGE_DIR / f"{slug}.pdf"
-        with open(pdf_path, "wb") as f:
-            f.write(upload.file.read())
-
-        # Создаём запись и сразу коммитим — фоновый поток pipeline её читает
-        doc = Document(slug=slug, title=title, status="processing")
-        db.add(doc)
-        db.commit()
-
-        # Кидаем обработку в executor — вернёт управление сразу,
-        # обработка пойдёт в одном из трёх потоков (или в очереди, если все заняты).
-        # pdf_path обязателен: без него describe не опишет чертёжные страницы
-        # (vision-паспорт рендерится прямо из PDF).
-        executor.submit(run_pipeline, slug, str(pdf_path))
-
-        items.append(UploadItem(slug=slug, title=title, action="created"))
-
-    return items

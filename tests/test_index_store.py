@@ -70,7 +70,7 @@ def test_scoped_slug_keeps_underscores_in_filename():
 
 
 def test_folder_id_of_legacy_slug_is_none():
-    # Старый slug без метки папки (пул data/raw_data) — метки нет.
+    # Старый slug без метки папки — метки нет.
     assert index_store.folder_id_of("mvl_649") is None
 
 

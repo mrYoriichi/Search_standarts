@@ -125,7 +125,7 @@ def scoped_slug(folder_id: str, filename_slug: str) -> str:
 
 def folder_id_of(slug: str) -> str | None:
     """Достаёт метку папки из id документа. Нет разделителя `__` — None
-    (легаси-slug без папки, из старого пула data/raw_data)."""
+    (slug без метки папки — из сборки до scoped-slug)."""
     folder_id, sep, _ = slug.partition("__")
     return folder_id if sep else None
 

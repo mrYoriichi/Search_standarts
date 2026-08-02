@@ -64,9 +64,13 @@ def _resolve_data_dir() -> Path:
 # Каталог данных и производные пути. Вычисляются один раз при импорте.
 DATA_DIR = _resolve_data_dir()
 DB_PATH = DATA_DIR / "app.db"
-RAW_DATA_DIR = DATA_DIR / "data" / "raw_data"
-PDF_STORAGE_DIR = DATA_DIR / "data" / "pdfs"
-# Пул архива проектов: индексы по slug, отдельно от норм (raw_data).
+# CLI-сценарии пайплайна (main.py → describe.py → chunk.py → index.py →
+# ask.py): вход и выход. Только для запуска из исходников — приложение сюда
+# не смотрит, его документы живут в `<папка юзера>/.search_index/` и в пуле
+# архива.
+CLI_PDF_DIR = DATA_DIR / "data" / "pdfs"
+CLI_OUTPUT_DIR = DATA_DIR / "data" / "cli_output"
+# Пул архива проектов: индексы по slug.
 PROJECTS_DATA_DIR = DATA_DIR / "data" / "projects_data"
 
 # Собранный фронтенд (Vite кладёт сюда; в .exe попадает как bundled-ресурс).

@@ -7,7 +7,7 @@
 import sys
 from pathlib import Path
 
-from backend.core.paths import PDF_STORAGE_DIR, RAW_DATA_DIR
+from backend.core.paths import CLI_OUTPUT_DIR, CLI_PDF_DIR
 from jsonio import save_json_atomic
 from pdf_processing.drawing import insert_drawing_pages
 from pdf_processing.page_router import classify_pages
@@ -20,7 +20,7 @@ from pdf_processing.parser import (
 
 def save_document_json(document: dict, output_root: Path) -> Path:
     """
-    Сохраняет результат разбора в data/raw_data/<document_id>/document.json.
+    Сохраняет результат разбора в data/cli_output/<document_id>/document.json.
     Возвращает путь к созданному файлу.
     """
     # У каждого документа своя папка с именем = document_id
@@ -73,12 +73,12 @@ def process(
     pages_dir: Path | None = None,
 ) -> None:
     """
-    Разбирает один PDF и сохраняет результат в data/raw_data/<document_id>/.
+    Разбирает один PDF и сохраняет результат в data/cli_output/<document_id>/.
     pdf_name — имя файла БЕЗ расширения.
     pdf_path — полный путь к PDF. Если не задан, берётся data/pdfs/<pdf_name>.pdf
-    (старое поведение для CLI и upload-flow). Сканирование папки библиотеки
-    передаёт сюда путь к PDF прямо из папки юзера.
-    doc_dir — папка результатов. Если не задана — data/raw_data/<document_id>
+    (вход CLI-сценария). Приложение всегда передаёт путь к PDF прямо из папки
+    юзера.
+    doc_dir — папка результатов. Если не задана — data/cli_output/<document_id>
     (нормы). Архив проектов передаёт свой пул (projects_data/<slug>).
     document_id — переопределяет id из имени файла. Архив проектов передаёт
     slug вида {проект}__{файл} — имена файлов между проектами повторяются.
@@ -87,7 +87,7 @@ def process(
     не ехали на сетевой диск.
     """
     if pdf_path is None:
-        pdf_path = str(PDF_STORAGE_DIR / f"{pdf_name}.pdf")
+        pdf_path = str(CLI_PDF_DIR / f"{pdf_name}.pdf")
 
     print(f"Читаю {pdf_path}, подожди...")
     # По-страничный роутер: классифицируем каждую страницу (проза/чертёж),
@@ -99,8 +99,8 @@ def process(
         document["document_id"] = document_id
     insert_drawing_pages(document, pdf_path, page_types)
 
-    # Папка документа: data/raw_data/<document_id>/ или переданный пул
-    doc_dir = doc_dir or (RAW_DATA_DIR / document["document_id"])
+    # Папка документа: data/cli_output/<document_id>/ или переданный пул
+    doc_dir = doc_dir or (CLI_OUTPUT_DIR / document["document_id"])
     doc_dir.mkdir(parents=True, exist_ok=True)
 
     # Решаем, какие страницы сохранять, и сохраняем их.

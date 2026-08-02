@@ -22,7 +22,7 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-from backend.core.paths import RAW_DATA_DIR
+from backend.core.paths import CLI_OUTPUT_DIR
 from indexing.embeddings_index import build_embeddings_index, EMBEDDING_MODEL
 from jsonio import save_json_atomic
 from pdf_processing.parser import make_document_id
@@ -44,10 +44,10 @@ def process(pdf_name: str, doc_dir: Path | None = None) -> None:
     """
     Строит векторный индекс по chunks.json и сохраняет embeddings.json.
     pdf_name — то же имя, что передавалось в main.py (например, MVL649).
-    doc_dir — папка документа; по умолчанию data/raw_data/<id> (нормы),
+    doc_dir — папка документа; по умолчанию data/cli_output/<id>,
     архив проектов передаёт свою (projects_data/<slug>).
     """
-    doc_dir = doc_dir or (RAW_DATA_DIR / make_document_id(pdf_name))
+    doc_dir = doc_dir or (CLI_OUTPUT_DIR / make_document_id(pdf_name))
     chunks_path = doc_dir / "chunks.json"
     index_path = doc_dir / "embeddings.json"
     document_path = doc_dir / "document.json"

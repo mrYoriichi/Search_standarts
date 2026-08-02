@@ -23,11 +23,8 @@ import numpy as np
 from ask import EmptyLibraryError, load_library
 from indexing.bm25_index import tokenize_chunk
 from backend.core import index_store
-from backend.core.paths import PROJECTS_DATA_DIR, RAW_DATA_DIR
+from backend.core.paths import PROJECTS_DATA_DIR
 
-
-# Пул юзера: индексы локально обработанных документов.
-DATA_ROOT = RAW_DATA_DIR
 
 # Кеш и замок к нему. Запросы FastAPI и фоновый pipeline работают в разных
 # потоках — замок защищает от гонки при одновременной загрузке/сбросе.
@@ -49,7 +46,7 @@ _last_sweep = 0.0  # time.monotonic() последнего свипа; 0 — с�
 def _library_index_roots() -> list[Path]:
     """Корни .search_index всех папок библиотеки (включая недоступные).
 
-    Новый пул (этап 4): индексы лежат рядом с PDF юзера, не в data/raw_data.
+    Индексы лежат рядом с PDF юзера — в `<папка>/.search_index/`.
     chunk_id несёт метку папки (`{folder_id}__…`), поэтому чанки разных папок
     не сталкиваются в слитом пуле. Существование НЕ проверяем: _load_merged
     пропускает отсутствующие корни сам, а отпечатку нужны и недоступные —
@@ -82,8 +79,7 @@ def _load_merged() -> tuple[list[dict], dict]:
     моделей несравнимы. Пустой/отсутствующий пул тихо пропускаем; ошибка только
     если готовых документов нет нигде.
     """
-    roots = [DATA_ROOT]
-    roots.extend(_library_index_roots())
+    roots = _library_index_roots()
     if PROJECTS_DATA_DIR.exists():
         roots.append(PROJECTS_DATA_DIR)
 
@@ -130,7 +126,7 @@ def _current_fingerprint(prev: dict[str, int] | None) -> dict[str, int]:
 
     Только корни библиотек (_library_index_roots): их может переписать ДРУГАЯ
     машина через общую сетевую папку, и наш локальный invalidate() этого не
-    видит. Локальные пулы (data/raw_data, projects_data) мутирует только этот
+    видит. Локальный пул архива (projects_data) мутирует только этот
     процесс — он и так зовёт invalidate(). embeddings.json — последний файл
     пайплайна, его смена означает завершённую переиндексацию; новый или
     удалённый документ — появившийся/пропавший ключ.

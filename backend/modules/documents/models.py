@@ -1,6 +1,7 @@
 """Модель Document — метаданные документа в локальной библиотеке.
 
-Сам PDF, чанки и эмбеддинги остаются на диске в data/raw_data/{slug}/.
+Сам PDF остаётся в папке юзера, чанки и эмбеддинги —
+в `<папка>/.search_index/{slug}/`.
 БД хранит только метаданные + указатель slug на папку.
 """
 
@@ -16,7 +17,7 @@ class Document(Base):
     __tablename__ = "documents"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    slug: Mapped[str] = mapped_column(unique=True)  # имя папки в data/raw_data/
+    slug: Mapped[str] = mapped_column(unique=True)  # имя папки артефактов
     # Путь PDF относительно library_path (например, "MVL/649.pdf").
     # None у старых записей, заполняется при сканировании.
     relative_path: Mapped[str | None] = mapped_column(default=None)

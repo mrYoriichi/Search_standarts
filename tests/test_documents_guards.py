@@ -5,12 +5,10 @@
 «усыновлял» удалённый документ обратно (двойная оплата vision).
 """
 
-import io
 import json
 import time
 
 import pytest
-from fastapi import UploadFile
 from sqlalchemy import create_engine, select
 from sqlalchemy.orm import sessionmaker
 
@@ -123,27 +121,3 @@ def test_delete_works_when_lock_stale(db, tmp_path):
 
     assert db.scalar(select(Document).where(Document.slug == slug)) is None
     assert not index_store.doc_dir(library, slug).exists()
-
-
-class _FakeExecutor:
-    def __init__(self):
-        self.calls = []
-
-    def submit(self, fn, *args):
-        self.calls.append((fn, args))
-
-
-def test_upload_passes_pdf_path_to_pipeline(db, tmp_path, monkeypatch):
-    # Без pdf_path describe молча пропускал vision-паспорта чертёжных страниц.
-    monkeypatch.setattr(service, "PDF_STORAGE_DIR", tmp_path / "pdfs")
-    executor = _FakeExecutor()
-    upload = UploadFile(file=io.BytesIO(b"%PDF-1.4 fake"), filename="Vykres.pdf")
-
-    items = service.create_documents_from_uploads([upload], db, executor)
-
-    assert items[0].action == "created"
-    (fn, args) = executor.calls[0]
-    assert fn is service.run_pipeline
-    slug, pdf_path = args
-    assert slug == "vykres"
-    assert pdf_path.endswith("vykres.pdf")

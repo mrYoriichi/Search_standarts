@@ -36,7 +36,6 @@ def shared_root(tmp_path, monkeypatch):
     """Общая папка с одним готовым документом; реальные пулы отключены."""
     root = tmp_path / "lib" / ".search_index"
     _write_doc(root, "doc", "OLD")
-    monkeypatch.setattr(library_cache, "DATA_ROOT", tmp_path / "no_raw")
     monkeypatch.setattr(library_cache, "PROJECTS_DATA_DIR", tmp_path / "no_projects")
     monkeypatch.setattr(library_cache, "_library_index_roots", lambda: [root])
     # TTL=0: тесты выше проверяют сам механизм отпечатка, без троттлинга.
