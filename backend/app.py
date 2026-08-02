@@ -1,15 +1,15 @@
 """
-Точка входа web-приложения Search_standarts.
+Entry point of the Search_standarts web app.
 
-Создаёт FastAPI-приложение и подключает роутеры из всех модулей.
-Структура кода — по модулям (см. VISION.md, принцип «Модульная структура»).
+Creates the FastAPI application and wires up routers from all modules.
+Code structure is by module (see VISION.md, the "modular structure" principle).
 
-Запуск (из корня проекта):
+Run (from the project root):
     uvicorn backend.app:app --reload
 
-После запуска:
-  - http://localhost:8000/api/health  — проверка живости
-  - http://localhost:8000/docs        — авто-документация (Swagger UI)
+After start:
+  - http://localhost:8000/api/health  — liveness check
+  - http://localhost:8000/docs        — auto docs (Swagger UI)
 """
 
 import asyncio
@@ -26,7 +26,7 @@ from sqlalchemy import select
 
 from pathlib import Path
 
-# Загружаем .env как можно раньше — до импорта сервисов, читающих env-vars.
+# Load .env as early as possible — before importing services that read env vars.
 load_dotenv()
 
 from backend.core import index_lock, index_store
@@ -34,10 +34,10 @@ from backend.core.database import Base, SessionLocal, engine, ensure_columns
 from backend.core.paths import FRONTEND_DIST
 from backend.modules.auth import service as auth_service
 from backend.modules.auth.deps import require_auth
-from backend.modules.auth.models import AuthSession  # noqa: F401 — для create_all
+from backend.modules.auth.models import AuthSession  # noqa: F401 — for create_all
 from backend.modules.auth.router import router as auth_router
 from backend.modules.telemetry import service as telemetry_service
-from backend.modules.telemetry.models import (  # noqa: F401 — для create_all
+from backend.modules.telemetry.models import (  # noqa: F401 — for create_all
     PendingEvent,
     PendingReport,
 )
@@ -51,30 +51,30 @@ from backend.modules.projects.router import router as projects_router
 from backend.modules.library.router import router as library_router
 from backend.modules.queries.router import router as queries_router
 from backend.modules.settings import service as settings_service
-from backend.modules.settings.models import Setting  # noqa: F401 — для create_all
+from backend.modules.settings.models import Setting  # noqa: F401 — for create_all
 from backend.modules.settings.router import router as settings_router
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Старт/остановка приложения: БД, пул потоков, возобновление задач."""
-    # Страховка для чистой машины: создаст таблицы, если их ещё нет.
+    """App start/stop: DB, thread pool, resuming interrupted tasks."""
+    # Safety net for a clean machine: creates tables if they don't exist yet.
     Base.metadata.create_all(engine)
-    # Дозаливаем недостающие колонки в таблицы, созданные прошлой версией.
+    # Backfill columns missing from tables created by a previous version.
     ensure_columns()
 
-    # Бассейн из 3 потоков — параллельно обрабатываем максимум 3 PDF.
-    # Остальные ждут в очереди executor'а.
+    # A pool of 3 threads — at most 3 PDFs processed in parallel.
+    # The rest wait in the executor's queue.
     executor = ThreadPoolExecutor(max_workers=3)
     app.state.executor = executor
 
-    # Возобновляем документы, которые остались processing после прошлого падения.
-    # PDF лежит в папке библиотеки юзера, путь берём из relative_path.
+    # Resume documents left in processing after the last crash.
+    # The PDF lives in the user's library folder, path from relative_path.
     db = SessionLocal()
     try:
-        # Ключ OpenAI из БД (если задан) кладём в окружение до первых LLM-вызовов.
+        # Put the DB's OpenAI key (if set) into the env before any LLM calls.
         settings_service.apply_openai_key_to_env(db)
-        # Язык текстов бэкенда — из настроек (фронт обновляет его при переключении).
+        # Backend text language — from settings (frontend updates it on switch).
         settings_service.apply_ui_language(db)
 
         library_paths = [Path(p) for p in settings_service.get_library_paths(db)]
@@ -84,17 +84,17 @@ async def lifespan(app: FastAPI):
         for doc in stuck:
             folder = index_store.resolve_folder(library_paths, doc.slug)
             if folder is None:
-                # Папка отключена или сетевой диск ещё не смонтирован.
-                # Возвращаем в pending: доиндексируется кнопкой «Indexovat»,
-                # когда папка появится.
+                # Folder disconnected or the network drive not mounted yet.
+                # Back to pending: it gets indexed by the "Indexovat" button
+                # once the folder shows up.
                 doc.status = "pending"
-                print(f"[startup] Папка {doc.slug} недоступна — вернул в pending")
+                print(f"[startup] Folder for {doc.slug} unavailable — back to pending")
                 continue
             busy = index_lock.acquire(folder)
             if busy is not None:
-                # Папку уже индексирует другая машина — параллельно не лезем.
+                # Another machine is already indexing the folder — stay out.
                 doc.status = "pending"
-                print(f"[startup] {doc.slug}: папку индексирует {busy} — pending")
+                print(f"[startup] {doc.slug}: folder indexed by {busy} — pending")
                 continue
             index_lock.register(folder, 1)
             executor.submit(
@@ -104,10 +104,10 @@ async def lifespan(app: FastAPI):
                 str(folder / doc.relative_path),
                 index_store.doc_dir(folder, doc.slug),
             )
-            print(f"[startup] Возобновлён pipeline для {doc.slug}")
+            print(f"[startup] Resumed pipeline for {doc.slug}")
         db.commit()
 
-        # То же для архива проектов: застрявшие в processing после падения.
+        # Same for the project archive: stuck in processing after a crash.
         projects_paths = [Path(p) for p in settings_service.get_projects_paths(db)]
         from backend.modules.projects import service as projects_service
 
@@ -119,39 +119,39 @@ async def lifespan(app: FastAPI):
                 projects_paths, pdoc.project, pdoc.relative_path
             )
             if root is None:
-                # Папка архива недоступна или не настроена — как у библиотеки
-                # выше: в pending, доиндексируется кнопкой, когда папка появится.
+                # Archive folder unavailable or not configured — same as the
+                # library above: pending, indexed by the button once it's back.
                 pdoc.status = "pending"
-                print(f"[startup] Архив {pdoc.slug}: папка недоступна — pending")
+                print(f"[startup] Archive {pdoc.slug}: folder unavailable — pending")
                 continue
-            # Файл могли заменить, пока приложение лежало: stat должен
-            # соответствовать версии, которую сейчас прочитает пайплайн.
+            # The file may have been replaced while the app was down: the stat
+            # must match the version the pipeline is about to read.
             projects_service.refresh_file_stat(pdoc, root)
             executor.submit(
                 run_project_pipeline,
                 pdoc.slug,
                 str(root / pdoc.relative_path),
             )
-            print(f"[startup] Возобновлён pipeline архива для {pdoc.slug}")
+            print(f"[startup] Resumed archive pipeline for {pdoc.slug}")
         db.commit()
     finally:
         db.close()
 
-    # Фоновый verify лицензии раз в час (см. backend/modules/auth/service.py).
-    # Отдельной задачей, чтобы не блокировать старт сервера.
+    # Background license verify once an hour (see backend/modules/auth/service.py).
+    # A separate task so it doesn't block server startup.
     verify_task = asyncio.create_task(auth_service.run_verify_loop())
 
-    # Фоновый отправщик телеметрии (см. backend/modules/telemetry/service.py).
+    # Background telemetry sender (see backend/modules/telemetry/service.py).
     telemetry_task = asyncio.create_task(telemetry_service.run_telemetry_sender())
 
-    # Событие старта приложения — складываем в локальную очередь, sender отправит
-    # при первой возможности.
+    # App start event — goes to the local queue, the sender ships it when
+    # it first can.
     telemetry_service.track_event("app_started")
 
     yield
 
-    # Не ждём текущих обработок (они могут идти минуты), отменяем очередь.
-    # Прерванные подхватятся при следующем старте.
+    # Don't wait for running jobs (they can take minutes), cancel the queue.
+    # Interrupted ones are picked up on the next start.
     executor.shutdown(wait=False, cancel_futures=True)
     verify_task.cancel()
     telemetry_task.cancel()
@@ -159,19 +159,20 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="Search_standarts API", lifespan=lifespan)
 
-# Защита от DNS rebinding: сервер слушает только 127.0.0.1, но вредоносная
-# страница может переключить DNS своего домена на 127.0.0.1 и слать запросы
-# «изнутри» браузера. У таких запросов Host — чужой домен, отсекаем их.
+# DNS rebinding protection: the server listens on 127.0.0.1 only, but a
+# malicious page can point its domain's DNS at 127.0.0.1 and send requests
+# "from inside" the browser. Such requests carry a foreign Host — reject them.
 app.add_middleware(TrustedHostMiddleware, allowed_hosts=["localhost", "127.0.0.1"])
 
 
 @app.middleware("http")
 async def block_cross_site_writes(request: Request, call_next):
-    """Защита от CSRF: чужой сайт не должен запускать наши POST/PUT/DELETE.
+    """CSRF protection: a foreign site must not trigger our POST/PUT/DELETE.
 
-    Браузер ставит заголовок Origin во все кросс-сайтовые запросы, и страница
-    не может его подделать. Запросы без Origin (curl, наш же фронтенд через
-    GET) пропускаем. Порт не проверяем: Vite в dev ходит с localhost:5173.
+    The browser sets the Origin header on all cross-site requests and a page
+    cannot forge it. Requests without Origin (curl, our own frontend via GET)
+    pass through. The port is not checked: Vite in dev calls from
+    localhost:5173.
     """
     if request.method in ("POST", "PUT", "DELETE", "PATCH"):
         origin = request.headers.get("origin")
@@ -182,8 +183,8 @@ async def block_cross_site_writes(request: Request, call_next):
     return await call_next(request)
 
 
-# /api/health и /api/auth/* — без require_auth (нужно где-то логиниться и пинговать).
-# Остальные роутеры защищены: 401, если нет сессии или сессия в 'blocked'.
+# /api/health and /api/auth/* — no require_auth (login and ping must work).
+# Other routers are protected: 401 without a session or with a 'blocked' one.
 app.include_router(health_router, prefix="/api", tags=["health"])
 app.include_router(auth_router, prefix="/api", tags=["auth"])
 
@@ -204,8 +205,9 @@ app.include_router(
     projects_router, prefix="/api", tags=["projects"], dependencies=protected
 )
 
-# Собранный фронтенд отдаём с корня — ПОСЛЕ всех /api-роутеров (mount на "/" ловит
-# всё остальное). html=True → index.html на "/". В dev без сборки папки нет —
-# фронт берётся из Vite (dev-прокси на /api), поэтому монтируем только если есть.
+# Serve the built frontend from the root — AFTER all /api routers (mounting on
+# "/" catches everything else). html=True -> index.html at "/". In dev without
+# a build the folder is absent — the frontend comes from Vite (dev proxy on
+# /api), so mount only if it exists.
 if FRONTEND_DIST.exists():
     app.mount("/", StaticFiles(directory=FRONTEND_DIST, html=True), name="frontend")
