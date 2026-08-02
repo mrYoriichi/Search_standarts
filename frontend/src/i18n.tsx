@@ -1,13 +1,14 @@
 /* eslint-disable react-refresh/only-export-components --
-   t()/useI18n живут рядом с провайдером намеренно; файл почти не меняется,
-   потеря hot-reload для него не стоит третьего файла. */
-// Мини-i18n без библиотек: словари в messages.ts, контекст даёт язык
-// и перерисовку при его смене. Плейсхолдеры {name} подставляются из params.
+   t()/useI18n live next to the provider on purpose; the file rarely changes,
+   losing hot-reload for it is not worth a third file. */
+// Mini i18n without libraries: dictionaries in messages.ts, the context
+// provides the language and re-renders on switch. {name} placeholders are
+// filled from params.
 //
-// Два способа перевода:
-// - в компонентах: `const { t } = useI18n()` — подписывает на смену языка;
-// - в модульных функциях (alert/confirm по клику): импорт `t` напрямую —
-//   хуки там недоступны, а на момент клика язык всегда актуален.
+// Two ways to translate:
+// - in components: `const { t } = useI18n()` — subscribes to language changes;
+// - in module-level functions (alert/confirm on click): import `t` directly —
+//   hooks are unavailable there, and at click time the language is current.
 
 import { createContext, useContext, useState, type ReactNode } from 'react'
 import { dictionaries, type Lang, type MsgKey } from './messages'
@@ -19,8 +20,8 @@ function initialLang(): Lang {
   return LANGS.includes(saved as Lang) ? (saved as Lang) : 'en'
 }
 
-// Текущий язык на уровне модуля — его читает t(). Меняется только через
-// setLang провайдера, который заодно триггерит перерисовку через контекст.
+// The current language at module level — t() reads it. Changed only via the
+// provider's setLang, which also triggers a re-render through the context.
 let currentLang: Lang = initialLang()
 
 export function t(key: MsgKey, params?: Record<string, string | number>): string {
@@ -43,8 +44,8 @@ export function LangProvider({ children }: { children: ReactNode }) {
     currentLang = next
     localStorage.setItem('lang', next)
     setLangState(next)
-    // Бэкенд использует язык для текстов ошибок — шлём best-effort,
-    // неудача не мешает переключению интерфейса.
+    // The backend uses the language for error texts — send best-effort,
+    // a failure does not block switching the UI.
     fetch('/api/settings/language', {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
@@ -64,7 +65,7 @@ export function useI18n() {
   return { lang, setLang, t }
 }
 
-// Переключатель CZ / EN / DE — в шапке приложения и на странице логина.
+// CZ / EN / DE switcher — in the app header and on the login page.
 export function LangSwitcher() {
   const { lang, setLang } = useI18n()
   return (

@@ -84,9 +84,9 @@
 }
 
 .dark {
-    /* Приглушённый тёмный в духе VS Code: нейтральный серый без цветного
-       оттенка, панели чуть светлее фона, текст не чисто-белый — меньше
-       контраста, меньше «режет глаза». */
+    /* Muted dark in the VS Code spirit: neutral gray without a color tint,
+       panels slightly lighter than the background, text not pure white —
+       less contrast, easier on the eyes. */
     --background: oklch(0.235 0 0);
     --foreground: oklch(0.9 0 0);
     --card: oklch(0.275 0 0);

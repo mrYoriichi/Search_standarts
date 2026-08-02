@@ -16,7 +16,7 @@ export default function SettingsPage() {
   )
 }
 
-// ── Язык ответа LLM ───────────────────────────────────────────────────────────
+// ── LLM answer language ───────────────────────────────────────────────────────
 
 function AnswerLanguageSection() {
   const { t } = useI18n()
@@ -75,7 +75,7 @@ function AnswerLanguageSection() {
   )
 }
 
-// ── Профиль (имя, email, компания) ───────────────────────────────────────────
+// ── Profile (name, email, company) ───────────────────────────────────────────
 
 type Profile = {
   username: string
@@ -111,7 +111,7 @@ function ProfileSection() {
         setLinkedin(data.linkedin ?? '')
       })
       .catch(() => setError(t('settings.profileLoadFailed')))
-    // t стабилен (module-level функция) — эффект выполнится один раз.
+    // t is stable (a module-level function) — the effect runs once.
   }, [t])
 
   async function handleSave() {
@@ -119,7 +119,7 @@ function ProfileSection() {
     setSaved(false)
     setLoading(true)
     try {
-      // PUT — полная замена: шлём все поля, иначе сервер очистит пропущенные.
+      // PUT is a full replace: send all fields, or the server clears the rest.
       const res = await fetch('/api/auth/profile', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
@@ -234,7 +234,7 @@ function ProfileSection() {
   )
 }
 
-// ── Смена пароля ──────────────────────────────────────────────────────────────
+// ── Password change ───────────────────────────────────────────────────────────
 
 function PasswordSection() {
   const { t } = useI18n()
@@ -273,7 +273,7 @@ function PasswordSection() {
     }
   }
 
-  // Новый пароль — минимум 8 символов (то же требование на сервере).
+  // New password — at least 8 characters (same requirement on the server).
   const canSubmit =
     oldPassword.length > 0 && newPassword.length >= 8 && !loading
 
@@ -319,7 +319,7 @@ function PasswordSection() {
   )
 }
 
-// ── Ключ OpenAI ───────────────────────────────────────────────────────────────
+// ── OpenAI key ────────────────────────────────────────────────────────────────
 
 type KeyStatus = {
   is_set: boolean
@@ -412,7 +412,7 @@ function OpenAIKeySection() {
   )
 }
 
-// ── Общий блок ошибки ─────────────────────────────────────────────────────────
+// ── Shared error block ────────────────────────────────────────────────────────
 
 function ErrorBox({ text }: { text: string }) {
   return (

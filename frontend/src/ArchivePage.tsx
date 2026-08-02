@@ -3,8 +3,8 @@ import { Button } from '@/components/ui/button'
 import { IndexingSettingsButton } from './IndexingSettings'
 import { t, useI18n } from './i18n'
 
-// Архив проектов юзера: каждая подключённая папка = один проект (все PDF
-// внутри, включая подпапки). «Skenovat», документы по проектам со статусами.
+// The user's project archive: each connected folder = one project (all PDFs
+// inside, subfolders included). "Skenovat", documents by project with statuses.
 
 type ArchiveDocument = {
   slug: string
@@ -26,13 +26,13 @@ type ScanSummary = {
   found: number
   new: number
   missing: number
-  changed: number // заменённые PDF (новое содержимое) — вернулись в «čeká»
+  changed: number // replaced PDFs (new content) — returned to "čeká"
   duplicates: string[]
   errors: string[]
   unavailable: string[]
 }
 
-// Поллинг статусов, пока что-то обрабатывается (pipeline идёт в фоне).
+// Status polling while something is processing (the pipeline runs in the background).
 const POLL_INTERVAL_MS = 3000
 
 async function togglePin(slug: string): Promise<void> {
@@ -52,8 +52,8 @@ async function reindexDocument(
   name: string,
   resume: boolean,
 ): Promise<boolean> {
-  // ready → полная пересборка (vision платится заново); error → продолжение
-  // с чекпоинта (оплачиваются только новые страницы).
+  // ready -> full rebuild (vision paid again); error -> continue from the
+  // checkpoint (only new pages are paid).
   const ok = confirm(
     t(resume ? 'lib.retryConfirm' : 'arch.reindexConfirm', { title: name }),
   )
@@ -72,7 +72,7 @@ async function reindexDocument(
   }
 }
 
-// Все закреплённые документы архива (плоско, для секции «Připnuté»).
+// All pinned archive documents (flat, for the "Připnuté" section).
 function collectPinned(archive: ArchiveResponse): ArchiveDocument[] {
   const pinned: ArchiveDocument[] = []
   for (const project of archive.projects) {
@@ -107,7 +107,7 @@ function StatusLabel({
   if (doc.status === 'error') {
     return <span className="text-xs text-red-600 dark:text-red-400">{t('status.failed')}</span>
   }
-  // ready: зелёную плашку показываем только на переходе (как в knihovně).
+  // ready: the green badge shows only on the transition (as in the library).
   if (freshlyReady) {
     return <span className="text-xs text-green-600 dark:text-green-400">{t('status.ready')}</span>
   }
@@ -123,10 +123,10 @@ function DocumentRow({
   freshlyReady: Set<string>
   onChange: () => void
 }) {
-  // relative_path уже относителен папке проекта (модель «папка = проект»,
-  // 2026-07-28) — показываем целиком. Отрезание первого сегмента осталось бы
-  // от старой модели и съедало бы имя файла в корне проекта. `\` → `/`:
-  // старые записи с Windows содержат обратный слэш.
+  // relative_path is already relative to the project folder (the "folder =
+  // project" model, 2026-07-28) — show it whole. Cutting the first segment
+  // would be a leftover of the old model and would eat the file name in the
+  // project root. `\` -> `/`: old Windows records contain backslashes.
   const insideProject = doc.relative_path.split(/[\\/]/).join('/')
   return (
     <div>
@@ -191,7 +191,7 @@ function DocumentRow({
 }
 
 export default function ArchivePage() {
-  useI18n() // подписка: смена языка перерисовывает страницу
+  useI18n() // subscription: a language switch re-renders the page
   const [paths, setPaths] = useState<string[]>([])
   const [pathInput, setPathInput] = useState('')
   const [editingPath, setEditingPath] = useState<string | null>(null)
@@ -203,15 +203,15 @@ export default function ArchivePage() {
   const [scanning, setScanning] = useState(false)
   const [indexing, setIndexing] = useState(false)
   const [summary, setSummary] = useState<ScanSummary | null>(null)
-  // Документы, только что перешедшие в ready — для зелёной плашки «hotovo».
+  // Documents that just turned ready — for the green "hotovo" badge.
   const [freshlyReady, setFreshlyReady] = useState<Set<string>>(new Set())
   const prevStatusesRef = useRef<Map<string, string>>(new Map())
 
-  // useCallback — стабильная ссылка, чтобы эффекты могли честно указать
-  // loadAll в зависимостях без перезапуска на каждый рендер.
+  // useCallback — a stable reference so effects can honestly list loadAll
+  // in dependencies without restarting on every render.
   const loadAll = useCallback(async () => {
-    // Переход в ready → один раз показываем «hotovo» (как в knihovně). После F5
-    // ref сбрасывается, документ считается уже виденным — плашка не мигает.
+    // Transition to ready -> show "hotovo" once (as in the library). After
+    // F5 the ref resets, the document counts as seen — no badge flicker.
     function markFreshlyReady(data: ArchiveResponse) {
       const nextStatuses = new Map<string, string>()
       const justReady: string[] = []
@@ -257,19 +257,19 @@ export default function ArchivePage() {
   }, [])
 
   useEffect(() => {
-    // Ложный оклик правила: setState в loadAll случается после await,
-    // не синхронно (плагин не моделирует async-функции).
+    // False positive of the rule: setState in loadAll happens after await,
+    // not synchronously (the plugin does not model async functions).
     // eslint-disable-next-line react-hooks/set-state-in-effect
     loadAll()
   }, [loadAll])
 
-  // Пока что-то реально обрабатывается — раз в 3 с перечитываем статусы.
-  // pending НЕ считается: он ждёт клика «Indexovat», на сервере ничего не
-  // меняется — поллинг был бы бесконечным холостым ходом.
+  // While something is actually processing — re-read statuses every 3 s.
+  // pending does NOT count: it waits for the "Indexovat" click, nothing
+  // changes on the server — polling would idle forever.
   const hasActive = (archive?.projects ?? []).some((p) =>
     p.documents.some((d) => d.status === 'processing'),
   )
-  // Обнаруженные, но ещё не индексированные — для кнопки «Indexovat (N)».
+  // Discovered but not yet indexed — for the "Indexovat (N)" button.
   const pendingCount = (archive?.projects ?? []).reduce(
     (sum, p) => sum + p.documents.filter((d) => d.status === 'pending').length,
     0,
@@ -559,7 +559,7 @@ export default function ArchivePage() {
                         (d) => d.status === 'error',
                       ).length
                       return (
-                        // Проекты свёрнуты по умолчанию — их может быть много.
+                        // Projects are collapsed by default — there may be many.
                         <details
                           key={project.name}
                           className="rounded-md border bg-muted/20 p-3"

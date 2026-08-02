@@ -2,9 +2,9 @@ import { useEffect, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { t, useI18n } from './i18n'
 
-// Общие настройки индексации (модель vision + тумблер описания картинок).
-// Настройки глобальные — их читают оба пайплайна (нормы и архив проектов),
-// поэтому одна модалка используется и на «Knihovna», и на «Archiv projektů».
+// Shared indexing settings (vision model + image description toggle).
+// The settings are global — both pipelines read them (standards and project
+// archive), so one modal serves both "Knihovna" and "Archiv projektů".
 
 const VISION_MODELS = ['gpt-5.5', 'gpt-5.4-mini'] as const
 
@@ -125,10 +125,10 @@ function DescribeImagesCard() {
   )
 }
 
-// Кнопка, открывающая модалку с настройками индексации. Модалка — простой
-// оверлей (готового Dialog в проекте нет): клик по фону/крестику закрывает.
+// Button opening the indexing settings modal. The modal is a plain overlay
+// (no ready-made Dialog in the project): background/cross click closes it.
 export function IndexingSettingsButton() {
-  useI18n() // подписка: смена языка перерисовывает модалку
+  useI18n() // subscription: a language switch re-renders the modal
   const [open, setOpen] = useState(false)
 
   return (

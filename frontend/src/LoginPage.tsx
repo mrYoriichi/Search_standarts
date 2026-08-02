@@ -18,7 +18,7 @@ type FieldProps = {
   optional?: boolean
 }
 
-// Одна подпись + поле ввода. Вынесено, чтобы не повторять разметку для 6 полей.
+// One label + input. Extracted to avoid repeating the markup for 6 fields.
 function Field({
   label,
   value,
@@ -52,18 +52,18 @@ function Field({
 export default function LoginPage({ onLoggedIn }: Props) {
   const { t } = useI18n()
   const [mode, setMode] = useState<'login' | 'register'>('login')
-  // username держит логин-строку: при входе — přihlašovací jméno, при регистрации — e-mail.
+  // username holds the login string: přihlašovací jméno on login, e-mail on registration.
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
-  // Поля только для регистрации.
+  // Registration-only fields.
   const [fullName, setFullName] = useState('')
   const [company, setCompany] = useState('')
   const [position, setPosition] = useState('')
   const [linkedin, setLinkedin] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  // Если сервер сказал 426 — форма скрывается, показываем блок «Установите новую версию».
-  // Логин не пройдёт пока юзер не обновит приложение.
+  // If the server said 426 — hide the form, show the "install a new version"
+  // block. Login won't succeed until the user updates the app.
   const [updateRequired, setUpdateRequired] = useState<{ downloadUrl: string } | null>(null)
 
   const isRegister = mode === 'register'
@@ -107,7 +107,7 @@ export default function LoginPage({ onLoggedIn }: Props) {
         setError(t('login.revoked'))
         return
       }
-      // Только регистрация: e-mail занят / невалидные или неполные данные.
+      // Registration only: e-mail taken / invalid or incomplete data.
       if (res.status === 409) {
         setError(t('login.emailTaken'))
         return

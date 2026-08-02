@@ -1,11 +1,11 @@
-// Словари UI-строк: чешский (эталон), английский, немецкий.
-// Ключи — семантические, сгруппированы префиксом по странице.
-// Плейсхолдеры вида {name} подставляет t() из i18n.tsx.
+// UI string dictionaries: Czech (reference), English, German.
+// Keys are semantic, grouped by page prefix.
+// {name} placeholders are filled by t() from i18n.tsx.
 
 export type Lang = 'cs' | 'en' | 'de'
 
 const cs = {
-  // Общие
+  // Common
   'common.networkError': 'Chyba sítě',
   'common.errorStatus': 'Chyba {status}',
   'common.serverReturned': 'Server vrátil {status}',
@@ -15,7 +15,7 @@ const cs = {
   'common.saveTitle': 'Uložit',
   'common.logout': 'Odhlásit se',
 
-  // Шапка и вкладки
+  // Header and tabs
   'nav.search': 'Vyhledávání',
   'nav.library': 'Knihovna',
   'nav.archive': 'Archiv projektů',
@@ -23,7 +23,7 @@ const cs = {
   'theme.toLight': 'Světlý režim',
   'theme.toDark': 'Tmavý režim',
 
-  // Оверлей блокировки
+  // Blocked overlay
   'blocked.title': 'Přístup zablokován',
   'blocked.revoked': 'Přístup byl odebrán administrátorem.',
   'blocked.updateRequired':
@@ -33,7 +33,7 @@ const cs = {
   'blocked.user': 'Uživatel:',
   'blocked.download': 'Stáhnout aktualizaci →',
 
-  // Поиск
+  // Search
   'search.where': 'Kde hledat',
   'search.noDocs':
     'Žádné indexované dokumenty. Přejděte do „Knihovny“ a klikněte na „Skenovat“.',
@@ -62,12 +62,12 @@ const cs = {
   'search.noAnswer': 'Model nenašel odpověď v nalezených úryvcích.',
   'search.related': 'Související',
 
-  // Ссылки на источники
+  // Source links
   'source.openPdf': 'Otevřít PDF',
   'source.openPdfPage': 'Otevřít PDF na straně {page}',
   'source.pagesPrefix': ' / s. ',
 
-  // «Nahlásit» под ответом
+  // "Nahlásit" under the answer
   'report.link': 'Odpověď nepomohla / nenašlo se to — nahlásit',
   'report.prompt': 'Co bylo špatně? (nepovinné — např. „mělo by být v MVL649, odd. 4“)',
   'report.sending': 'Odesílám…',
@@ -75,7 +75,7 @@ const cs = {
   'report.thanks': 'Děkujeme, hlášení bylo odesláno.',
   'report.failed': 'Nepodařilo se odeslat hlášení.',
 
-  // Логин / регистрация
+  // Login / registration
   'login.title': 'Přihlášení do aplikace',
   'login.registerTitle': 'Registrace nového účtu',
   'login.fullName': 'Jméno a příjmení',
@@ -106,7 +106,7 @@ const cs = {
     'Je dostupná povinná verze aplikace. Přihlásit se lze až po aktualizaci.',
   'login.updateNoLink': 'Odkaz zatím není dostupný. Obraťte se na administrátora.',
 
-  // Настройки — профиль
+  // Settings — profile
   'settings.profile': 'Profil',
   'settings.name': 'Jméno',
   'settings.linkedinOptional': 'LinkedIn (nepovinné)',
@@ -117,7 +117,7 @@ const cs = {
   'settings.profileSaveFailed': 'Uložení profilu selhalo.',
   'settings.appUnavailable': 'Aplikace není dostupná. Zkuste to později.',
 
-  // Настройки — пароль
+  // Settings — password
   'settings.changePassword': 'Změna hesla',
   'settings.currentPassword': 'Současné heslo',
   'settings.newPassword': 'Nové heslo (min. 8 znaků)',
@@ -125,7 +125,7 @@ const cs = {
   'settings.passwordChanged': 'Heslo bylo změněno.',
   'settings.passwordChangeFailed': 'Změna hesla selhala.',
 
-  // Настройки — ключ OpenAI
+  // Settings — OpenAI key
   'settings.answerLang': 'Jazyk odpovědi',
   'settings.answerLangText':
     'V tomto jazyce bude asistent odpovídat na dotazy.',
@@ -138,7 +138,7 @@ const cs = {
   'settings.keySaved': 'Klíč byl uložen.',
   'settings.keySaveFailed': 'Uložení klíče selhalo.',
 
-  // Библиотека
+  // Library
   'lib.openFailed': 'Nepodařilo se otevřít soubor',
   'lib.pinFailed': 'Nepodařilo se přepnout připnutí: {status}',
   'lib.reindexConfirm':
@@ -195,7 +195,7 @@ const cs = {
   'lib.scan': 'Skenovat',
   'lib.loadFailed': 'Nepodařilo se načíst knihovnu',
 
-  // Архив проектов
+  // Project archive
   'arch.reindexConfirm':
     'Přeindexovat „{title}“?\n\nStaré úryvky a embeddingy budou smazány a dokument se zpracuje znovu. Popisy stránek (vision) se platí znovu.',
   'arch.openPdf': 'Otevřít PDF v prohlížeči',
@@ -217,7 +217,7 @@ const cs = {
   'arch.errorCount': ' · chyb {n}',
   'arch.loadFailed': 'Nepodařilo se načíst archiv',
 
-  // Настройки индексации (модалка)
+  // Indexing settings (modal)
   'idx.button': 'Nastavení indexace',
   'idx.close': 'Zavřít',
   'idx.scope': 'Platí pro knihovnu i archiv projektů.',

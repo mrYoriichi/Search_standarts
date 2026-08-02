@@ -14,8 +14,8 @@ type AuthState =
   | { phase: 'authenticated'; username: string }
   | { phase: 'blocked'; username: string; reason: string; downloadUrl?: string }
 
-// Каждую минуту перечитываем локальный /api/auth/status — фоновый verify
-// на бэке мог перевести нас в blocked.
+// Re-read the local /api/auth/status every minute — the backend's background
+// verify may have moved us to blocked.
 const STATUS_POLL_INTERVAL_MS = 60 * 1000
 
 type Source = {
@@ -76,9 +76,9 @@ type ArchiveApiResponse = {
   projects: { name: string; documents: ArchiveDocument[] }[]
 }
 
-// Превращает плоский ответ /api/projects в дерево формы LibraryFolder,
-// чтобы переиспользовать FilterTree без изменений. Вложенность строится
-// из relative_path (проект / подпапки раздела / файл).
+// Turns the flat /api/projects response into a LibraryFolder-shaped tree to
+// reuse FilterTree unchanged. Nesting is built from relative_path
+// (project / section subfolders / file).
 function buildArchiveTree(archive: ArchiveApiResponse): LibraryFolder {
   const root: LibraryFolder = {
     name: t('nav.archive'),
@@ -100,7 +100,7 @@ function buildArchiveTree(archive: ArchiveApiResponse): LibraryFolder {
   }
   for (const project of archive.projects) {
     for (const doc of project.documents) {
-      // Делим по обоим разделителям: старые записи с Windows содержат `\`.
+      // Split on both separators: old Windows records contain `\`.
       const parts = doc.relative_path.split(/[\\/]/)
       let node = root
       let accPath = ''
@@ -128,8 +128,8 @@ function buildArchiveTree(archive: ArchiveApiResponse): LibraryFolder {
 type View = 'search' | 'library' | 'archive' | 'settings'
 
 
-// Собирает slug'и всех индексированных (ready) PDF в папке, включая подпапки.
-// Используется для чекбокса «выбрать всю папку».
+// Collects slugs of all indexed (ready) PDFs in a folder, subfolders included.
+// Used by the "select the whole folder" checkbox.
 function collectReadySlugs(folder: LibraryFolder): string[] {
   const result: string[] = []
   for (const f of folder.files) {
@@ -150,14 +150,14 @@ function FilterTree({
 }: {
   folder: LibraryFolder
   selectedSlugs: Set<string>
-  // Когда searchAll=true, чекбоксы в дереве визуально checked и неактивны —
-  // пользователь сначала снимает «Вся база», а потом делает тонкий выбор.
+  // With searchAll=true the tree checkboxes look checked and are disabled —
+  // the user first unchecks "whole database", then fine-tunes the selection.
   searchAll: boolean
   onToggleFile: (slug: string) => void
   onToggleFolder: (folder: LibraryFolder) => void
 }) {
   const readySlugs = collectReadySlugs(folder)
-  // Папки без индексированных файлов скрываем — иначе много пустоты.
+  // Hide folders without indexed files — otherwise lots of emptiness.
   if (readySlugs.length === 0) return null
   const allSelected = searchAll || readySlugs.every((s) => selectedSlugs.has(s))
   const readyFiles = folder.files.filter((f) => f.status === 'ready')
@@ -165,7 +165,7 @@ function FilterTree({
   return (
     <details className="text-sm">
       <summary className="cursor-pointer flex items-center gap-2">
-        {/* Чекбокс на каждой папке, включая корень — снять/выбрать весь пул. */}
+        {/* A checkbox on every folder, root included — select/clear the pool. */}
         <input
           type="checkbox"
           checked={allSelected}
@@ -229,8 +229,8 @@ function FileCheckbox({
 
 
 function SourceLink({ src }: { src: Source }) {
-  // Каждая страница — своя ссылка: чанк может покрывать диапазон страниц,
-  // и юзер прыгает сразу на нужную, вместо листания с первой.
+  // Each page gets its own link: a chunk may span a page range, and the user
+  // jumps straight to the right one instead of paging from the first.
   const base = `/api/library/pdf/${src.slug}`
   return (
     <span>
@@ -265,8 +265,8 @@ function SourceLink({ src }: { src: Source }) {
 }
 
 
-// Кнопка «Nahlásit» под ответом: юзер помечает неверный/ненайденный ответ.
-// Текст вопроса/ответа (+ необязательная заметка) уходит владельцу для разбора.
+// The "Nahlásit" button under the answer: the user flags a wrong/missing
+// answer. The question/answer text (+ an optional note) goes to the owner.
 function ReportAnswer({
   question,
   result,
@@ -346,7 +346,7 @@ function ReportAnswer({
 }
 
 
-// Тема при первом запуске: сохранённый выбор юзера, иначе системная настройка.
+// Theme on first run: the user's saved choice, otherwise the system setting.
 function getInitialTheme(): 'light' | 'dark' {
   const saved = localStorage.getItem('theme')
   if (saved === 'light' || saved === 'dark') return saved
@@ -355,7 +355,7 @@ function getInitialTheme(): 'light' | 'dark' {
     : 'light'
 }
 
-// Ключи подписей режимов поиска — по значению режима.
+// Label keys of the search modes — by mode value.
 const MODE_KEYS = {
   hybrid: 'search.modeHybrid',
   vector: 'search.modeVector',
@@ -363,46 +363,48 @@ const MODE_KEYS = {
 } as const
 
 function App() {
-  // Подписка на смену языка: смена перерисует App и всё дерево под ним.
+  // Subscribe to language changes: a switch re-renders App and its whole tree.
   useI18n()
   const [auth, setAuth] = useState<AuthState>({ phase: 'loading' })
   const [view, setView] = useState<View>('search')
   const [theme, setTheme] = useState<'light' | 'dark'>(getInitialTheme)
 
-  // Тёмная палитра включается классом .dark на <html> (см. index.css).
+  // The dark palette is enabled by the .dark class on <html> (see index.css).
   useEffect(() => {
     document.documentElement.classList.toggle('dark', theme === 'dark')
     localStorage.setItem('theme', theme)
   }, [theme])
 
   const [question, setQuestion] = useState('')
-  // Вопрос, по которому реально получен текущий result — фиксируем на момент ответа,
-  // чтобы «Nahlásit» отправил именно его, даже если юзер уже правит поле ввода.
+  // The question the current result was actually produced for — pinned at
+  // answer time so "Nahlásit" sends exactly it, even if the user is already
+  // editing the input.
   const [askedQuestion, setAskedQuestion] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [result, setResult] = useState<AskResponse | null>(null)
 
   const [library, setLibrary] = useState<LibraryResponse | null>(null)
-  // Архив проектов (дерево уже в форме LibraryFolder). null — не задан/пуст.
+  // Project archive (tree already LibraryFolder-shaped). null — unset/empty.
   const [archiveTree, setArchiveTree] = useState<LibraryFolder | null>(null)
   const [selectedSlugs, setSelectedSlugs] = useState<Set<string>>(new Set())
-  // По умолчанию ищем во всех — самый частый кейс. При снятии открывается дерево.
+  // Search everywhere by default — the most common case. Unchecking opens the tree.
   const [searchAll, setSearchAll] = useState(true)
-  // Режим поиска: hybrid (7 вектор + 7 BM25), vector (топ-20 смысл), keyword (топ-10 слова).
+  // Search mode: hybrid (7 vector + 7 BM25), vector (top 20 meaning), keyword (top 10 words).
   const [searchMode, setSearchMode] = useState<'hybrid' | 'vector' | 'keyword'>('hybrid')
-  // Модель генерации ответа. Язык ответа — настройка в профиле
-  // (Nastavení), бэкенд читает её сам.
+  // Answer generation model. The answer language is a profile setting
+  // (Nastavení), the backend reads it itself.
   const [answerModel, setAnswerModel] = useState<'gpt-5.4-mini' | 'gpt-5.5'>('gpt-5.4-mini')
-  // Расширять ли запрос через LLM перед поиском (диакритика/синонимы). По умолчанию да.
+  // Whether to expand the query via LLM before search (diacritics/synonyms). Default yes.
   const [expandQuery, setExpandQuery] = useState(true)
-  // Сильный поиск: снимки страниц топ-источников идут картинками в отвечающую
-  // LLM (тяжёлые вопросы по чертежам/таблицам). Дороже и медленнее — дефолт выкл.
+  // Strong search: page snapshots of the top sources go as images to the
+  // answering LLM (heavy drawing/table questions). Pricier and slower — off
+  // by default.
   const [strongSearch, setStrongSearch] = useState(false)
 
-  // Проверяем при старте + раз в минуту: есть ли активная локальная сессия и
-  // не перешла ли она в blocked (revoked / grace period истёк). Если blocked —
-  // сразу показываем полноэкранный оверлей.
+  // Check on start + once a minute: is there an active local session and has
+  // it moved to blocked (revoked / grace period expired). If blocked — show
+  // the fullscreen overlay right away.
   useEffect(() => {
     let cancelled = false
 
@@ -446,8 +448,8 @@ function App() {
         .then((res) => (res.ok ? res.json() : null))
         .then(applyStatus)
         .catch(() => {
-          // /api/auth/status — локальный, ошибка тут значит «бэк лежит».
-          // Не сбрасываем сессию: дождёмся следующего тика.
+          // /api/auth/status is local; an error here means "backend is down".
+          // Don't drop the session: wait for the next tick.
         })
     }
 
@@ -459,17 +461,17 @@ function App() {
     }
   }, [])
 
-  // Дерево библиотеки тянем только после логина — иначе бэк ответил бы 401
-  // в защищённой версии, и форма «Где искать» всё равно бесполезна.
-  // Зависимость от view: возврат на «Vyhledávání» перечитывает деревья —
-  // фоновый скан мог дообработать документы, фильтр не должен устареть.
+  // Fetch the library tree only after login — the backend would answer 401
+  // in the protected build, and the "where to search" form is useless anyway.
+  // The view dependency: returning to "Vyhledávání" re-reads the trees — a
+  // background scan may have processed documents, the filter must not go stale.
   useEffect(() => {
     if (auth.phase !== 'authenticated') return
     if (view !== 'search') return
     const libraryPromise: Promise<LibraryResponse | null> = fetch('/api/library')
       .then((res) => (res.ok ? res.json() : null))
       .catch(() => null)
-    // Архив проектов — второй пул для фильтра.
+    // The project archive is the second pool for the filter.
     const archivePromise: Promise<ArchiveApiResponse | null> = fetch('/api/projects')
       .then((res) => (res.ok ? res.json() : null))
       .catch(() => null)
@@ -477,9 +479,9 @@ function App() {
       const archiveTree = archive ? buildArchiveTree(archive) : null
       setLibrary(lib)
       setArchiveTree(archiveTree)
-      // Чистим устаревший выбор: пока мы были на другой вкладке, документ
-      // могли удалить/переименовать. Иначе в document_ids уедут несуществующие
-      // slug'и — бэк ответит «выбор пуст» вместо результата.
+      // Prune the stale selection: while we were on another tab a document
+      // may have been deleted/renamed. Otherwise nonexistent slugs go into
+      // document_ids — the backend answers "empty selection" instead of a result.
       const valid = new Set<string>()
       if (lib) collectReadySlugs(lib.tree).forEach((s) => valid.add(s))
       if (archiveTree) collectReadySlugs(archiveTree).forEach((s) => valid.add(s))
@@ -523,8 +525,9 @@ function App() {
   }
 
   async function handleAsk() {
-    // Снята «Вся база», но ничего не выбрано — раньше молча искали везде.
-    // Теперь требуем явный выбор области, иначе непонятно, где искали.
+    // "Whole database" unchecked but nothing selected — this used to silently
+    // search everywhere. Now an explicit scope is required, otherwise it is
+    // unclear where the search ran.
     if (!searchAll && selectedSlugs.size === 0) {
       setError(t('search.selectWhere'))
       return
@@ -534,8 +537,8 @@ function App() {
     setError(null)
     setResult(null)
     try {
-      // «Вся база» → не шлём document_ids, бэк ищет везде.
-      // Иначе шлём выбранные slug'и (size > 0 гарантирован проверкой выше).
+      // "Whole database" -> no document_ids sent, the backend searches everywhere.
+      // Otherwise send the selected slugs (size > 0 guaranteed by the check above).
       const body: {
         question: string
         document_ids?: string[]
@@ -560,8 +563,8 @@ function App() {
         body: JSON.stringify(body),
       })
       if (!res.ok) {
-        // Бэк шлёт понятную причину в detail (пустая библиотека, устаревший
-        // выбор…) — показываем её, а не голый код статуса.
+        // The backend sends a clear reason in detail (empty library, stale
+        // selection…) — show it, not the bare status code.
         const errData = await res.json().catch(() => null)
         throw new Error(
           errData?.detail ?? t('common.serverReturned', { status: res.status }),
@@ -580,7 +583,7 @@ function App() {
   const canSubmit = question.trim().length > 0 && !loading
 
   if (auth.phase === 'loading') {
-    // Короткое мерцание; полноценный спиннер избыточен.
+    // A short flicker; a full spinner is overkill.
     return <div className="min-h-screen bg-background" />
   }
   if (auth.phase === 'anonymous') {

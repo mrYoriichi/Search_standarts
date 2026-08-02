@@ -1,6 +1,6 @@
-// Вордмарк приложения: бейдж «MAI» + «Assistant» (единое английское
-// написание во всех языках — решение 2026-08-02). Размер наследуется от
-// родителя (em), поэтому один компонент годится и для шапки, и для логина.
+// App wordmark: "MAI" badge + "Assistant" (one English spelling across all
+// languages — decision 2026-08-02). Size is inherited from the parent (em),
+// so one component fits both the header and the login page.
 export function Logo({ className = '' }: { className?: string }) {
   return (
     <span className={'inline-flex items-center gap-2 ' + className}>

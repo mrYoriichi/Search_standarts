@@ -67,8 +67,8 @@ async function reindexDocument(
   title: string,
   resume: boolean,
 ): Promise<boolean> {
-  // ready → полная пересборка (артефакты сносятся, vision платится заново);
-  // failed → продолжение с чекпоинта (оплачиваются только новые страницы).
+  // ready -> full rebuild (artifacts wiped, vision paid again);
+  // failed -> continue from the checkpoint (only new pages are paid).
   const ok = confirm(
     t(resume ? 'lib.retryConfirm' : 'lib.reindexConfirm', { title }),
   )
@@ -89,8 +89,8 @@ async function reindexDocument(
 
 
 async function deleteDocument(slug: string, title: string): Promise<boolean> {
-  // Удаляем запись из БД + папку data/raw_data/{slug}/.
-  // Сам PDF в библиотеке остаётся — программа файлы юзера не трогает.
+  // Delete the DB record + the data/raw_data/{slug}/ folder.
+  // The PDF itself stays in the library — the app never touches user files.
   const ok = confirm(t('lib.deleteConfirm', { title }))
   if (!ok) return false
   try {
@@ -147,7 +147,7 @@ function countPending(folder: LibraryFolder): number {
 }
 
 
-// eslint предупредил бы про хук в map — OrphanRow компонент, useI18n тут законен.
+// eslint would warn about a hook in map — OrphanRow is a component, useI18n is legal here.
 function OrphanRow({
   orphan,
   unindexed,
@@ -329,8 +329,8 @@ function StatusLabel({
   if (status === 'failed') {
     return <span className="text-xs text-red-600 dark:text-red-400">{t('status.failed')}</span>
   }
-  // ready: показываем зелёную плашку только если документ только что
-  // перешёл в этот статус в текущей сессии. После F5 плашка исчезает.
+  // ready: show the green badge only if the document just moved to this
+  // status in the current session. After F5 the badge disappears.
   if (freshlyReady) {
     return <span className="text-xs text-green-600 dark:text-green-400">{t('status.ready')}</span>
   }
@@ -377,10 +377,10 @@ function FolderView({
 
 
 function LibraryPage() {
-  useI18n() // подписка: смена языка перерисовывает страницу
+  useI18n() // subscription: a language switch re-renders the page
   const [paths, setPaths] = useState<string[]>([])
   const [pathInput, setPathInput] = useState('')
-  // Какую папку сейчас правим (её путь) и текущий текст правки. null — не правим.
+  // Which folder is being edited (its path) and the edit text. null — not editing.
   const [editingPath, setEditingPath] = useState<string | null>(null)
   const [editValue, setEditValue] = useState('')
   const [library, setLibrary] = useState<LibraryResponse | null>(null)
@@ -389,9 +389,9 @@ function LibraryPage() {
   const [saving, setSaving] = useState(false)
   const [scanning, setScanning] = useState(false)
   const [indexing, setIndexing] = useState(false)
-  // Slug'и документов, которые в этой сессии только что перешли в 'ready'
-  // (например, после Сканировать или Переиндексировать). На них показываем
-  // зелёную плашку «готов». После F5 set сбрасывается → плашки пропадают.
+  // Slugs of documents that just moved to 'ready' in this session (e.g.
+  // after Scan or Reindex). They get the green "ready" badge. After F5 the
+  // set resets -> the badges disappear.
   const [freshlyReady, setFreshlyReady] = useState<Set<string>>(new Set())
   const prevStatusesRef = useRef<Map<string, string | null>>(new Map())
 
@@ -421,34 +421,34 @@ function LibraryPage() {
     }
   }
 
-  // Тихий рефреш для поллинга: перезапрашивает только дерево, без лоадера
-  // и без перечитывания пути. React перерисует только изменившиеся узлы.
+  // Quiet refresh for polling: re-fetches only the tree, no loader and no
+  // path re-read. React re-renders only the changed nodes.
   async function refreshLibrary() {
     try {
       const res = await fetch('/api/library')
       if (res.ok) setLibrary(await res.json())
     } catch {
-      // Ошибки сети в фоновом поллинге игнорируем — на следующем тике повторим.
+      // Network errors in background polling are ignored — retry next tick.
     }
   }
 
   useEffect(() => {
-    // Ложный оклик правила: setState в loadAll случается после await,
-    // не синхронно (плагин не моделирует async-функции).
+    // False positive of the rule: setState in loadAll happens after await,
+    // not synchronously (the plugin does not model async functions).
     // eslint-disable-next-line react-hooks/set-state-in-effect
     loadAll()
   }, [])
 
-  // Пока есть документы в статусе processing — обновляем дерево раз в 3 сек,
-  // чтобы юзер видел переход в ready/failed без F5.
+  // While documents are in processing — refresh the tree every 3 s so the
+  // user sees the transition to ready/failed without F5.
   useEffect(() => {
     if (!library || !hasProcessing(library.tree)) return
     const id = setInterval(refreshLibrary, 3000)
     return () => clearInterval(id)
   }, [library])
 
-  // Отслеживаем переходы статусов: если документ был не-ready и стал ready —
-  // добавляем в freshlyReady, чтобы один раз показать зелёную плашку «готов».
+  // Track status transitions: if a document was non-ready and became ready —
+  // add it to freshlyReady to show the green "ready" badge once.
   useEffect(() => {
     if (!library) return
     const nextStatuses = new Map<string, string | null>()
@@ -458,8 +458,8 @@ function LibraryPage() {
       for (const f of folder.files) {
         nextStatuses.set(f.slug, f.status)
         const prev = prevStatusesRef.current.get(f.slug)
-        // prev === undefined → файл виден впервые (первый рендер
-        // или только что появился через сканирование). Не подсвечиваем.
+        // prev === undefined -> the file is seen for the first time (first
+        // render or just appeared via a scan). No highlight.
         if (prev !== undefined && prev !== 'ready' && f.status === 'ready') {
           justBecameReady.push(f.slug)
         }
