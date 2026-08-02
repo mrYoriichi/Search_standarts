@@ -1,17 +1,16 @@
-"""
-Этап 4: построение векторного индекса по чанкам.
+"""Pipeline stage 4: build the vector index over the chunks.
 
-Берёт готовый chunks.json (результат chunk.py),
-строит embeddings-индекс через OpenAI и сохраняет в embeddings.json.
+Takes chunks.json (from the chunk stage), builds the embeddings index
+via OpenAI and saves embeddings.json.
 
-BM25-индекс НЕ сохраняем — он строится из chunks.json мгновенно,
-тратить место не имеет смысла. Embeddings = запрос к OpenAI (деньги/время).
+The BM25 index is NOT saved — it builds from chunks.json instantly.
+Embeddings are an OpenAI call (money/time), so they are worth persisting.
 
-Запускать ПОСЛЕ chunk.py:
-    python main.py      # этап 1: парсинг PDF
-    python describe.py  # этап 2: описание схем
-    python chunk.py     # этап 3: нарезка на чанки
-    python index.py     # этап 4: построение индекса
+Run AFTER the chunk stage:
+    python -m pipeline.parse <pdf>
+    python -m pipeline.describe <pdf>
+    python -m pipeline.chunk <pdf>
+    python -m pipeline.embed <pdf>
 """
 
 import json
@@ -30,22 +29,22 @@ from common.pricing import embedding_cost
 
 
 def load_chunks(json_path: Path) -> list[dict]:
-    """Читает chunks.json в список чанков."""
+    """Read chunks.json into a list of chunks."""
     with open(json_path, encoding="utf-8") as f:
         return json.load(f)
 
 
 def save_index(index: dict, json_path: Path) -> None:
-    """Сохраняет векторный индекс в JSON-файл."""
+    """Save the vector index to a JSON file."""
     save_json_atomic(json_path, index)
 
 
 def process(pdf_name: str, doc_dir: Path | None = None) -> None:
-    """
-    Строит векторный индекс по chunks.json и сохраняет embeddings.json.
-    pdf_name — то же имя, что передавалось в main.py (например, MVL649).
-    doc_dir — папка документа; по умолчанию data/cli_output/<id>,
-    архив проектов передаёт свою (projects_data/<slug>).
+    """Build the vector index for chunks.json and save embeddings.json.
+
+    pdf_name — the same name passed to parse (e.g. MVL649).
+    doc_dir — document folder; defaults to data/cli_output/<id>, the
+    project archive passes its own (projects_data/<slug>).
     """
     doc_dir = doc_dir or (CLI_OUTPUT_DIR / make_document_id(pdf_name))
     chunks_path = doc_dir / "chunks.json"
@@ -54,39 +53,35 @@ def process(pdf_name: str, doc_dir: Path | None = None) -> None:
 
     chunks = load_chunks(chunks_path)
 
-    # Для метрики "$ за страницу" нужно общее число страниц документа —
-    # читаем его из document.json (там len(pages) — это страницы PDF).
+    # The "$ per page" metric needs the document's total page count.
     with open(document_path, encoding="utf-8") as f:
         document = json.load(f)
     total_pages = len(document["pages"])
 
-    print(f"Чанков загружено: {len(chunks)}")
-    print(f"Модель: {EMBEDDING_MODEL}")
-    print("Строю векторный индекс (запрос к OpenAI)...")
+    print(f"Chunks loaded: {len(chunks)}")
+    print(f"Model: {EMBEDDING_MODEL}")
+    print("Building the vector index (OpenAI call)...")
 
     index, tokens = build_embeddings_index(chunks)
     save_index(index, index_path)
 
-    print("\nГотово!")
-    print(f"  Векторов сохранено: {len(index['items'])}")
-    print(f"  Файл: {index_path}")
+    print("\nDone!")
+    print(f"  Vectors saved: {len(index['items'])}")
+    print(f"  File: {index_path}")
 
-    # ---- Сводка по стоимости ----
     usd = embedding_cost(tokens)
-    print("\n=== Стоимость embeddings ===")
-    print(f"  Страниц в документе: {total_pages}")
-    print(f"  Чанков:              {len(chunks)}")
-    print(f"  Токены:              {tokens}")
-    print(f"  ИТОГО embeddings:                                  ${usd:.4f}")
+    print("\n=== Embeddings cost ===")
+    print(f"  Pages in document: {total_pages}")
+    print(f"  Chunks:            {len(chunks)}")
+    print(f"  Tokens:            {tokens}")
+    print(f"  TOTAL embeddings:  ${usd:.4f}")
     if total_pages:
-        print(
-            f"  $ на страницу (embeddings):                        ${usd / total_pages:.4f}"
-        )
+        print(f"  $ per page:        ${usd / total_pages:.4f}")
 
 
 if __name__ == "__main__":
     if len(sys.argv) < 2:
-        print("Использование: python index.py <pdf_name>")
-        print("Пример:        python index.py MVL649")
+        print("Usage:   python -m pipeline.embed <pdf_name>")
+        print("Example: python -m pipeline.embed MVL649")
         sys.exit(1)
     process(sys.argv[1])

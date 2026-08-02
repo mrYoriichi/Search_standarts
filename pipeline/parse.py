@@ -1,7 +1,7 @@
-"""
-Точка входа в проект.
-Разбирает PDF через pdf_processing.parser и сохраняет результат на диск.
-Когда переедем на БД, изменится только функция сохранения — парсер не трогаем.
+"""Pipeline stage 1: parse a PDF via pdf_processing and save the result.
+
+If storage ever moves to a database, only the save functions change —
+the parser stays untouched.
 """
 
 import sys
@@ -19,11 +19,7 @@ from pdf_processing.parser import (
 
 
 def save_document_json(document: dict, output_root: Path) -> Path:
-    """
-    Сохраняет результат разбора в data/cli_output/<document_id>/document.json.
-    Возвращает путь к созданному файлу.
-    """
-    # У каждого документа своя папка с именем = document_id
+    """Save the parse result to <output_root>/<document_id>/document.json."""
     doc_dir = output_root / document["document_id"]
     doc_dir.mkdir(parents=True, exist_ok=True)
 
@@ -38,14 +34,9 @@ def save_page_images(
     pages_to_save: set[int],
     pages_dir: Path,
 ) -> dict[int, str]:
-    """
-    Сохраняет указанные страницы как PNG в pages_dir.
-    Возвращает словарь {номер_страницы: относительный_путь} —
-    он пригодится, чтобы вписать пути в JSON.
+    """Save the selected pages as PNGs into pages_dir.
 
-    page_images   — все картинки страниц из парсера (PIL.Image).
-    pages_to_save — какие именно страницы реально сохраняем.
-    pages_dir     — куда класть PNG (по умолчанию <doc_dir>/pages/).
+    Returns {page_number: relative_path} for embedding into the JSON.
     """
     pages_dir.mkdir(parents=True, exist_ok=True)
 
@@ -53,13 +44,11 @@ def save_page_images(
     for page_num in sorted(pages_to_save):
         image = page_images.get(page_num)
         if image is None:
-            # Подстраховка: вдруг для этой страницы картинки нет
-            continue
-        # Имя файла: p001.png, p012.png — всегда три цифры
-        filename = f"p{page_num:03d}.png"
+            continue  # defensive: no image for this page
+        filename = f"p{page_num:03d}.png"  # always three digits
         full_path = pages_dir / filename
         image.save(full_path, format="PNG")
-        # В JSON будет лежать относительный путь от папки документа
+        # The JSON stores paths relative to the document folder.
         saved_paths[page_num] = f"pages/{filename}"
 
     return saved_paths
@@ -72,64 +61,61 @@ def process(
     document_id: str | None = None,
     pages_dir: Path | None = None,
 ) -> None:
-    """
-    Разбирает один PDF и сохраняет результат в data/cli_output/<document_id>/.
-    pdf_name — имя файла БЕЗ расширения.
-    pdf_path — полный путь к PDF. Если не задан, берётся data/pdfs/<pdf_name>.pdf
-    (вход CLI-сценария). Приложение всегда передаёт путь к PDF прямо из папки
-    юзера.
-    doc_dir — папка результатов. Если не задана — data/cli_output/<document_id>
-    (нормы). Архив проектов передаёт свой пул (projects_data/<slug>).
-    document_id — переопределяет id из имени файла. Архив проектов передаёт
-    slug вида {проект}__{файл} — имена файлов между проектами повторяются.
-    pages_dir — куда класть скриншоты страниц. По умолчанию <doc_dir>/pages/;
-    пайплайн .search_index передаёт временную локальную папку, чтобы PNG
-    не ехали на сетевой диск.
+    """Parse one PDF and save the result.
+
+    pdf_name — file name WITHOUT extension.
+    pdf_path — full path to the PDF; defaults to data/pdfs/<pdf_name>.pdf
+    (CLI input). The app always passes the path straight from the user's
+    folder.
+    doc_dir — output folder; defaults to data/cli_output/<document_id>.
+    The project archive passes its own pool (projects_data/<slug>).
+    document_id — overrides the id derived from the file name. The
+    archive passes a {project}__{file} slug — file names repeat between
+    projects.
+    pages_dir — where page screenshots go; defaults to <doc_dir>/pages/.
+    The .search_index pipeline passes a temporary local folder so PNGs
+    never travel to a network drive.
     """
     if pdf_path is None:
         pdf_path = str(CLI_PDF_DIR / f"{pdf_name}.pdf")
 
-    print(f"Читаю {pdf_path}, подожди...")
-    # По-страничный роутер: классифицируем каждую страницу (проза/чертёж),
-    # Docling запускаем ТОЛЬКО по прозаическим (на чертежах он бесполезен и
-    # тормозит), чертёжные читаем OCR'ом и вставляем на их места.
+    print(f"Reading {pdf_path}, please wait...")
+    # Per-page router: classify every page (prose/drawing). Docling runs
+    # ONLY on prose pages (useless and slow on drawings); drawing pages
+    # are read by OCR and inserted in their places.
     page_types = classify_pages(pdf_path)
     document, page_images = parse_prose_pages(pdf_path, page_types)
     if document_id:
         document["document_id"] = document_id
     insert_drawing_pages(document, pdf_path, page_types)
 
-    # Папка документа: data/cli_output/<document_id>/ или переданный пул
     doc_dir = doc_dir or (CLI_OUTPUT_DIR / document["document_id"])
     doc_dir.mkdir(parents=True, exist_ok=True)
 
-    # Решаем, какие страницы сохранять, и сохраняем их.
-    # Первую страницу сохраняем всегда — describe.py берёт с неё название
-    # и описание документа, даже если визуалов там нет.
+    # Page 1 is always saved: describe.py reads the document title and
+    # summary from it even when it has no visual blocks.
     pages_to_save = collect_pages_to_save(document)
     pages_to_save.add(1)
     pages_dir = pages_dir or (doc_dir / "pages")
     saved_paths = save_page_images(page_images, pages_to_save, pages_dir)
 
-    # Дозаполняем поля у блоков figure/table (пути к картинкам, соседи)
+    # Fill in figure/table block fields (image paths, neighbours).
     enrich_visual_blocks(document, pages_to_save)
 
-    # Сохраняем итоговый JSON — уже с заполненными путями
     output_path = doc_dir / "document.json"
     save_json_atomic(output_path, document)
 
-    # Отчёт
     total_blocks = sum(len(p["blocks"]) for p in document["pages"])
-    print("\nГотово!")
-    print(f"  Файл:    {output_path}")
-    print(f"  Страниц: {len(document['pages'])}")
-    print(f"  Блоков:  {total_blocks}")
-    print(f"  Сохранено картинок страниц: {len(saved_paths)} (в {pages_dir}/)")
+    print("\nDone!")
+    print(f"  File:   {output_path}")
+    print(f"  Pages:  {len(document['pages'])}")
+    print(f"  Blocks: {total_blocks}")
+    print(f"  Page images saved: {len(saved_paths)} (in {pages_dir}/)")
 
 
 if __name__ == "__main__":
     if len(sys.argv) < 2:
-        print("Использование: python -m pipeline.parse <pdf_name>")
-        print("Пример:        python -m pipeline.parse MVL649")
+        print("Usage:   python -m pipeline.parse <pdf_name>")
+        print("Example: python -m pipeline.parse MVL649")
         sys.exit(1)
     process(sys.argv[1])

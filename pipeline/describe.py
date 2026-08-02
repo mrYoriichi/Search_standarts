@@ -1,14 +1,13 @@
-"""
-Этап 2: описание схем и таблиц через vision LLM.
+"""Pipeline stage 2: describe schemes and tables via the vision LLM.
 
-Берёт готовый document.json (результат main.py), прогоняет страницы
-с figure/table через vision LLM и сохраняет результат в descriptions.json.
-document.json НЕ меняется — это сознательно, чтобы перепуск main.py
-не стирал дорогие vision-описания.
+Takes document.json (from parse), runs the figure/table pages through
+the vision LLM and saves descriptions.json. document.json is NOT
+modified — deliberately, so re-running parse never wipes the expensive
+vision output.
 
-Запускать ПОСЛЕ main.py:
-    python main.py       # этап 1: парсинг PDF
-    python describe.py   # этап 2: описание схем
+Run AFTER parse:
+    python -m pipeline.parse <pdf>
+    python -m pipeline.describe <pdf>
 """
 
 import json
@@ -19,7 +18,7 @@ from typing import Callable
 
 from dotenv import load_dotenv
 
-# Загружаем .env (ключ OpenAI) ДО импорта модуля, который обращается к API
+# Load .env (OpenAI key) BEFORE importing the module that talks to the API.
 load_dotenv()
 
 import pypdfium2 as pdfium
@@ -39,33 +38,33 @@ from common.pricing import model_cost
 
 
 def load_document(json_path: Path) -> dict:
-    """Читает document.json в словарь."""
+    """Read document.json into a dict."""
     with open(json_path, encoding="utf-8") as f:
         return json.load(f)
 
 
 def save_descriptions(descriptions: dict, json_path: Path) -> None:
-    """Сохраняет словарь описаний в descriptions.json."""
+    """Save the descriptions dict to descriptions.json."""
     save_json_atomic(json_path, descriptions)
 
 
 def _is_blank(image) -> bool:
-    """Однотонная (пустая) страница? Такую в vision не шлём — платить не за что.
+    """Uniform (blank) page? Not worth a vision call.
 
-    Раньше пустой оборот обложки уходил в vision как «чертёж» и из-за retry
-    в describe_drawing оплачивался ДВАЖДЫ.
+    A blank cover verso used to go to vision as a "drawing" and, thanks
+    to the retry in describe_drawing, was paid for TWICE.
     """
     lo, hi = image.convert("L").getextrema()
     return lo == hi
 
 
 def _render_first_page(pdf_path: str, pages_dir: Path) -> Path | None:
-    """Рендерит страницу 1 из PDF — когда Docling её не рендерил.
+    """Render page 1 from the PDF when Docling did not render it.
 
-    Так бывает, когда первая страница — чертёж (роутер отдал её OCR, и
-    скриншота p001.png нет): без этого документ терял title/summary,
-    типовой кейс архива проектов. Ошибка рендера — просто None (метаданные
-    пропустим, как раньше).
+    Happens when the first page is a drawing (the router sent it to OCR,
+    so there is no p001.png): without this the document would lose its
+    title/summary — the typical project-archive case. A render error
+    returns None (metadata is skipped, as before).
     """
     try:
         with PDFIUM_LOCK:
@@ -84,10 +83,10 @@ def _render_first_page(pdf_path: str, pages_dir: Path) -> Path | None:
 
 
 def _read_partial(json_path: Path) -> dict | None:
-    """descriptions.json прошлого (возможно, оборванного) запуска или None.
+    """descriptions.json of a previous (possibly interrupted) run, or None.
 
-    Vision — самый дорогой этап, поэтому сохраняемся после каждой страницы,
-    а при повторном запуске уже оплаченные описания не покупаем второй раз.
+    Vision is the most expensive stage, so progress is saved after every
+    page and a re-run never re-buys already-paid descriptions.
     """
     try:
         with open(json_path, encoding="utf-8") as f:
@@ -98,10 +97,7 @@ def _read_partial(json_path: Path) -> dict | None:
 
 
 def find_pages_with_visuals(document: dict) -> list[int]:
-    """
-    Возвращает отсортированный список номеров страниц,
-    на которых есть блоки figure/table.
-    """
+    """Sorted page numbers that contain figure/table blocks."""
     page_numbers = []
     for page in document["pages"]:
         has_visual = any(
@@ -120,19 +116,21 @@ def describe_drawings(
     on_page_done: Callable[[], None] | None = None,
     on_progress: Callable[[int, int], None] | None = None,
 ) -> tuple[int, int]:
-    """Vision-описание чертёжных страниц документа (дополняет descriptions).
+    """Vision passports for the document's drawing pages (extends descriptions).
 
-    Чертёжные страницы (по-страничный роутер пометил их page_type == "drawing")
-    рендерим на лету из PDF во временную папку, отдаём в vision и выбрасываем
-    PNG — скриншоты чертежей нигде не храним.
+    Drawing pages (page_type == "drawing" from the router) are rendered
+    on the fly from the PDF into a temp folder, sent to vision and the
+    PNGs discarded — drawing screenshots are never stored.
 
-    descriptions ({номер_страницы: текст}) пополняется НА МЕСТЕ: страницы, уже
-    описанные прошлым запуском, пропускаем — за них заплачено. Пустой ответ
-    тоже записываем ("" = «страница обработана», chunker пустые игнорирует).
-    on_page_done зовётся после каждой страницы — вызывающий сохраняет прогресс.
-    on_progress(done, total) зовётся перед каждой страницей — для UI (чисто
-    чертёжный PDF иначе висит без движения весь vision-этап).
-    Возвращает (prompt_tokens, completion_tokens) этого запуска.
+    descriptions ({page_number: text}) is extended IN PLACE: pages
+    already described by a previous run are skipped — they are paid for.
+    An empty answer is recorded too ("" = "page processed"; the chunker
+    ignores empties). on_page_done fires after each page so the caller
+    can persist progress; on_progress(done, total) before each page
+    feeds the UI (a drawings-only PDF would otherwise sit motionless
+    through the whole vision stage).
+
+    Returns (prompt_tokens, completion_tokens) for this run.
     """
     drawing_pages = [
         p["page_number"] for p in document["pages"] if p.get("page_type") == "drawing"
@@ -150,15 +148,15 @@ def describe_drawings(
             for done, page_number in enumerate(todo, start=1):
                 if on_progress is not None:
                     on_progress(done, len(todo))
-                # Рендер под замком; vision-запрос ниже — снаружи (он долгий).
+                # Render under the lock; the (long) vision call is outside.
                 with PDFIUM_LOCK:
                     page = doc[page_number - 1]
                     width, height = page.get_size()
                     scale = RENDER_MAX_SIDE_PX / max(width, height)
                     pil = page.render(scale=scale).to_pil()
                 if _is_blank(pil):
-                    # Пустой лист: "" = пометка «обработан», chunker пустые
-                    # игнорирует, повторный запуск сюда не вернётся.
+                    # Blank sheet: "" marks it processed; the chunker
+                    # ignores empties and a re-run will not come back here.
                     descriptions[str(page_number)] = ""
                     if on_page_done is not None:
                         on_page_done()
@@ -187,34 +185,37 @@ def process(
     describe_images: bool = True,
     on_drawing_progress: Callable[[int, int], None] | None = None,
 ) -> None:
-    """
-    Описывает схемы и метаданные документа, результат пишет в descriptions.json.
-    pdf_name — то же имя, что передавалось в main.py (например, MVL649).
-    vision_model — модель vision LLM (рычаг стоимости; см. настройку vision_model).
-    doc_dir — папка документа; по умолчанию data/cli_output/<id>,
-    архив проектов передаёт свою (projects_data/<slug>).
-    on_progress — необязательный колбэк (номер страницы по счёту, всего страниц):
-    бэкенд показывает прогресс в UI, CLI живёт без него.
-    pages_dir — где лежат скриншоты страниц; по умолчанию <doc_dir>/pages/
-    (пайплайн .search_index передаёт временную локальную папку).
-    pdf_path — путь к исходному PDF. Задан → чертёжные страницы получают
-    vision-описание (рендер на лету из PDF, скриншоты не храним). Не задан →
-    чертежи только с OCR.
-    describe_images — тумблер «Стандарт/Без LLM». False → vision не вызывается
-    вовсе (ни метаданные, ни схемы прозы, ни чертежи): пишем пустой
-    descriptions.json, чанки соберутся из OCR/текста — бесплатно.
+    """Describe schemes and document metadata into descriptions.json.
+
+    pdf_name — the same name passed to parse (e.g. MVL649).
+    vision_model — vision LLM id (the cost lever; see the vision_model
+    setting).
+    doc_dir — document folder; defaults to data/cli_output/<id>, the
+    project archive passes its own (projects_data/<slug>).
+    on_progress — optional (page_index, total) callback: the backend
+    shows UI progress, the CLI lives without it.
+    pages_dir — where the page screenshots are; defaults to
+    <doc_dir>/pages/ (the .search_index pipeline passes a temp folder).
+    pdf_path — path to the source PDF. Set → drawing pages get vision
+    passports (rendered on the fly, screenshots never stored). Unset →
+    drawings get OCR only.
+    describe_images — the "Standard / No LLM" toggle. False → vision is
+    never called (no metadata, no scheme or drawing descriptions): an
+    empty descriptions.json is written and chunks build from OCR/text —
+    free.
     """
     doc_dir = doc_dir or (CLI_OUTPUT_DIR / make_document_id(pdf_name))
     document_path = doc_dir / "document.json"
     descriptions_path = doc_dir / "descriptions.json"
     pages_dir = pages_dir or (doc_dir / "pages")
 
-    # Режим «Без LLM»: vision пропускаем целиком, оставляем пустой паспорт.
-    # descriptions.json всё равно пишем — chunk.process без него не запустится.
-    # НО существующий читаемый файл не трогаем: в общей папке там могут лежать
-    # ОПЛАЧЕННЫЕ vision-описания коллеги — затирать их пустышкой нельзя.
+    # "No LLM" mode: skip vision entirely, leave an empty passport.
+    # descriptions.json is still written — chunk.process requires it.
+    # BUT a readable existing file is left alone: in a shared folder it
+    # may hold a colleague's PAID vision output — never overwrite it
+    # with an empty stub.
     if not describe_images:
-        print("Popis obrázků vypnut (režim bez LLM) — vision se přeskakuje.")
+        print("Image description off (no-LLM mode) — skipping vision.")
         if _read_partial(descriptions_path) is None:
             save_descriptions(
                 {
@@ -230,10 +231,10 @@ def process(
     document = load_document(document_path)
     pages = find_pages_with_visuals(document)
 
-    print(f"Документ: {document['document_name']}")
+    print(f"Document: {document['document_name']}")
 
-    # Частичный результат прошлого (оборванного) запуска: сохраняемся после
-    # каждой страницы, при повторе уже оплаченное vision не покупаем заново.
+    # Partial result of a previous (interrupted) run: progress is saved
+    # after every page, so paid vision is never re-bought.
     output = _read_partial(descriptions_path) or {
         "document_title": "",
         "document_summary": "",
@@ -243,52 +244,51 @@ def process(
     output.setdefault("described_pages", [])
     done_pages = set(output["described_pages"])
 
-    # Накопители токенов: метаданные считаем отдельно от страниц,
-    # чтобы знать "чистую" цену страницы с figure/table.
+    # Token accumulators: metadata is tracked separately from pages to
+    # know the "pure" cost of a figure/table page.
     meta_in = meta_out = 0
     pages_in = pages_out = 0
     pages_described_count = 0
 
-    # Шаг 1: извлекаем название и описание документа по первой странице.
-    # Если Docling её не рендерил (первая страница — чертёж), делаем скриншот
-    # сами из PDF — иначе документ остался бы без title/summary.
+    # Step 1: document title and summary from page 1. If Docling did not
+    # render it (first page is a drawing), render it ourselves — the
+    # document would otherwise lose its title/summary.
     first_page_image = pages_dir / "p001.png"
     if not first_page_image.exists() and pdf_path:
         first_page_image = _render_first_page(pdf_path, pages_dir) or first_page_image
     if output["document_title"]:
-        print("Метаданные уже есть (прошлый запуск) — пропускаю")
+        print("Metadata already present (previous run) — skipping")
     elif first_page_image.exists():
-        print("Извлекаю метаданные документа...")
+        print("Extracting document metadata...")
         meta, meta_in, meta_out = extract_document_metadata(
             first_page_image, model=vision_model
         )
         output["document_title"] = meta["title"]
         output["document_summary"] = meta["summary"]
         save_descriptions(output, descriptions_path)
-        print(f"  Название: {output['document_title']}")
+        print(f"  Title: {output['document_title']}")
     else:
-        print("  [!] Скриншота первой страницы нет, метаданные пропущены")
+        print("  [!] No first-page screenshot, metadata skipped")
 
-    # Шаг 2: описываем схемы и таблицы — накапливаем в общий словарь
-    print(f"\nСтраниц с figure/table: {len(pages)}")
-    print("Начинаю описание через vision LLM...\n")
+    # Step 2: describe schemes and tables, accumulating into one dict.
+    print(f"\nPages with figure/table: {len(pages)}")
+    print("Describing via the vision LLM...\n")
 
     block_descriptions: dict[str, str] = output["block_descriptions"]
     for i, page_number in enumerate(pages, start=1):
         if page_number in done_pages:
-            print(f"[{i}/{len(pages)}] стр. {page_number}: уже описана, пропуск")
+            print(f"[{i}/{len(pages)}] p. {page_number}: already described, skip")
             continue
 
-        # Путь к скриншоту этой страницы
         image_path = pages_dir / f"p{page_number:03d}.png"
 
         if not image_path.exists():
-            print(f"[{i}/{len(pages)}] стр. {page_number}: скриншота нет, пропуск")
+            print(f"[{i}/{len(pages)}] p. {page_number}: no screenshot, skip")
             continue
 
         if on_progress is not None:
             on_progress(i, len(pages))
-        print(f"[{i}/{len(pages)}] стр. {page_number}: запрос в LLM...")
+        print(f"[{i}/{len(pages)}] p. {page_number}: calling the LLM...")
         page_descriptions, in_tok, out_tok = describe_page_visuals(
             document, page_number, image_path, model=vision_model
         )
@@ -298,14 +298,13 @@ def process(
         pages_in += in_tok
         pages_out += out_tok
         pages_described_count += 1
-        print(f"           проставлено описаний: {len(page_descriptions)}")
+        print(f"           descriptions set: {len(page_descriptions)}")
 
-    # Шаг 3: vision-описание чертёжных страниц (если дан путь к PDF).
-    # Рендерим их на лету из PDF, скриншоты не сохраняем. Прогресс сохраняем
-    # после каждого листа (on_page_done) — как и для страниц выше.
+    # Step 3: vision passports for drawing pages (when the PDF path is
+    # known). Progress is saved after every sheet, as above.
     draw_in = draw_out = 0
     if pdf_path:
-        print("\nОписываю чертёжные страницы через vision LLM...")
+        print("\nDescribing drawing pages via the vision LLM...")
         draw_in, draw_out = describe_drawings(
             document,
             pdf_path,
@@ -314,46 +313,45 @@ def process(
             on_page_done=lambda: save_descriptions(output, descriptions_path),
             on_progress=on_drawing_progress,
         )
-        print(f"  Описано чертежей: {len(output['drawing_descriptions'])}")
+        print(f"  Drawings described: {len(output['drawing_descriptions'])}")
     drawing_descriptions = output["drawing_descriptions"]
 
-    # Финальное сохранение (на случай, когда ни одного vision-вызова не было)
+    # Final save (covers the case of zero vision calls).
     save_descriptions(output, descriptions_path)
 
-    print("\nГотово!")
-    print(f"  Всего описаний проставлено: {len(block_descriptions)}")
-    print(f"  Файл сохранён:              {descriptions_path}")
+    print("\nDone!")
+    print(f"  Descriptions total: {len(block_descriptions)}")
+    print(f"  Saved to:           {descriptions_path}")
 
-    # ---- Сводка по стоимости ----
     meta_usd = model_cost(vision_model, meta_in, meta_out)
     pages_usd = model_cost(vision_model, pages_in, pages_out)
     draw_usd = model_cost(vision_model, draw_in, draw_out)
     total_usd = meta_usd + pages_usd + draw_usd
 
-    print("\n=== Стоимость vision ===")
+    print("\n=== Vision cost ===")
     print(
-        f"  Метаданные:           input={meta_in:>6}, output={meta_out:>5} → ${meta_usd:.4f}"
+        f"  Metadata:             input={meta_in:>6}, output={meta_out:>5} → ${meta_usd:.4f}"
     )
-    print(f"  Страницы с figure/table ({pages_described_count} шт.):")
+    print(f"  Pages with figure/table ({pages_described_count}):")
     print(
         f"                        input={pages_in:>6}, output={pages_out:>5} → ${pages_usd:.4f}"
     )
     if pages_described_count:
         per_page_usd = pages_usd / pages_described_count
         print(
-            f"  $ на страницу с figure/table:                       ${per_page_usd:.4f}"
+            f"  $ per figure/table page:                            ${per_page_usd:.4f}"
         )
     if drawing_descriptions:
-        print(f"  Чертежи ({len(drawing_descriptions)} шт.):")
+        print(f"  Drawings ({len(drawing_descriptions)}):")
         print(
             f"                        input={draw_in:>6}, output={draw_out:>5} → ${draw_usd:.4f}"
         )
-    print(f"  ИТОГО vision:                                       ${total_usd:.4f}")
+    print(f"  TOTAL vision:                                       ${total_usd:.4f}")
 
 
 if __name__ == "__main__":
     if len(sys.argv) < 2:
-        print("Использование: python describe.py <pdf_name>")
-        print("Пример:        python describe.py MVL649")
+        print("Usage:   python -m pipeline.describe <pdf_name>")
+        print("Example: python -m pipeline.describe MVL649")
         sys.exit(1)
     process(sys.argv[1])

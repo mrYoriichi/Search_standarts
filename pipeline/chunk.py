@@ -1,14 +1,13 @@
-"""
-Этап 3: нарезка документа на смысловые чанки.
+"""Pipeline stage 3: split the document into semantic chunks.
 
-Берёт document.json (структура из main.py) и descriptions.json (vision-описания
-из describe.py), в памяти сливает описания в блоки документа и нарезает на чанки.
-Результат сохраняет в chunks.json.
+Takes document.json (structure from parse) and descriptions.json
+(vision output from describe), merges the descriptions into the document
+in memory and splits it into chunks. Saves chunks.json.
 
-Запускать ПОСЛЕ main.py и describe.py:
-    python main.py       # этап 1: парсинг PDF
-    python describe.py   # этап 2: описание схем
-    python chunk.py      # этап 3: нарезка на чанки
+Run AFTER parse and describe:
+    python -m pipeline.parse <pdf>
+    python -m pipeline.describe <pdf>
+    python -m pipeline.chunk <pdf>
 """
 
 import json
@@ -22,23 +21,22 @@ from pdf_processing.parser import make_document_id
 
 
 def load_json(json_path: Path) -> dict:
-    """Читает JSON-файл в словарь."""
+    """Read a JSON file into a dict."""
     with open(json_path, encoding="utf-8") as f:
         return json.load(f)
 
 
 def save_chunks(chunks: list[dict], json_path: Path) -> None:
-    """Сохраняет список чанков в JSON-файл."""
+    """Save the chunk list to a JSON file."""
     save_json_atomic(json_path, chunks)
 
 
 def merge_descriptions(document: dict, descriptions: dict) -> None:
-    """
-    Сливает данные из descriptions.json в document (на месте).
+    """Merge descriptions.json into the document (in place).
 
-    document_title и document_summary кладёт на верхний уровень документа;
-    block_descriptions разносит по блокам в поле description по block_id.
-    chunker дальше работает как раньше.
+    document_title/document_summary go to the top level;
+    block_descriptions are distributed to blocks by block_id. The chunker
+    then works unchanged.
     """
     document["document_title"] = descriptions.get("document_title", "")
     document["document_summary"] = descriptions.get("document_summary", "")
@@ -50,18 +48,18 @@ def merge_descriptions(document: dict, descriptions: dict) -> None:
             description = block_descriptions.get(block["block_id"])
             if description:
                 block["description"] = description
-        # Vision-паспорт чертёжной страницы (ключ — номер страницы строкой)
+        # Vision passport of a drawing page (keyed by page number as string).
         drawing_description = drawing_descriptions.get(str(page["page_number"]))
         if drawing_description:
             page["drawing_description"] = drawing_description
 
 
 def process(pdf_name: str, doc_dir: Path | None = None) -> None:
-    """
-    Нарезает документ на чанки и сохраняет chunks.json.
-    pdf_name — то же имя, что передавалось в main.py (например, MVL649).
-    doc_dir — папка документа; по умолчанию data/cli_output/<id>,
-    архив проектов передаёт свою (projects_data/<slug>).
+    """Split the document into chunks and save chunks.json.
+
+    pdf_name — the same name passed to parse (e.g. MVL649).
+    doc_dir — document folder; defaults to data/cli_output/<id>, the
+    project archive passes its own (projects_data/<slug>).
     """
     doc_dir = doc_dir or (CLI_OUTPUT_DIR / make_document_id(pdf_name))
     document_path = doc_dir / "document.json"
@@ -69,35 +67,33 @@ def process(pdf_name: str, doc_dir: Path | None = None) -> None:
     chunks_path = doc_dir / "chunks.json"
 
     if not descriptions_path.exists():
-        print(f"[!] Нет файла {descriptions_path}")
-        print("    Сначала запусти: python describe.py <pdf_name>")
+        print(f"[!] Missing file {descriptions_path}")
+        print("    Run first: python -m pipeline.describe <pdf_name>")
         sys.exit(1)
 
     document = load_json(document_path)
     descriptions = load_json(descriptions_path)
 
-    # Вливаем описания в документ в памяти — chunker дальше работает как раньше
     merge_descriptions(document, descriptions)
 
-    print(f"Документ: {document['document_name']}")
-    print("Нарезаю на чанки...")
+    print(f"Document: {document['document_name']}")
+    print("Chunking...")
 
     chunks = build_chunks_routed(document)
     save_chunks(chunks, chunks_path)
 
-    # Небольшой отчёт
     total_chars = sum(len(c["text"]) for c in chunks)
     avg_chars = total_chars // len(chunks) if chunks else 0
 
-    print("\nГотово!")
-    print(f"  Чанков создано:    {len(chunks)}")
-    print(f"  Средний размер:    {avg_chars} символов")
-    print(f"  Файл сохранён:     {chunks_path}")
+    print("\nDone!")
+    print(f"  Chunks created: {len(chunks)}")
+    print(f"  Average size:   {avg_chars} chars")
+    print(f"  Saved to:       {chunks_path}")
 
 
 if __name__ == "__main__":
     if len(sys.argv) < 2:
-        print("Использование: python chunk.py <pdf_name>")
-        print("Пример:        python chunk.py MVL649")
+        print("Usage:   python -m pipeline.chunk <pdf_name>")
+        print("Example: python -m pipeline.chunk MVL649")
         sys.exit(1)
     process(sys.argv[1])
