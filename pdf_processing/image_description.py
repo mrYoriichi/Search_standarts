@@ -1,8 +1,8 @@
-"""
-Описание схем и таблиц через vision LLM (OpenAI).
+"""Describing schemes and tables via the vision LLM (OpenAI).
 
-Берёт скриншот страницы, отправляет в модель с просьбой описать
-изображённые на ней схемы/таблицы, возвращает ответ модели.
+Takes a page screenshot, asks the model to describe the schemes/tables
+on it, returns the model's answer. The Czech prompts are functional —
+the corpus and the descriptions are Czech.
 """
 
 import base64
@@ -14,15 +14,15 @@ from pathlib import Path
 from openai import OpenAI
 
 
-# Модель для распознавания изображений (дефолт). В приложении выбор перекрывается
-# настройкой vision_model («Knihovna»); эта константа — дефолт для CLI/функций.
+# Default vision model. The app overrides it with the vision_model
+# setting; this constant is the default for the CLI and direct calls.
 VISION_MODEL = "gpt-5.4-mini"
 
-# Промпт для vision-описания чертёжной страницы (целый лист = одна картинка).
-# Задача — не «что видно», а НАСЫЩЕННЫЙ поисковый паспорт листа: из росписки
-# (razítko) вытаскиваем максимум идентифицирующих терминов (тип объекта,
-# инвестор, год, стадия, новостройка/реконструкция), которые помогают и
-# полнотекстовому (BM25), и векторному поиску отличить этот лист от чужого.
+# Prompt for the vision passport of a drawing page (whole sheet = one
+# image). The goal is not "what is visible" but a SEARCH-RICH passport:
+# the title block (razítko) yields identifying terms (object type,
+# investor, year, stage, new build vs reconstruction) that help both BM25
+# and the vector search tell this sheet from others.
 DRAWING_PROMPT = """Jsi expert na stavební, mostní a železniční dokumentaci.
 Na obrázku je jeden list výkresové dokumentace stavebního projektu (v ČR).
 
@@ -60,16 +60,8 @@ Nepřidávej žádný text mimo JSON.
 
 
 def encode_image_to_base64(image_path: str | Path) -> str:
-    """
-    Читает файл картинки и кодирует его в строку base64.
-
-    OpenAI API принимает картинки не как файлы, а как текст в формате base64
-    (это способ представить двоичные данные обычными символами).
-    """
+    """Read an image file and encode it as base64 (how OpenAI takes images)."""
     with open(image_path, "rb") as f:
-        # f.read() — двоичное содержимое файла
-        # base64.b64encode — кодирует его в base64
-        # .decode("utf-8") — превращает байты в обычную строку
         return base64.b64encode(f.read()).decode("utf-8")
 
 
@@ -78,25 +70,16 @@ def ask_vision(
     prompt: str,
     model: str = VISION_MODEL,
 ) -> tuple[str, int, int]:
+    """One vision request: image + text prompt.
+
+    Returns (answer_text, prompt_tokens, completion_tokens); token counts
+    feed the cost accounting. content can be None (model refusal/filter)
+    — "" is returned instead of crashing, callers handle empty answers.
     """
-    Отправляет один запрос в vision LLM: картинка + текстовый промпт.
+    client = OpenAI()  # finds the key in OPENAI_API_KEY
 
-    Возвращает кортеж (текст_ответа, prompt_tokens, completion_tokens).
-    Токены нужны для подсчёта стоимости вызова (см. pricing.py).
-
-    image_path — путь к PNG-скриншоту страницы.
-    prompt     — текстовая инструкция для модели.
-    model      — id модели; по умолчанию VISION_MODEL. Параметр нужен,
-                 чтобы сравнивать модели на одной картинке (VL-тест).
-    """
-    # Клиент сам найдёт ключ в переменной окружения OPENAI_API_KEY
-    client = OpenAI()
-
-    # Кодируем картинку в base64
     base64_image = encode_image_to_base64(image_path)
 
-    # Формируем запрос. content — это список из двух частей:
-    # текстовая инструкция и картинка.
     response = client.chat.completions.create(
         model=model,
         messages=[
@@ -113,10 +96,6 @@ def ask_vision(
         ],
     )
 
-    # OpenAI возвращает использованные токены в response.usage.
-    # prompt_tokens включает токены и текста, и картинки.
-    # content бывает None (отказ/фильтр модели) — отдаём "" вместо падения,
-    # вызывающие и так умеют жить с пустым ответом.
     return (
         response.choices[0].message.content or "",
         response.usage.prompt_tokens,
@@ -125,24 +104,17 @@ def ask_vision(
 
 
 def get_page_context(document: dict, page_number: int) -> dict:
-    """
-    Собирает контекст одной страницы для отправки в vision LLM.
+    """Context of one page for the vision LLM.
 
-    Возвращает словарь с тремя ключами:
-      - blocks: все блоки страницы (по порядку);
-      - prev_page_text: текст предыдущей страницы (или пустая строка);
-      - next_page_text: текст следующей страницы (или пустая строка).
+    Returns {"blocks": page blocks in order, "prev_page_text": ...,
+    "next_page_text": ...} (empty strings at the edges).
     """
-    # Превращаем список страниц в словарь {номер: страница} для быстрого доступа
     pages_by_number = {p["page_number"]: p for p in document["pages"]}
 
     current_page = pages_by_number.get(page_number)
     if current_page is None:
-        # Такой страницы нет — возвращаем пустой контекст
         return {"blocks": [], "prev_page_text": "", "next_page_text": ""}
 
-    # Текст соседних страниц. .get(..., {}) — если соседа нет,
-    # берём пустой словарь, чтобы следующий .get не упал.
     prev_page = pages_by_number.get(page_number - 1, {})
     next_page = pages_by_number.get(page_number + 1, {})
 
@@ -154,21 +126,19 @@ def get_page_context(document: dict, page_number: int) -> dict:
 
 
 def build_vision_prompt(page_context: dict) -> str:
-    """
-    Строит текстовый промпт для vision LLM на основе контекста страницы.
+    """Build the vision prompt from the page context.
 
-    Промпт на чешском: модель работает с чешским документом,
-    описания тоже нужны чешские.
+    The prompt is Czech: the model reads a Czech document and the
+    descriptions must be Czech too.
     """
     blocks = page_context["blocks"]
     prev_text = page_context["prev_page_text"]
     next_text = page_context["next_page_text"]
 
-    # Блоки страницы — отдаём модели как JSON-текст, чтобы она видела
-    # структуру: какой блок за каким идёт, где текст, где схема.
+    # Page blocks go in as JSON text so the model sees the structure:
+    # which block follows which, where text is, where a scheme is.
     blocks_json = json.dumps(blocks, ensure_ascii=False, indent=2)
 
-    # Собираем промпт по частям. f-строки подставляют переменные в текст.
     prompt = f"""Jsi expert na stavební a technickou dokumentaci.
 
 Na obrázku je jedna strana technické normy. Níže je seznam všech bloků
@@ -207,53 +177,45 @@ Příklad formátu odpovědi:
 
 
 def parse_vision_response(raw_text: str) -> list[dict]:
-    """
-    Разбирает текстовый ответ модели в список словарей.
+    """Parse the model's text answer into a list of dicts.
 
-    Модель должна вернуть JSON-массив [{block_id, description}, ...],
-    но иногда оборачивает его в markdown (```json ... ```).
-    Эта функция чистит обёртку и парсит JSON.
-
-    При неудаче возвращает пустой список (не роняем всю программу
-    из-за одной кривой страницы).
+    The model should return a JSON array [{block_id, description}, ...]
+    but sometimes wraps it in markdown (```json ... ```). On failure an
+    empty list is returned — one bad page must not crash the program.
     """
     text = raw_text.strip()
 
-    # Убираем markdown-обёртку ```json ... ``` если она есть
     if text.startswith("```"):
-        # Разбиваем по строкам, выкидываем первую (```json) и последнюю (```)
         lines = text.split("\n")
-        lines = lines[1:]  # убрать первую строку
+        lines = lines[1:]
         if lines and lines[-1].strip() == "```":
-            lines = lines[:-1]  # убрать последнюю строку
+            lines = lines[:-1]
         text = "\n".join(lines)
 
-    # Пытаемся разобрать JSON
     try:
         result = json.loads(text)
     except json.JSONDecodeError:
-        # Модель вернула что-то не похожее на JSON
-        print("  [!] Не удалось разобрать ответ модели как JSON")
+        print("  [!] Could not parse the model answer as JSON")
         return []
 
-    # Подстраховка: ожидаем именно список
     if not isinstance(result, list):
-        print("  [!] Ответ модели не является списком")
+        print("  [!] The model answer is not a list")
         return []
 
     return result
 
 
-# Паузы между повторами vision-вызова (сек). Разовые сбои OpenAI живут
-# секунды — два мгновенных вызова ловят один и тот же сбой, пауза лечит.
+# Pauses between vision retries (seconds). Transient OpenAI hiccups live
+# for seconds — two instant calls hit the same hiccup; a pause heals it.
 RETRY_DELAYS = (2.0, 5.0)
 
 
 class VisionEmptyResponseError(Exception):
-    """Vision вернул пустой/битый ответ для страницы, где блоки есть.
+    """Vision returned an empty/broken answer for a page that has blocks.
 
-    HTTP 200, но content пустой (отказ модели) или не-JSON. Без этой ошибки
-    страница помечалась «описанной» и её схемы навсегда выпадали из индекса.
+    HTTP 200 with empty content (model refusal) or non-JSON. Without this
+    error the page was marked "described" and its schemes fell out of the
+    index forever.
     """
 
 
@@ -263,30 +225,23 @@ def describe_page_visuals(
     image_path: str | Path,
     model: str = VISION_MODEL,
 ) -> tuple[dict[str, str], int, int]:
-    """
-    Описывает все блоки figure/table на одной странице через vision LLM.
+    """Describe every figure/table block on one page via the vision LLM.
 
-    Возвращает кортеж (descriptions, prompt_tokens, completion_tokens).
-    descriptions — словарь {block_id: description}. Документ не меняет —
-    накопление и сохранение делает вызывающая сторона.
-
-    document     — словарь документа (только для чтения, нужен для контекста);
-    page_number  — номер обрабатываемой страницы;
-    image_path   — путь к PNG-скриншоту этой страницы.
+    Returns (descriptions, prompt_tokens, completion_tokens);
+    descriptions is {block_id: description}. The document is read-only —
+    accumulation and saving are the caller's job.
     """
-    # 1. Собираем контекст страницы
     page_context = get_page_context(document, page_number)
     if not page_context["blocks"]:
         return {}, 0, 0
 
-    # 2. Строим промпт
     prompt = build_vision_prompt(page_context)
 
-    # 3-5. Запрос и разбор. Пустой/битый ответ повторяем с паузами
-    # (RETRY_DELAYS): два мгновенных вызова попадали в одно окно сбоя OpenAI
-    # (живой случай 2026-08-02). Блоки на странице ЕСТЬ (проверка выше),
-    # поэтому пусто после всех попыток — сбой, а не «нечего описывать»:
-    # молча помечать такую страницу обработанной нельзя (№9 аудита).
+    # Retry empty/broken answers with pauses (RETRY_DELAYS): two instant
+    # calls used to land in the same OpenAI hiccup window (live case
+    # 2026-08-02). The page HAS blocks (checked above), so emptiness
+    # after all attempts is a failure, not "nothing to describe": marking
+    # such a page as processed silently is forbidden.
     prompt_tokens = completion_tokens = 0
     for attempt in range(len(RETRY_DELAYS) + 1):
         raw_answer, in_tok, out_tok = ask_vision(image_path, prompt, model=model)
@@ -307,7 +262,7 @@ def describe_page_visuals(
 
 
 def _strip_json_markdown(raw: str) -> str:
-    """Убирает markdown-обёртку ```json ... ``` вокруг ответа модели."""
+    """Strip a ```json ... ``` markdown wrapper around the model answer."""
     text = raw.strip()
     if text.startswith("```"):
         lines = text.split("\n")[1:]
@@ -317,10 +272,11 @@ def _strip_json_markdown(raw: str) -> str:
     return text
 
 
-# Поля паспорта листа и их чешские подписи (подпись сама — полезный термин).
-# "druh"/"objekt" — ведущая строка, "popis" — отдельным абзацем; здесь середина.
-# Точный штамп дублируется из OCR-текста чанка, но чистые значения из vision
-# лучше ложатся в поиск, чем шумный OCR.
+# Sheet-passport fields and their Czech labels (the label itself is a
+# useful search term). "druh"/"objekt" form the lead line, "popis" is a
+# separate paragraph; these are the middle. The exact title block is
+# duplicated by the chunk's OCR text, but clean vision values search
+# better than noisy OCR.
 _DRAWING_META_LABELS = (
     ("nazev", "Název výkresu"),
     ("stavba", "Stavba"),
@@ -331,10 +287,11 @@ _DRAWING_META_LABELS = (
 )
 
 
-# Обор конструкции по инвестору из росписки. Vision путает обор (пишет
-# «železniční» у silničního mostu), хотя инвестора читает верно — выводим
-# обор детерминированно из инвестора, как ступень из текста. Длинное имя
-# впереди, чтобы оно сработало раньше аббревиатуры.
+# Discipline derived from the investor in the title block. Vision
+# confuses the discipline (writes "železniční" for a road bridge) while
+# reading the investor correctly — so the discipline is derived
+# deterministically, like the stage from text. Long names first so they
+# match before abbreviations.
 _OBOR_BY_INVESTOR = (
     ("správa železnic", "železniční"),
     ("české dráhy", "železniční"),
@@ -344,7 +301,7 @@ _OBOR_BY_INVESTOR = (
 
 
 def obor_from_investor(investor: str) -> str:
-    """Обор (železniční/silniční) по инвестору из росписки. Неизвестный → ""."""
+    """Discipline (železniční/silniční) from the investor; unknown → ""."""
     low = investor.lower()
     for needle, obor in _OBOR_BY_INVESTOR:
         if needle in low:
@@ -353,19 +310,20 @@ def obor_from_investor(investor: str) -> str:
 
 
 def _looks_meaningful(value: str) -> bool:
-    """True, если строка несёт инфу: есть слово из ≥3 букв или число из ≥2 цифр.
+    """True when the string carries information: a word of ≥3 letters or a
+    number of ≥2 digits.
 
-    Отсекает мусор vision вроде `km "` (у нечитаемого поля модель выдаёт огрызок).
+    Filters vision junk like `km "` (unreadable fields produce stubs).
     """
     return bool(re.search(r"[^\W\d_]{3,}", value) or re.search(r"\d{2,}", value))
 
 
 def _assemble_drawing_description(meta: dict) -> str:
-    """Собирает поисковый паспорт листа (см. DRAWING_PROMPT).
+    """Assemble the sheet's search passport (see DRAWING_PROMPT).
 
-    Ведущая строка — обор (из инвестора) + тип конструкции + объект (самые
-    важные термины впереди), затем факты из росписки с подписями, в конце —
-    конкретное описание элементов (popis). Пустые/мусорные поля пропускаем.
+    Lead line: discipline (from investor) + construction type + object
+    (most important terms first), then labeled title-block facts, then
+    the concrete element description (popis). Empty/junk fields skipped.
     """
     druh = (meta.get("druh") or "").strip()
     obor = obor_from_investor(meta.get("investor") or "")
@@ -390,15 +348,15 @@ def _assemble_drawing_description(meta: dict) -> str:
 def describe_drawing(
     image_path: str | Path, model: str = VISION_MODEL
 ) -> tuple[str, int, int]:
-    """Vision-описание чертёжной страницы — насыщенный поисковый паспорт листа.
+    """Vision description of a drawing page — a search-rich sheet passport.
 
-    Возвращает (текст_описания, prompt_tokens, completion_tokens). Токены —
-    для подсчёта стоимости вызывающим (как в остальных функциях модуля).
-    Битый/пустой ответ повторяем один раз — разовые сбои vision самочинятся.
+    Returns (description_text, prompt_tokens, completion_tokens).
+    Broken/empty answers retry with pauses (RETRY_DELAYS).
 
-    Из росписки тянем максимум идентифицирующих полей (тип объекта, инвестор,
-    год, стадия, локация…) — чтобы лист хорошо отличался и в BM25, и в векторе.
-    Название/текстовый слой сюда НЕ кладём: они добираются отдельно (OCR).
+    The title block yields as many identifying fields as possible (object
+    type, investor, year, stage, location…) so the sheet stands out in
+    both BM25 and the vector. The title/text layer is NOT included here —
+    it arrives separately (OCR).
     """
     meta: dict = {}
     prompt_tokens = completion_tokens = 0
@@ -423,14 +381,11 @@ def describe_drawing(
 def extract_document_metadata(
     image_path: str | Path, model: str = VISION_MODEL
 ) -> tuple[dict, int, int]:
-    """
-    Извлекает название и краткое описание документа по его первой странице.
+    """Extract the document title and short summary from its first page.
 
-    Возвращает кортеж (meta, prompt_tokens, completion_tokens).
-    meta — словарь с ключами 'title' и 'summary'.
-
-    При неудаче разбора возвращает пустые строки в meta, но токены — реальные
-    (запрос всё равно был сделан).
+    Returns (meta, prompt_tokens, completion_tokens); meta has 'title'
+    and 'summary'. On parse failure meta holds empty strings but the
+    token counts are real (the request did happen).
     """
     prompt = """Jsi expert na stavební a technickou dokumentaci.
 
@@ -452,8 +407,7 @@ Příklad formátu:
         image_path, prompt, model=model
     )
 
-    # Разбираем ответ. Здесь ожидаем не список, а один объект,
-    # поэтому parse_vision_response не подходит — парсим отдельно.
+    # A single object is expected here, not a list — parsed separately.
     text = raw_answer.strip()
     if text.startswith("```"):
         lines = text.split("\n")[1:]
@@ -464,10 +418,9 @@ Příklad formátu:
     try:
         data = json.loads(text)
     except json.JSONDecodeError:
-        print("  [!] Не удалось разобрать метаданные документа")
+        print("  [!] Could not parse the document metadata")
         return {"title": "", "summary": ""}, prompt_tokens, completion_tokens
 
-    # Берём поля с подстраховкой — если модель что-то не вернула
     meta = {
         "title": data.get("title", ""),
         "summary": data.get("summary", ""),
