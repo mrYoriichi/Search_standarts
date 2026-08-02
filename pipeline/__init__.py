@@ -1,1 +1,1 @@
-"""4 этапа обработки одного PDF: parse → describe → chunk → embed."""
+"""The 4 stages of processing one PDF: parse → describe → chunk → embed."""

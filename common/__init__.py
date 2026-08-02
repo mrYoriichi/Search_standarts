@@ -1,1 +1,1 @@
-"""Общие утилиты пайплайна и бэкенда: атомарный JSON, цены OpenAI."""
+"""Shared utilities: atomic JSON writes, OpenAI prices."""

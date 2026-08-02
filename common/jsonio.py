@@ -1,8 +1,9 @@
-"""Атомарная запись JSON: сначала во временный файл, потом переименование.
+"""Atomic JSON writes: write to a temp file, then rename.
 
-os.replace внутри одной папки атомарен — читатель никогда не увидит
-наполовину записанный файл. Важно для общей сетевой папки .search_index:
-обрыв записи оставит максимум мусорный *.tmp, но не битый индекс.
+os.replace within one directory is atomic — a reader never sees a
+half-written file. This matters for the shared network `.search_index`
+folder: an interrupted write leaves at most a stray *.tmp, never a
+corrupted index.
 """
 
 import json
@@ -12,15 +13,16 @@ from pathlib import Path
 
 
 def save_json_atomic(path: Path, data: object) -> None:
-    """Записывает data в path через временный файл в той же папке."""
-    # Имя tmp уникально для каждого писателя: общий tmp (`X.tmp`) позволял
-    # двум машинам в сетевой папке «увести» файл из-под os.replace соперника.
+    """Write data to path via a temp file in the same directory."""
+    # The tmp name is unique per writer: a shared name (`X.tmp`) let two
+    # machines on a network share steal the file from under each other's
+    # os.replace.
     tmp = path.with_suffix(f"{path.suffix}.{uuid.uuid4().hex}.tmp")
     try:
         with open(tmp, "w", encoding="utf-8") as f:
-            # ensure_ascii=False — чешские символы сохраняются как есть
+            # ensure_ascii=False keeps Czech characters readable.
             json.dump(data, f, ensure_ascii=False, indent=2)
         os.replace(tmp, path)
     except Exception:
-        tmp.unlink(missing_ok=True)  # упавшая запись не копит мусорные tmp
+        tmp.unlink(missing_ok=True)  # a failed write must not pile up tmp files
         raise

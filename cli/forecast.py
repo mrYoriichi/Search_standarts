@@ -1,13 +1,11 @@
-"""
-Прогноз стоимости обработки PDF БЕЗ обращения к LLM.
+"""Processing-cost forecast for a PDF WITHOUT calling the LLM.
 
-Запускает Docling-парсинг (локально, бесплатно), считает страницы и блоки
-figure/table, умножает на средние цены из pricing.py (заполнены после
-реального замера на MVL649 и TP_107).
+Runs Docling parsing locally (free), counts pages and figure/table
+blocks, multiplies by the measured averages from common/pricing.py.
 
-Использование:
-    python forecast.py path/to/some.pdf      # прогноз для одного файла
-    python forecast.py path/to/folder/       # суммарный прогноз по всем PDF в папке
+Usage:
+    python -m cli.forecast path/to/some.pdf   # one file
+    python -m cli.forecast path/to/folder/    # every PDF in a folder
 """
 
 import sys
@@ -22,12 +20,8 @@ from common.pricing import AVG_VISION_COST_PER_IMAGE_PAGE, AVG_EMBEDDING_COST_PE
 
 
 def parse_for_forecast(pdf_path: str) -> dict:
-    """
-    Лёгкий парсинг PDF: без генерации скриншотов страниц.
-    Достаточно для подсчёта числа страниц и страниц с figure/table.
-    """
+    """Light parse without page screenshots — enough for the page counts."""
     pipeline_options = PdfPipelineOptions()
-    # Для прогноза скриншоты не нужны — экономим время на больших папках.
     pipeline_options.generate_page_images = False
 
     converter = DocumentConverter(
@@ -41,7 +35,7 @@ def parse_for_forecast(pdf_path: str) -> dict:
 
 
 def count_pages_and_visuals(document: dict) -> tuple[int, int]:
-    """Возвращает (total_pages, pages_with_figure_or_table)."""
+    """Return (total_pages, pages_with_figure_or_table)."""
     total = len(document["pages"])
     visuals = 0
     for page in document["pages"]:
@@ -52,7 +46,7 @@ def count_pages_and_visuals(document: dict) -> tuple[int, int]:
 
 
 def forecast_one(pdf_path: Path) -> tuple[int, int, float]:
-    """Возвращает (total_pages, pages_with_visuals, predicted_usd) для одного PDF."""
+    """Return (total_pages, pages_with_visuals, predicted_usd) for one PDF."""
     document = parse_for_forecast(str(pdf_path))
     total, visuals = count_pages_and_visuals(document)
     cost = (
@@ -63,16 +57,16 @@ def forecast_one(pdf_path: Path) -> tuple[int, int, float]:
 
 def main() -> None:
     if len(sys.argv) < 2:
-        print("Использование: python forecast.py <path-to-pdf-or-folder>")
+        print("Usage: python -m cli.forecast <path-to-pdf-or-folder>")
         sys.exit(1)
 
     if AVG_VISION_COST_PER_IMAGE_PAGE is None or AVG_EMBEDDING_COST_PER_PAGE is None:
-        print("[!] В pricing.py не заданы средние цены. Сначала запусти замер.")
+        print("[!] Averages missing in pricing.py — run the measurement first.")
         sys.exit(1)
 
     target = Path(sys.argv[1])
     if not target.exists():
-        print(f"[!] Путь не существует: {target}")
+        print(f"[!] Path does not exist: {target}")
         sys.exit(1)
 
     if target.is_dir():
@@ -82,27 +76,27 @@ def main() -> None:
 
 
 def forecast_single(pdf_path: Path) -> None:
-    """Прогноз для одного PDF."""
+    """Forecast for one PDF."""
     total, visuals, cost = forecast_one(pdf_path)
     vision_cost = visuals * AVG_VISION_COST_PER_IMAGE_PAGE
     emb_cost = total * AVG_EMBEDDING_COST_PER_PAGE
     print(f"PDF: {pdf_path.name}")
-    print(f"  Страниц всего:    {total}")
-    print(f"  С figure/table:   {visuals}")
-    print("  Прогноз стоимости:")
+    print(f"  Pages total:      {total}")
+    print(f"  With figure/table: {visuals}")
+    print("  Cost forecast:")
     print(f"    vision:         ~${vision_cost:.4f}")
     print(f"    embeddings:     ~${emb_cost:.4f}")
-    print(f"    ИТОГО:          ~${cost:.4f}")
+    print(f"    TOTAL:          ~${cost:.4f}")
 
 
 def forecast_folder(folder: Path) -> None:
-    """Суммарный прогноз по всем PDF в папке."""
+    """Combined forecast for every PDF in a folder."""
     pdfs = sorted(folder.glob("*.pdf"))
     if not pdfs:
-        print(f"В {folder} не найдено PDF-файлов.")
+        print(f"No PDF files found in {folder}.")
         sys.exit(1)
 
-    print(f"Найдено PDF: {len(pdfs)}\n")
+    print(f"PDFs found: {len(pdfs)}\n")
 
     total_pages_all = 0
     total_visuals_all = 0
@@ -114,21 +108,21 @@ def forecast_folder(folder: Path) -> None:
         try:
             total, visuals, cost = forecast_one(pdf)
         except Exception as e:
-            print(f"[!] ошибка: {e}")
+            print(f"[!] error: {e}")
             failures += 1
             continue
-        print(f"{total} стр., {visuals} с figure/table → ~${cost:.2f}")
+        print(f"{total} p., {visuals} with figure/table → ~${cost:.2f}")
         total_pages_all += total
         total_visuals_all += visuals
         total_cost_all += cost
 
-    print("\n=== ИТОГ ===")
-    print(f"  Обработано:               {len(pdfs) - failures} / {len(pdfs)}")
+    print("\n=== TOTAL ===")
+    print(f"  Processed:       {len(pdfs) - failures} / {len(pdfs)}")
     if failures:
-        print(f"  Ошибок:                   {failures}")
-    print(f"  Всего страниц:            {total_pages_all}")
-    print(f"  С figure/table:           {total_visuals_all}")
-    print(f"  Прогнозируемая стоимость: ~${total_cost_all:.2f}")
+        print(f"  Failures:        {failures}")
+    print(f"  Pages total:     {total_pages_all}")
+    print(f"  With figure/table: {total_visuals_all}")
+    print(f"  Predicted cost:  ~${total_cost_all:.2f}")
 
 
 if __name__ == "__main__":

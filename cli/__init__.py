@@ -1,1 +1,1 @@
-"""CLI-сценарии для запуска из терминала (не попадают в .exe-логику)."""
+"""CLI scripts for terminal use (not part of the .exe logic)."""
