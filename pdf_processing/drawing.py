@@ -1,9 +1,9 @@
-"""Обработка чертёжной страницы без vision: текст = текстовый слой + OCR.
+"""Drawing-page processing without vision: text = text layer + OCR.
 
-У опубликованных чертежей текстовый слой часто пуст (текст сплющён в кривые)
-или частично битый (формуляр рамки) — OCR добирает то, чего в слое нет.
-Оба источника склеиваем; чистку от дублей/шума пока не делаем (YAGNI,
-померим на eval).
+Published drawings often have an empty text layer (text flattened into
+curves) or a partially broken one (title-block form) — OCR recovers what
+the layer misses. Both sources are concatenated; dedup/noise cleanup is
+deliberately skipped (YAGNI, to be measured on the eval).
 """
 
 import re
@@ -12,14 +12,14 @@ import pypdfium2 as pdfium
 
 from pdf_processing.pdfium_lock import PDFIUM_LOCK
 
-# Длинная сторона рендера для OCR. 2200 px хватило на большом CAD-листе
-# (проверено живьём); тот же размер, что в sheet-пайплайне архива.
+# Long render side for OCR. 2200 px proved enough on a large CAD sheet
+# (checked live).
 RENDER_MAX_SIDE_PX = 2200
 
-# Известные ступени проектной документации (чешские). Длинные коды впереди,
-# чтобы «DSPS» не срабатывал как «DSP». Штамп чертежа пишет ступень дословно,
-# поэтому ищем готовое слово в тексте листа, а не гадаем по картинке (vision
-# путает ступень с соседними кодами вроде D.2.1.4).
+# Known Czech design-documentation stages. Longer codes first so "DSPS"
+# does not match as "DSP". The drawing title block spells the stage out,
+# so we look for the literal word in the sheet text instead of guessing
+# from the image (vision confuses stages with nearby codes like D.2.1.4).
 _STUPEN_CODES = (
     "DSPS",
     "PDPS",
@@ -37,27 +37,26 @@ _STUPEN_RE = re.compile(r"\b(" + "|".join(_STUPEN_CODES) + r")\b")
 
 
 def extract_stupen(text: str) -> str:
-    """Ступень проектной документации из текста листа (текстовый слой + OCR).
+    """Design-documentation stage from the sheet text (layer + OCR).
 
-    Возвращает первый найденный код (DSP, DÚR, PDPS…) как целое слово или "".
-    Штамп пишет ступень буквами — берём готовое слово, не угадываем по картинке.
+    Returns the first code found (DSP, DÚR, PDPS…) as a whole word, or "".
     """
     match = _STUPEN_RE.search(text)
     return match.group(1) if match else ""
 
 
 def build_drawing_text(layer_text: str, ocr_text: str) -> str:
-    """Текст чанка чертёжной страницы из текстового слоя PDF и OCR.
+    """Chunk text of a drawing page from the PDF text layer and OCR.
 
-    Непустые источники склеиваем через пустую строку; оба пустые → "".
+    Non-empty sources joined by a blank line; both empty → "".
     """
     parts = [p.strip() for p in (layer_text, ocr_text) if p and p.strip()]
     return "\n\n".join(parts)
 
 
 def read_drawing_page(page: "pdfium.PdfPage") -> str:
-    """Полный текст чертёжной страницы: текстовый слой + OCR рендера."""
-    # Импорт здесь — OCR-движок тяжёлый, не грузим при импорте модуля.
+    """Full text of a drawing page: text layer + OCR of the render."""
+    # Imported here — the OCR engine is heavy, not loaded at module import.
     from pdf_processing.ocr import ocr_image
 
     with PDFIUM_LOCK:
@@ -65,17 +64,17 @@ def read_drawing_page(page: "pdfium.PdfPage") -> str:
         width, height = page.get_size()
         scale = RENDER_MAX_SIDE_PX / max(width, height)
         image = page.render(scale=scale).to_pil()
-    # OCR — вне замка: он медленный и pdfium не трогает.
+    # OCR outside the lock: it is slow and does not touch pdfium.
     return build_drawing_text(layer, ocr_image(image))
 
 
 def insert_drawing_pages(document: dict, pdf_path: str, page_types: list[str]) -> None:
-    """Вставляет чертёжные страницы (OCR) в document на их места по номеру.
+    """Insert drawing pages (OCR) into the document at their positions.
 
-    Прозаические страницы уже разобраны Docling и лежат в document. Чертёжные
-    Docling не видел — читаем их OCR'ом здесь и собираем итоговый список страниц
-    в правильном порядке (проза + чертежи). Прозаические страницы, которых
-    Docling не нашёл (пустые), пропускаем.
+    Prose pages were already parsed by Docling and sit in the document.
+    Docling never saw the drawing pages — they are read via OCR here and
+    the final page list is assembled in the correct order (prose +
+    drawings). Prose pages Docling did not produce (blank) are skipped.
     """
     import pypdfium2 as pdfium
 

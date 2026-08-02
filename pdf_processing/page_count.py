@@ -1,4 +1,4 @@
-"""Число страниц PDF — под общим замком PDFium (см. pdfium_lock)."""
+"""PDF page count — under the shared PDFium lock (see pdfium_lock)."""
 
 from pathlib import Path
 
@@ -8,10 +8,10 @@ from pdf_processing.pdfium_lock import PDFIUM_LOCK
 
 
 def count_pages(pdf_path: Path) -> int:
-    """Число страниц PDF (для UI и лимита) + бесплатный отсев битых файлов.
+    """Page count of a PDF (for the UI and the page limit) + a free
+    check that weeds out broken files.
 
-    Кидает исключение, если файл не открывается как PDF, —
-    обрабатывает вызывающий.
+    Raises when the file cannot be opened as a PDF — the caller handles it.
     """
     with PDFIUM_LOCK:
         doc = pdfium.PdfDocument(pdf_path)

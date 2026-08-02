@@ -1,13 +1,15 @@
-"""Общий замок всех вызовов PDFium.
+"""Shared lock for all PDFium calls.
 
-PDFium не потокобезопасна, а мы зовём её из нескольких потоков сразу:
-3 воркера пайплайна, скан архива, рендер страниц сильного поиска.
-Параллельные вызовы изредка роняют весь процесс без Python-traceback.
+PDFium is not thread-safe, and we call it from several threads at once:
+3 pipeline workers, the archive scan, strong-search page rendering.
+Concurrent calls occasionally crash the whole process without a Python
+traceback.
 
-Замок берём у Docling: его конвертер рендерит через pypdfium2 под своим
-threading.Lock, и наши вызовы должны сериализоваться С НИМ, а не только
-между собой. Если Docling переложит внутренний модуль — откат на свой
-Lock (защита наших потоков останется, тест test_pdfium_lock это поймает).
+The lock is borrowed from Docling: its converter renders through
+pypdfium2 under its own threading.Lock, and our calls must serialize
+WITH it, not just among themselves. If Docling ever moves the internal
+module we fall back to our own Lock (our threads stay protected;
+test_pdfium_lock catches the change).
 """
 
 import threading

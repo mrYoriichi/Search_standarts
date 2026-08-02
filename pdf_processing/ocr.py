@@ -1,11 +1,12 @@
-"""OCR картинки через RapidOCR — локально, без затрат на API.
+"""Image OCR via RapidOCR — local, no API cost.
 
-Нужен для ветки «чертёж»: у опубликованных чертежей текст сплющён в кривые
-или отсутствует (скан), OCR — единственный источник текста.
+Needed for the drawing branch: published drawings have their text
+flattened into curves or none at all (scans), so OCR is the only text
+source.
 
-RapidOCR тяжёлый (движок onnxruntime грузит модели) — импортируем и создаём
-движок ЛЕНИВО, один раз на процесс. В сборку .exe движок входит через
-build.spec; в dev-venv: `pip install onnxruntime`.
+RapidOCR is heavy (the onnxruntime engine loads models) — imported and
+created LAZILY, once per process. The .exe bundles the engine via
+build.spec; in a dev venv: `pip install onnxruntime`.
 """
 
 import threading
@@ -14,13 +15,14 @@ import numpy as np
 from PIL import Image
 
 _engine = None
-# Документы индексируются в несколько потоков; без лока они создавали движок
-# параллельно, и на Windows одновременное чтение .onnx падало с "error 13".
+# Documents index on several threads; without the lock they created the
+# engine concurrently, and parallel reads of the same .onnx files failed
+# on Windows with "error 13".
 _engine_lock = threading.Lock()
 
 
 def _get_engine():
-    """Ленивый синглтон движка RapidOCR (модели грузятся один раз)."""
+    """Lazy RapidOCR engine singleton (models load once)."""
     global _engine
     with _engine_lock:
         if _engine is None:
@@ -31,10 +33,10 @@ def _get_engine():
 
 
 def _extract_text(result) -> str:
-    """Достаёт текст из ответа RapidOCR, сшивая фрагменты через пробел.
+    """Pull text out of a RapidOCR result, joining fragments with spaces.
 
-    Поддерживает оба формата API: новый объект с полем `.txts` и старый
-    кортеж `([[box, text, score], ...], elapse)`. Пусто → пустая строка.
+    Supports both API shapes: the new object with `.txts` and the old
+    `([[box, text, score], ...], elapse)` tuple. Empty → empty string.
     """
     if result is None:
         return ""
@@ -47,6 +49,6 @@ def _extract_text(result) -> str:
 
 
 def ocr_image(image: Image.Image) -> str:
-    """Распознаёт текст на картинке → одна строка (фрагменты через пробел)."""
+    """Recognize text in an image → one line (fragments space-joined)."""
     arr = np.array(image.convert("RGB"))
     return _extract_text(_get_engine()(arr))
