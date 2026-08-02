@@ -94,9 +94,9 @@ SECTION_NUMBER_PATTERN = re.compile(r"^(\d+(?:\.\d+)*)")
 def parse_heading_number(text: str) -> tuple[str | None, int | None]:
     """Extract the section number and level from a heading.
 
-      "7  Konstrukční zásady"  -> ("7", 1)
-      "7.12  Zábradlí"         -> ("7.12", 2)
-      "Seznam zkratek"         -> (None, None)   # unnumbered
+    "7  Konstrukční zásady"  -> ("7", 1)
+    "7.12  Zábradlí"         -> ("7.12", 2)
+    "Seznam zkratek"         -> (None, None)   # unnumbered
     """
     if not text:
         return None, None
