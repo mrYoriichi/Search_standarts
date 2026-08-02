@@ -1,4 +1,4 @@
-"""Pydantic-схемы для эндпоинтов модуля settings."""
+"""Pydantic schemas for the settings endpoints."""
 
 from typing import Literal
 
@@ -6,62 +6,62 @@ from pydantic import BaseModel
 
 
 class LibraryPathResponse(BaseModel):
-    """Текущий путь к папке библиотеки. None — путь не задан."""
+    """Current library folder path. None — not set."""
 
     path: str | None
 
 
 class LibraryPathRequest(BaseModel):
-    """Установить путь к папке библиотеки."""
+    """Set the library folder path."""
 
     path: str
 
 
 class LibraryPathsResponse(BaseModel):
-    """Список папок библиотеки."""
+    """The list of library folders."""
 
     paths: list[str]
 
 
 class LibraryPathUpdate(BaseModel):
-    """Заменить папку в списке: старый путь → новый (правка)."""
+    """Replace a folder in the list: old path → new (edit)."""
 
     old_path: str
     new_path: str
 
 
 class OpenAIKeyStatus(BaseModel):
-    """Статус ключа OpenAI. Полный ключ наружу не отдаём — только хвост."""
+    """OpenAI key status. The full key never leaves — only the tail."""
 
     is_set: bool
     masked: str | None
 
 
 class OpenAIKeyRequest(BaseModel):
-    """Установить ключ OpenAI."""
+    """Set the OpenAI key."""
 
     key: str
 
 
 class VisionModelSetting(BaseModel):
-    """Vision-модель для обработки документов (рычаг стоимости)."""
+    """Vision model for document processing (the cost lever)."""
 
     model: str
 
 
 class DescribeImagesSetting(BaseModel):
-    """Тумблер описания картинок vision. False = «Без LLM» (бесплатно)."""
+    """Vision description toggle. False = "No LLM" (free)."""
 
     enabled: bool
 
 
 class UiLanguageSetting(BaseModel):
-    """Язык интерфейса — бэкенд использует его для текстов ошибок."""
+    """Interface language — the backend uses it for error texts."""
 
     language: Literal["cs", "en", "de"]
 
 
 class AnswerLanguageSetting(BaseModel):
-    """Язык ответа LLM — настройка в профиле, независим от языка UI."""
+    """LLM answer language — a profile setting, independent of the UI."""
 
     language: Literal["cs", "en", "de"]

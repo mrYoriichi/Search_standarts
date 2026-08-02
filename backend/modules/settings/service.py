@@ -1,4 +1,4 @@
-"""Бизнес-логика модуля settings."""
+"""Business logic of the settings module."""
 
 import json
 import os
@@ -8,49 +8,51 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from backend.core import library_cache, ui_messages
+from backend.core.ui_messages import msg
 from backend.modules.settings.models import Setting
 
 
-LIBRARY_PATH_KEY = "library_path"  # легаси: одна папка (мигрируем в список ниже)
-# Список папок библиотеки (JSON). Пришёл на смену единственному library_path:
-# юзер может подключить несколько папок сразу (свои нормы + папка фирмы).
+LIBRARY_PATH_KEY = "library_path"  # legacy: single folder (migrated to the list)
+# Library folder list (JSON). Replaced the single library_path: the user
+# can attach several folders at once (own norms + a company folder).
 LIBRARY_PATHS_KEY = "library_paths"
-# Папка архива проектов юзера (личный пул). Структура: {проект}/.../файл.pdf,
-# проект = папка первого уровня. См. модуль projects.
-PROJECTS_PATH_KEY = "projects_library_path"  # легаси: одна папка → список ниже
+# The user's project-archive folders. Structure: {project}/.../file.pdf,
+# project = the attached folder. See the projects module.
+PROJECTS_PATH_KEY = "projects_library_path"  # legacy: single folder → list
 PROJECTS_PATHS_KEY = "projects_library_paths"
-# Vision-модель для обработки документов (рычаг стоимости: vision ~99% цены дока).
-# Дефолт совпадает с VISION_MODEL в pdf_processing/image_description.py.
+# Vision model for document processing (the cost lever: vision is ~99% of
+# a document's price). Default matches VISION_MODEL in
+# pdf_processing/image_description.py.
 VISION_MODEL_KEY = "vision_model"
 VISION_MODELS = ("gpt-5.5", "gpt-5.4-mini")
-DEFAULT_VISION_MODEL = "gpt-5.4-mini"  # дешевле; gpt-5.5 — по выбору в «Knihovna»
-# Тумблер vision при обработке: ВКЛ (дефолт) = Стандарт (описываем схемы и
-# чертежи), ВЫКЛ = «Без LLM» (только OCR/текст, бесплатно). Хранится как "1"/"0".
+DEFAULT_VISION_MODEL = "gpt-5.4-mini"  # cheaper; gpt-5.5 by choice in the UI
+# Vision toggle: ON (default) = Standard (describe schemes and drawings),
+# OFF = "No LLM" (OCR/text only, free). Stored as "1"/"0".
 DESCRIBE_IMAGES_KEY = "describe_images"
 OPENAI_KEY_KEY = "openai_api_key"
-# Язык интерфейса (cs/en/de): фронт шлёт при переключении, бэкенд использует
-# для текстов ошибок (backend/core/ui_messages.py). Дефолт — английский.
+# Interface language (cs/en/de): the frontend sends it on switch, the
+# backend uses it for error texts (backend/core/ui_messages.py).
 UI_LANGUAGE_KEY = "ui_language"
-# Язык ОТВЕТА LLM (cs/en/de) — настройка в профиле, независим от языка UI.
+# LLM ANSWER language (cs/en/de) — a profile setting, independent of the UI.
 ANSWER_LANGUAGE_KEY = "answer_language"
 
 
 def _validate_dir(raw_path: str) -> Path:
-    """Нормализует пользовательскую строку пути в абсолютный путь к папке.
+    """Normalize a user-entered path string into an absolute folder path.
 
-    `~` и относительные пути разворачиваем через expanduser+resolve. Бросает
-    ValueError, если путь не существует или это не папка.
+    `~` and relative paths expand via expanduser+resolve. Raises
+    ValueError when the path does not exist or is not a folder.
     """
     path = Path(raw_path).expanduser().resolve()
     if not path.exists():
-        raise ValueError(f"Путь не существует: {path}")
+        raise ValueError(msg("settings.path_not_found", path=path))
     if not path.is_dir():
-        raise ValueError(f"Это не папка: {path}")
+        raise ValueError(msg("settings.not_a_dir", path=path))
     return path
 
 
 def _set_path(db: Session, key: str, raw_path: str) -> str:
-    """Валидирует и сохраняет путь-папку под ключом key. Общее для обеих библиотек."""
+    """Validate and store a folder path under `key`."""
     path = _validate_dir(raw_path)
 
     setting = db.scalar(select(Setting).where(Setting.key == key))
@@ -64,30 +66,30 @@ def _set_path(db: Session, key: str, raw_path: str) -> str:
 
 
 def get_library_path(db: Session) -> str | None:
-    """Возвращает текущий путь к папке библиотеки или None, если не задан."""
+    """Current library folder path, or None when not set."""
     setting = db.scalar(select(Setting).where(Setting.key == LIBRARY_PATH_KEY))
     return setting.value if setting else None
 
 
 def set_library_path(db: Session, raw_path: str) -> str:
-    """Сохраняет путь к папке библиотеки юзера.
+    """Store the user's library folder path.
 
-    Сбрасывает кеш поиска: индексы теперь лежат в <папка>/.search_index,
-    смена папки меняет и пул индексов.
+    Drops the search cache: indexes live in <folder>/.search_index, so a
+    folder change changes the index pool too.
     """
     path = _set_path(db, LIBRARY_PATH_KEY, raw_path)
     library_cache.invalidate()
     return path
 
 
-# --- Общая механика «список папок» (библиотека и архив устроены одинаково) ---
+# --- Shared "folder list" mechanics (library and archive work alike) ---
 
 
 def _get_path_list(db: Session, list_key: str, legacy_key: str | None) -> list[str]:
-    """Список папок под list_key. Пустой — ничего не задано.
+    """The folder list under list_key. Empty — nothing set.
 
-    Мигрирует со старого единственного пути под legacy_key: если списка ещё
-    нет, но легаси-путь задан — переносим его в список (один раз).
+    Migrates from the old single path under legacy_key: when the list
+    does not exist yet but the legacy path does, it is moved over (once).
     """
     setting = db.scalar(select(Setting).where(Setting.key == list_key))
     if setting and setting.value:
@@ -96,7 +98,7 @@ def _get_path_list(db: Session, list_key: str, legacy_key: str | None) -> list[s
             if isinstance(paths, list):
                 return [str(p) for p in paths]
         except (ValueError, TypeError):
-            pass  # битое значение — трактуем как «списка нет», попробуем миграцию
+            pass  # broken value — treat as "no list", try the migration
 
     if legacy_key is not None:
         legacy = db.scalar(select(Setting).where(Setting.key == legacy_key))
@@ -119,7 +121,7 @@ def _save_path_list(db: Session, list_key: str, paths: list[str]) -> None:
 def _add_to_path_list(
     db: Session, list_key: str, legacy_key: str | None, raw_path: str
 ) -> list[str]:
-    """Добавляет папку (валидирует существование). Дубли idempotent. Сброс кеша."""
+    """Add a folder (existence validated). Duplicates are idempotent."""
     path = str(_validate_dir(raw_path))
     paths = _get_path_list(db, list_key, legacy_key)
     if path not in paths:
@@ -132,7 +134,7 @@ def _add_to_path_list(
 def _remove_from_path_list(
     db: Session, list_key: str, legacy_key: str | None, raw_path: str
 ) -> list[str]:
-    """Убирает папку по нормализованному пути. Индексы на диске не трогаем."""
+    """Remove a folder by normalized path. Indexes on disk stay."""
     target = str(Path(raw_path).expanduser().resolve())
     paths = [p for p in _get_path_list(db, list_key, legacy_key) if p != target]
     _save_path_list(db, list_key, paths)
@@ -143,7 +145,7 @@ def _remove_from_path_list(
 def _update_in_path_list(
     db: Session, list_key: str, legacy_key: str | None, old_raw: str, new_raw: str
 ) -> list[str]:
-    """Правит путь папки на месте (сохраняет позицию, дедупит). Сброс кеша."""
+    """Edit a folder path in place (keeps position, dedupes)."""
     new_path = str(_validate_dir(new_raw))
     old_path = str(Path(old_raw).expanduser().resolve())
 
@@ -154,7 +156,7 @@ def _update_in_path_list(
         candidate = new_path if p == old_path else p
         if p == old_path:
             replaced = True
-        if candidate not in seen:  # дедуп, если new уже был в списке
+        if candidate not in seen:  # dedupe when `new` was already listed
             result.append(candidate)
             seen.add(candidate)
     if not replaced and new_path not in seen:
@@ -165,11 +167,11 @@ def _update_in_path_list(
     return result
 
 
-# --- Папки библиотеки норм ---
+# --- Norm library folders ---
 
 
 def get_library_paths(db: Session) -> list[str]:
-    """Список папок библиотеки (мигрирует со старого library_path)."""
+    """Library folder list (migrates from the old library_path)."""
     return _get_path_list(db, LIBRARY_PATHS_KEY, LIBRARY_PATH_KEY)
 
 
@@ -187,17 +189,17 @@ def update_library_path(db: Session, old_raw: str, new_raw: str) -> list[str]:
     )
 
 
-# --- Папки архива проектов ---
+# --- Project archive folders ---
 
 
 def get_projects_path(db: Session) -> str | None:
-    """Легаси: первый путь архива (для мест, которым нужен один). None — пусто."""
+    """Legacy: the first archive path (for callers that need one)."""
     paths = get_projects_paths(db)
     return paths[0] if paths else None
 
 
 def get_projects_paths(db: Session) -> list[str]:
-    """Список папок архива проектов (мигрирует со старого projects_library_path)."""
+    """Archive folder list (migrates from the old projects_library_path)."""
     return _get_path_list(db, PROJECTS_PATHS_KEY, PROJECTS_PATH_KEY)
 
 
@@ -216,15 +218,15 @@ def update_projects_path(db: Session, old_raw: str, new_raw: str) -> list[str]:
 
 
 def get_vision_model(db: Session) -> str:
-    """Текущая vision-модель для обработки документов. Дефолт, если не задана."""
+    """Current vision model for processing; the default when unset."""
     setting = db.scalar(select(Setting).where(Setting.key == VISION_MODEL_KEY))
     return setting.value if setting else DEFAULT_VISION_MODEL
 
 
 def set_vision_model(db: Session, model: str) -> str:
-    """Сохраняет выбор vision-модели. Бросает ValueError на неизвестную модель."""
+    """Store the vision-model choice. ValueError on an unknown model."""
     if model not in VISION_MODELS:
-        raise ValueError(f"Неизвестная vision-модель: {model}")
+        raise ValueError(f"Unknown vision model: {model}")
     setting = db.scalar(select(Setting).where(Setting.key == VISION_MODEL_KEY))
     if setting is None:
         db.add(Setting(key=VISION_MODEL_KEY, value=model))
@@ -235,13 +237,13 @@ def set_vision_model(db: Session, model: str) -> str:
 
 
 def get_describe_images(db: Session) -> bool:
-    """Включён ли vision при обработке (описание картинок). Дефолт — True (Стандарт)."""
+    """Is vision enabled during processing? Default True (Standard)."""
     setting = db.scalar(select(Setting).where(Setting.key == DESCRIBE_IMAGES_KEY))
     return setting.value != "0" if setting else True
 
 
 def set_describe_images(db: Session, enabled: bool) -> bool:
-    """Сохраняет тумблер описания картинок. ВЫКЛ = режим «Без LLM» (бесплатно)."""
+    """Store the image-description toggle. OFF = "No LLM" mode (free)."""
     value = "1" if enabled else "0"
     setting = db.scalar(select(Setting).where(Setting.key == DESCRIBE_IMAGES_KEY))
     if setting is None:
@@ -253,21 +255,21 @@ def set_describe_images(db: Session, enabled: bool) -> bool:
 
 
 def get_openai_key(db: Session) -> str | None:
-    """Возвращает сохранённый ключ OpenAI или None, если не задан."""
+    """The stored OpenAI key, or None when not set."""
     setting = db.scalar(select(Setting).where(Setting.key == OPENAI_KEY_KEY))
     return setting.value if setting else None
 
 
 def set_openai_key(db: Session, raw_key: str) -> str:
-    """Сохраняет ключ OpenAI в БД и сразу кладёт его в окружение.
+    """Store the OpenAI key in the DB and put it into the environment.
 
-    Проверяет минимальный формат (`sk-...`). Запись в `os.environ` нужна, чтобы
-    следующий же вызов `OpenAI()` (поиск, индексация) взял новый ключ без
-    перезапуска — клиенты создаются лениво внутри функций.
+    Checks the minimal format (`sk-...`). Writing to `os.environ` lets the
+    very next `OpenAI()` call (search, indexing) pick up the new key
+    without a restart — clients are created lazily inside functions.
     """
     key = raw_key.strip()
     if not key.startswith("sk-"):
-        raise ValueError("Ключ OpenAI должен начинаться с 'sk-'")
+        raise ValueError(msg("settings.bad_openai_key"))
 
     setting = db.scalar(select(Setting).where(Setting.key == OPENAI_KEY_KEY))
     if setting is None:
@@ -281,16 +283,16 @@ def set_openai_key(db: Session, raw_key: str) -> str:
 
 
 def mask_key(key: str) -> str:
-    """Маскирует ключ для показа на фронте: светим только последние 4 символа."""
+    """Mask the key for the frontend: only the last 4 characters show."""
     tail = key[-4:] if len(key) >= 4 else key
     return f"sk-…{tail}"
 
 
 def apply_openai_key_to_env(db: Session) -> None:
-    """На старте: если ключ есть в БД, кладём его в окружение для `OpenAI()`.
+    """At startup: put the DB key (when present) into the environment.
 
-    БД — источник истины. Если ключа нет, окружение не трогаем — остаётся
-    запасной вариант из `.env` (удобно при разработке).
+    The DB is the source of truth. Without a key the environment is left
+    alone — the `.env` fallback stays (handy in development).
     """
     key = get_openai_key(db)
     if key:
@@ -298,18 +300,18 @@ def apply_openai_key_to_env(db: Session) -> None:
 
 
 def get_ui_language(db: Session) -> str:
-    """Язык интерфейса/ошибок бэкенда. Дефолт — английский."""
+    """Interface/backend-error language. Default English."""
     setting = db.scalar(select(Setting).where(Setting.key == UI_LANGUAGE_KEY))
     return setting.value if setting and setting.value in ui_messages.LANGS else "en"
 
 
 def set_ui_language(db: Session, lang: str) -> str:
-    """Сохраняет язык и сразу применяет его к текстам бэкенда.
+    """Store the language and apply it to backend texts immediately.
 
-    Бросает ValueError на неизвестный код (эндпоинт отдаст 400).
+    ValueError on an unknown code (the endpoint answers 400).
     """
     if lang not in ui_messages.LANGS:
-        raise ValueError(f"Неизвестный язык: {lang}")
+        raise ValueError(f"Unknown language: {lang}")
     setting = db.scalar(select(Setting).where(Setting.key == UI_LANGUAGE_KEY))
     if setting is None:
         db.add(Setting(key=UI_LANGUAGE_KEY, value=lang))
@@ -321,20 +323,20 @@ def set_ui_language(db: Session, lang: str) -> str:
 
 
 def apply_ui_language(db: Session) -> None:
-    """Читает сохранённый язык и ставит его в ui_messages (вызов на старте)."""
+    """Read the stored language into ui_messages (called at startup)."""
     ui_messages.set_language(get_ui_language(db))
 
 
 def get_answer_language(db: Session) -> str:
-    """Язык ответа LLM (настройка в профиле). Дефолт — английский."""
+    """LLM answer language (profile setting). Default English."""
     setting = db.scalar(select(Setting).where(Setting.key == ANSWER_LANGUAGE_KEY))
     return setting.value if setting and setting.value in ui_messages.LANGS else "en"
 
 
 def set_answer_language(db: Session, lang: str) -> str:
-    """Сохраняет язык ответа. Бросает ValueError на неизвестный код."""
+    """Store the answer language. ValueError on an unknown code."""
     if lang not in ui_messages.LANGS:
-        raise ValueError(f"Неизвестный язык: {lang}")
+        raise ValueError(f"Unknown language: {lang}")
     setting = db.scalar(select(Setting).where(Setting.key == ANSWER_LANGUAGE_KEY))
     if setting is None:
         db.add(Setting(key=ANSWER_LANGUAGE_KEY, value=lang))

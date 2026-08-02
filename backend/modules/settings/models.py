@@ -1,8 +1,4 @@
-"""Модель Setting — простое key-value хранилище для настроек приложения.
-
-Сейчас хранит только library_path. В будущем сюда же положим OpenAI-ключ,
-выбранные модели и т.п.
-"""
+"""Setting — a simple key-value store for app settings."""
 
 from sqlalchemy import String
 from sqlalchemy.orm import Mapped, mapped_column

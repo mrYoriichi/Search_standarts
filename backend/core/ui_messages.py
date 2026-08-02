@@ -212,6 +212,22 @@ MESSAGES: dict[str, dict[str, str]] = {
         "en": "indexing…",
         "de": "Indexierung…",
     },
+    # --- settings validation (folder paths, OpenAI key) ---
+    "settings.path_not_found": {
+        "cs": "Cesta neexistuje: {path}",
+        "en": "Path does not exist: {path}",
+        "de": "Pfad existiert nicht: {path}",
+    },
+    "settings.not_a_dir": {
+        "cs": "Toto není složka: {path}",
+        "en": "Not a folder: {path}",
+        "de": "Kein Ordner: {path}",
+    },
+    "settings.bad_openai_key": {
+        "cs": "Klíč OpenAI musí začínat na 'sk-'.",
+        "en": "The OpenAI key must start with 'sk-'.",
+        "de": "Der OpenAI-Schlüssel muss mit 'sk-' beginnen.",
+    },
     # --- profile (auth) ---
     "profile.load_failed": {
         "cs": "Nepodařilo se načíst profil.",
