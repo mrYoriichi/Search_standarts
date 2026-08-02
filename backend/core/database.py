@@ -74,6 +74,10 @@ def ensure_columns() -> None:
     # {таблица: {колонка: тип}} — что должно быть. Чего нет — добавим.
     wanted: dict[str, dict[str, str]] = {
         "pending_reports": {"chunks": "JSON"},  # F7: текст использованных фрагментов
+        "documents": {
+            # лимит страниц публичной сборки (NULL у старых строк)
+            "page_count": "INTEGER",
+        },
         "project_documents": {
             "pinned": "BOOLEAN DEFAULT 0",  # закрепление в архиве
             # stat PDF для детекта замены файла (NULL у старых строк)

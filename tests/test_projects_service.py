@@ -37,4 +37,7 @@ def test_project_slug_format():
 def test_project_slug_includes_subfolder_path():
     # Slug строится из пути внутри проекта, не только из имени файла —
     # одноимённые PDF в разных подпапках не должны склеиваться.
-    assert make_project_slug("Beta most", "TZ/202-200 TZ.pdf") == "beta_most__tz_202_200_tz"
+    assert (
+        make_project_slug("Beta most", "TZ/202-200 TZ.pdf")
+        == "beta_most__tz_202_200_tz"
+    )

@@ -64,8 +64,10 @@ def index_library(
 ) -> dict:
     """Отправляет обнаруженные (pending) PDF в обработку — платный шаг."""
     executor = request.app.state.executor
-    started, locked = service.start_indexing(_library_paths(db), db, executor)
-    return {"started": started, "locked": locked}
+    started, locked, over_limit = service.start_indexing(
+        _library_paths(db), db, executor
+    )
+    return {"started": started, "locked": locked, "over_limit": over_limit}
 
 
 @router.get("/library/pdf/{slug}")

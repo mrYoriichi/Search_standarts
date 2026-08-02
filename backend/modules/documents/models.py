@@ -25,6 +25,10 @@ class Document(Base):
     # Тип исходника: pdf сейчас; docx/xlsx/dwg/... — в будущих pipeline.
     source_type: Mapped[str] = mapped_column(default="pdf")
     status: Mapped[str] = mapped_column(default="processing")
+    # Число страниц PDF — для лимита публичной сборки (backend/core/limits.py).
+    # None — легаси-строка до появления счётчика; дозаполняется при
+    # усыновлении/отправке в пайплайн.
+    page_count: Mapped[int | None] = mapped_column(default=None)
     # Если pipeline упал — кладём сюда текст ошибки. У готовых документов None.
     error_message: Mapped[str | None] = mapped_column(default=None)
     # Закреплён юзером — показывать в отдельной секции «Закреплённые» сверху.

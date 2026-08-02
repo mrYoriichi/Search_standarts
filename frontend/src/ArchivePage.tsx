@@ -355,6 +355,14 @@ export default function ArchivePage() {
         alert(data.detail ?? `Chyba ${res.status}`)
         return
       }
+      const data: { started: number; over_limit?: number } = await res.json()
+      if (data.over_limit && data.over_limit > 0) {
+        alert(
+          `${data.over_limit} dokumentů se nevešlo do limitu veřejné verze ` +
+            '(3000 stran) — nebyly indexovány. Uvolněte místo smazáním ' +
+            'nepotřebných dokumentů.',
+        )
+      }
       await loadAll()
     } catch {
       alert('Chyba sítě')

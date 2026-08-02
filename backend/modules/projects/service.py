@@ -11,11 +11,10 @@ from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
 
-import pypdfium2 as pdfium
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from backend.core import progress
+from backend.core import limits, progress
 from backend.modules.projects.models import ProjectDocument
 from backend.modules.projects.schemas import (
     ArchiveResponse,
@@ -23,8 +22,8 @@ from backend.modules.projects.schemas import (
     ProjectDocumentOut,
     ProjectGroup,
 )
+from pdf_processing.page_count import count_pages
 from pdf_processing.parser import make_document_id
-from pdf_processing.pdfium_lock import PDFIUM_LOCK
 
 
 @dataclass
@@ -46,20 +45,6 @@ class ArchiveScanResult:
     documents: list[FoundDocument]
     duplicates: list[str]  # relative_path файлов, чей slug уже занят (тёзки)
     errors: list[str]  # файлы, которые не удалось открыть как PDF
-
-
-def count_pages(pdf_path: Path) -> int:
-    """Число страниц PDF (для UI) + бесплатный отсев битых файлов.
-
-    Кидает исключение, если файл не открывается как PDF, —
-    обрабатывает вызывающий (уходит в errors скана).
-    """
-    with PDFIUM_LOCK:
-        doc = pdfium.PdfDocument(pdf_path)
-        try:
-            return len(doc)
-        finally:
-            doc.close()
 
 
 def make_project_slug(project: str, relative_path: str) -> str:
@@ -288,12 +273,17 @@ def start_archive_indexing(
     db: Session,
     paths: list[Path],
     executor: ThreadPoolExecutor,
-) -> int:
-    """Отправляет pending-документы архива в пайплайн; возвращает число.
+) -> tuple[int, int]:
+    """Отправляет pending-документы архива в пайплайн.
 
     Статус сразу processing — повторный клик не отправит те же документы
     второй раз, а после падения их подхватит возобновление на старте.
     Папку каждого документа находим по наличию его файла на диске.
+
+    Лимит страниц публичной сборки (backend/core/limits.py) общий с
+    библиотекой: документы сверх остатка остаются pending.
+
+    Возвращает (отправлено, сверх лимита).
     """
     from backend.modules.projects.pipeline import run_project_pipeline
 
@@ -303,10 +293,18 @@ def start_archive_indexing(
         ).all()
 
         submitted = 0
+        over_limit = 0
+        remaining = limits.pages_remaining(db)  # None — лимита нет (пилот)
         for doc in pending:
             root = resolve_project_root(paths, doc.project, doc.relative_path)
             if root is None:
                 continue  # файл не найден ни в одной папке — пропускаем
+            pages = doc.page_count or 0  # скан заполняет всегда; 0 — битый PDF
+            if remaining is not None and pages > remaining:
+                over_limit += 1  # остаётся pending
+                continue
+            if remaining is not None:
+                remaining -= pages
             refresh_file_stat(doc, root)
             doc.status = "processing"
             db.commit()
@@ -314,7 +312,7 @@ def start_archive_indexing(
                 run_project_pipeline, doc.slug, str(root / doc.relative_path)
             )
             submitted += 1
-        return submitted
+        return submitted, over_limit
 
 
 class DocumentBusyError(Exception):

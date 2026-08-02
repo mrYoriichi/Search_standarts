@@ -477,6 +477,7 @@ function LibraryPage() {
         already_indexed: number
         adopted?: number
         duplicates?: string[]
+        limit_skipped?: number
       } = await res.json()
       let msg =
         data.created === 0
@@ -484,6 +485,9 @@ function LibraryPage() {
           : `Nalezeno ${data.created} nových PDF — zkontrolujte seznam a spusťte tlačítkem „Indexovat“.`
       if (data.adopted && data.adopted > 0) {
         msg += `\n\nPřevzato ${data.adopted} hotových indexů ze složky (bez indexace, zdarma).`
+      }
+      if (data.limit_skipped && data.limit_skipped > 0) {
+        msg += `\n\n⚠️ ${data.limit_skipped} dokumentů se nevešlo do limitu veřejné verze (3000 stran) — nebyly převzaty.`
       }
       if (data.duplicates && data.duplicates.length > 0) {
         msg +=
@@ -509,12 +513,20 @@ function LibraryPage() {
         alert(data.detail ?? `Chyba ${res.status}`)
         return
       }
-      const data: { started: number; locked?: string[] } = await res.json()
+      const data: { started: number; locked?: string[]; over_limit?: number } =
+        await res.json()
       if (data.locked && data.locked.length > 0) {
         alert(
           'Indexaci právě provádí jiný počítač — tyto složky se přeskočily:\n\n' +
             data.locked.join('\n') +
             '\n\nZkuste to znovu později.',
+        )
+      }
+      if (data.over_limit && data.over_limit > 0) {
+        alert(
+          `${data.over_limit} dokumentů se nevešlo do limitu veřejné verze ` +
+            '(3000 stran) — nebyly indexovány. Uvolněte místo smazáním ' +
+            'nepotřebných dokumentů.',
         )
       }
       await loadAll()

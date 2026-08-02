@@ -17,7 +17,7 @@ from typing import Callable
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from backend.core import index_lock, index_store, library_cache, progress
+from backend.core import index_lock, index_store, library_cache, limits, progress
 from backend.modules.documents.models import Document
 from backend.modules.documents.pipeline import run_pipeline_locked
 from backend.modules.library.schemas import (
@@ -27,6 +27,7 @@ from backend.modules.library.schemas import (
     OrphanDocument,
     ScanSummary,
 )
+from pdf_processing.page_count import count_pages
 from pdf_processing.parser import make_document_id
 
 
@@ -254,6 +255,9 @@ def scan_library(paths: list[Path], db: Session) -> ScanSummary:
     summary = ScanSummary(created=0, already_indexed=0, adopted=0, duplicates=[])
     any_adopted = False
     folder_ids = _folder_ids(paths)
+    # Остаток лимита страниц (None — лимита нет). Усыновление тоже под
+    # лимитом: готовые индексы грузятся в RAM так же, как оплаченные.
+    remaining = limits.pages_remaining(db)
 
     for library_path in paths:
         folder_id = folder_ids[library_path]
@@ -307,17 +311,26 @@ def scan_library(paths: list[Path], db: Session) -> ScanSummary:
                 continue
 
             if can_adopt and index_store.has_complete_index(library_path, slug):
-                doc = Document(
-                    slug=slug,
-                    title=_adopted_title(library_path, slug) or pdf_path.stem,
-                    status="ready",
-                    relative_path=relative_path,
-                )
-                db.add(doc)
-                db.commit()
-                summary.adopted += 1
-                any_adopted = True
-                continue
+                pages = _safe_count_pages(pdf_path)
+                if remaining is not None and pages > remaining:
+                    # Сверх лимита не усыновляем: документ регистрируем как
+                    # pending — виден в списке, но в RAM не попадёт.
+                    summary.limit_skipped += 1
+                else:
+                    if remaining is not None:
+                        remaining -= pages
+                    doc = Document(
+                        slug=slug,
+                        title=_adopted_title(library_path, slug) or pdf_path.stem,
+                        status="ready",
+                        relative_path=relative_path,
+                        page_count=pages,
+                    )
+                    db.add(doc)
+                    db.commit()
+                    summary.adopted += 1
+                    any_adopted = True
+                    continue
 
             doc = Document(
                 slug=slug,
@@ -336,6 +349,28 @@ def scan_library(paths: list[Path], db: Session) -> ScanSummary:
         # следующий вопрос должен их увидеть.
         library_cache.invalidate()
     return summary
+
+
+def _safe_count_pages(pdf_path: Path) -> int:
+    """Число страниц PDF; битый/недоступный файл считаем за 0 — не роняем скан.
+
+    Такой файл всё равно упадёт с внятной ошибкой в пайплайне/усыновлении,
+    лимит из-за нуля не пострадает заметно.
+    """
+    try:
+        return count_pages(pdf_path)
+    except Exception:  # pylint: disable=broad-except
+        return 0
+
+
+def _ensure_page_count(doc: Document, library_path: Path) -> int:
+    """Число страниц документа; считает и запоминает при первом обращении."""
+    if doc.page_count is not None:
+        return doc.page_count
+    if not doc.relative_path:
+        return 0
+    doc.page_count = _safe_count_pages(library_path / doc.relative_path)
+    return doc.page_count
 
 
 def _adopted_title(library_path: Path, slug: str) -> str | None:
@@ -358,7 +393,7 @@ def start_indexing(
     paths: list[Path],
     db: Session,
     executor: ThreadPoolExecutor,
-) -> tuple[int, list[str]]:
+) -> tuple[int, list[str], int]:
     """Отправляет pending-документы в пайплайн, каждый — в свою папку.
 
     Статус сразу переводим в processing: повторный клик по «Indexovat» не
@@ -368,8 +403,12 @@ def start_indexing(
 
     Папку перед индексацией запираем лок-файлом: если её уже индексирует
     другая машина (общая сетевая папка) — документы этой папки НЕ трогаем,
-    оставляем pending и сообщаем, кто занят. Возвращает (сколько отправлено,
-    список «папка: кто индексирует»).
+    оставляем pending и сообщаем, кто занят.
+
+    Лимит страниц публичной сборки (backend/core/limits.py) режет и запуск
+    пайплайна, и усыновление: документы сверх лимита остаются pending.
+
+    Возвращает (отправлено, список «папка: кто индексирует», сверх лимита).
     """
     from indexing.embeddings_index import EMBEDDING_MODEL
 
@@ -386,7 +425,9 @@ def start_indexing(
 
         submitted = 0
         locked: list[str] = []
+        over_limit = 0
         any_adopted = False
+        remaining = limits.pages_remaining(db)  # None — лимита нет (пилот)
         for library_path, docs in by_folder.items():
             # Перепроверка ПЕРЕД запуском: коллега мог доиндексировать документ
             # в общей папке после нашего скана (pending-запись это не видела).
@@ -399,6 +440,12 @@ def start_indexing(
             to_run: list[Document] = []
             for doc in docs:
                 if can_adopt and index_store.has_complete_index(library_path, doc.slug):
+                    pages = _ensure_page_count(doc, library_path)
+                    if remaining is not None and pages > remaining:
+                        over_limit += 1  # остаётся pending, в RAM не попадёт
+                        continue
+                    if remaining is not None:
+                        remaining -= pages
                     doc.status = "ready"
                     doc.error_message = None
                     doc.title = _adopted_title(library_path, doc.slug) or doc.title
@@ -407,9 +454,21 @@ def start_indexing(
                     to_run.append(doc)
             if any_adopted:
                 db.commit()
-            if not to_run:
-                continue  # всё усыновлено — лок папки не нужен
-            docs = to_run
+
+            # Лимит для платного запуска — тем более: сверх остатка не шлём.
+            allowed: list[Document] = []
+            for doc in to_run:
+                pages = _ensure_page_count(doc, library_path)
+                if remaining is not None and pages > remaining:
+                    over_limit += 1
+                    continue
+                if remaining is not None:
+                    remaining -= pages
+                allowed.append(doc)
+            if not allowed:
+                db.commit()  # сохранить дозаполненные page_count
+                continue  # всё усыновлено/за лимитом — лок папки не нужен
+            docs = allowed
 
             busy_owner = index_lock.acquire(library_path)
             if busy_owner is not None:
@@ -435,7 +494,7 @@ def start_indexing(
             # В пуле появились готовые документы без пайплайна — следующий
             # вопрос должен их увидеть (зеркально scan_library).
             library_cache.invalidate()
-        return submitted, locked
+        return submitted, locked, over_limit
 
 
 def _is_within(target: Path, root: Path) -> bool:
