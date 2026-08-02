@@ -16,6 +16,7 @@ const cs = {
   'common.logout': 'Odhlásit se',
 
   // Шапка и вкладки
+  'logo.word': 'Asistent',
   'nav.search': 'Vyhledávání',
   'nav.library': 'Knihovna',
   'nav.archive': 'Archiv projektů',
@@ -44,7 +45,6 @@ const cs = {
   'search.modeVector': 'Podle významu',
   'search.modeKeyword': 'Podle slov',
   'search.answerModel': 'Model odpovědi',
-  'search.answerLang': 'Jazyk odpovědi',
   'lang.cs': 'Čeština',
   'lang.en': 'English',
   'lang.de': 'Deutsch',
@@ -127,6 +127,9 @@ const cs = {
   'settings.passwordChangeFailed': 'Změna hesla selhala.',
 
   // Настройки — ключ OpenAI
+  'settings.answerLang': 'Jazyk odpovědi',
+  'settings.answerLangText':
+    'V tomto jazyce bude asistent odpovídat na dotazy.',
   'settings.openaiKey': 'Klíč OpenAI',
   'settings.openaiKeyText':
     'Klíč se ukládá pouze na vašem počítači. Náklady na dotazy se účtují na tento klíč.',
@@ -239,6 +242,7 @@ const en: Record<MsgKey, string> = {
   'common.saveTitle': 'Save',
   'common.logout': 'Log out',
 
+  'logo.word': 'Assistant',
   'nav.search': 'Search',
   'nav.library': 'Library',
   'nav.archive': 'Project archive',
@@ -265,7 +269,6 @@ const en: Record<MsgKey, string> = {
   'search.modeVector': 'By meaning',
   'search.modeKeyword': 'By keywords',
   'search.answerModel': 'Answer model',
-  'search.answerLang': 'Answer language',
   'lang.cs': 'Čeština',
   'lang.en': 'English',
   'lang.de': 'Deutsch',
@@ -342,6 +345,9 @@ const en: Record<MsgKey, string> = {
   'settings.passwordChanged': 'Password changed.',
   'settings.passwordChangeFailed': 'Password change failed.',
 
+  'settings.answerLang': 'Answer language',
+  'settings.answerLangText':
+    'The assistant will answer questions in this language.',
   'settings.openaiKey': 'OpenAI key',
   'settings.openaiKeyText':
     'The key is stored only on your computer. Query costs are billed to this key.',
@@ -449,6 +455,7 @@ const de: Record<MsgKey, string> = {
   'common.saveTitle': 'Speichern',
   'common.logout': 'Abmelden',
 
+  'logo.word': 'Assistent',
   'nav.search': 'Suche',
   'nav.library': 'Bibliothek',
   'nav.archive': 'Projektarchiv',
@@ -475,7 +482,6 @@ const de: Record<MsgKey, string> = {
   'search.modeVector': 'Nach Bedeutung',
   'search.modeKeyword': 'Nach Stichwörtern',
   'search.answerModel': 'Antwortmodell',
-  'search.answerLang': 'Antwortsprache',
   'lang.cs': 'Čeština',
   'lang.en': 'English',
   'lang.de': 'Deutsch',
@@ -552,6 +558,9 @@ const de: Record<MsgKey, string> = {
   'settings.passwordChanged': 'Passwort geändert.',
   'settings.passwordChangeFailed': 'Passwortänderung fehlgeschlagen.',
 
+  'settings.answerLang': 'Antwortsprache',
+  'settings.answerLangText':
+    'Der Assistent beantwortet Fragen in dieser Sprache.',
   'settings.openaiKey': 'OpenAI-Schlüssel',
   'settings.openaiKeyText':
     'Der Schlüssel wird nur auf Ihrem Computer gespeichert. Abfragekosten werden über diesen Schlüssel abgerechnet.',

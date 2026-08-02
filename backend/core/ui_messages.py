@@ -166,6 +166,16 @@ MESSAGES: dict[str, dict[str, str]] = {
             "(.search_index) lässt sich nicht speichern. Erlauben Sie das Schreiben."
         ),
     },
+    "lib.tree_root": {
+        "cs": "Knihovny",
+        "en": "Libraries",
+        "de": "Bibliotheken",
+    },
+    "lib.folder_unavailable": {
+        "cs": "{name} (nedostupná)",
+        "en": "{name} (unavailable)",
+        "de": "{name} (nicht erreichbar)",
+    },
     "lib.folder_busy": {
         "cs": "Složku právě indexuje jiný počítač: {owner}",
         "en": "Another computer is indexing this folder right now: {owner}",

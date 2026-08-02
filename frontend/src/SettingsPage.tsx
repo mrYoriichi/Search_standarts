@@ -10,7 +10,67 @@ export default function SettingsPage() {
     <div className="flex flex-col gap-6">
       <ProfileSection />
       <PasswordSection />
+      <AnswerLanguageSection />
       <OpenAIKeySection />
+    </div>
+  )
+}
+
+// ── Язык ответа LLM ───────────────────────────────────────────────────────────
+
+function AnswerLanguageSection() {
+  const { t } = useI18n()
+  const [language, setLanguage] = useState<'cs' | 'en' | 'de' | null>(null)
+  const [saving, setSaving] = useState(false)
+
+  useEffect(() => {
+    fetch('/api/settings/answer-language')
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d: { language: 'cs' | 'en' | 'de' } | null) => d && setLanguage(d.language))
+      .catch(() => {})
+  }, [])
+
+  async function choose(value: 'cs' | 'en' | 'de') {
+    if (value === language || saving) return
+    setSaving(true)
+    try {
+      const res = await fetch('/api/settings/answer-language', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ language: value }),
+      })
+      if (res.ok) setLanguage((await res.json()).language)
+      else alert(t('common.errorStatus', { status: res.status }))
+    } catch {
+      alert(t('common.networkError'))
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <div className={cardClass}>
+      <h2 className="text-sm font-semibold text-muted-foreground">
+        {t('settings.answerLang')}
+      </h2>
+      <p className="text-sm text-muted-foreground">{t('settings.answerLangText')}</p>
+      <div className="flex gap-2">
+        {(['cs', 'en', 'de'] as const).map((value) => (
+          <button
+            key={value}
+            onClick={() => choose(value)}
+            disabled={saving || language === null}
+            className={
+              'px-3 py-1.5 text-sm rounded-md border ' +
+              (language === value
+                ? 'bg-foreground text-background font-medium'
+                : 'text-muted-foreground hover:text-foreground')
+            }
+          >
+            {t(`lang.${value}`)}
+          </button>
+        ))}
+      </div>
     </div>
   )
 }

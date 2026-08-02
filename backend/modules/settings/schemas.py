@@ -59,3 +59,9 @@ class UiLanguageSetting(BaseModel):
     """Язык интерфейса — бэкенд использует его для текстов ошибок."""
 
     language: Literal["cs", "en", "de"]
+
+
+class AnswerLanguageSetting(BaseModel):
+    """Язык ответа LLM — настройка в профиле, независим от языка UI."""
+
+    language: Literal["cs", "en", "de"]

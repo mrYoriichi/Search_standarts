@@ -134,7 +134,7 @@ def ask(
     answer_model: str = "gpt-5.4-mini",
     expand: bool = True,
     strong: bool = False,
-    answer_language: str = "en",
+    answer_language: str | None = None,
 ) -> AskResponse:
     """Главная функция: вопрос → ответ + источники + id записи в QueryLog.
 
@@ -144,7 +144,8 @@ def ask(
     expand — расширять ли запрос через LLM перед поиском (диакритика/синонимы).
     strong — сильный поиск: приложить к ответу снимки страниц топ-источников
     (тяжёлые вопросы по чертежам/таблицам; дороже и медленнее).
-    answer_language — язык ответа LLM (cs/en/de), независим от языка UI.
+    answer_language — язык ответа LLM (cs/en/de); None — сохранённая
+    настройка юзера (см. settings.get_answer_language).
     """
     started_at = time.perf_counter()
 
@@ -187,6 +188,13 @@ def ask(
     # Сильный поиск: рендерим страницы топ-источников и отдаём их картинками
     # в отвечающую LLM — она «видит» чертёж/таблицу, а не только текст/OCR.
     page_images = _build_page_images(db, top_chunks) if strong else None
+
+    if answer_language is None:
+        # Настройка живёт в профиле; запрос может переопределить её явно
+        # (API agent-ready: агенту не нужно трогать настройки).
+        from backend.modules.settings import service as settings_service
+
+        answer_language = settings_service.get_answer_language(db)
 
     # Время генерации ответа меряем отдельно — чтобы сравнивать скорость моделей.
     gen_start = time.perf_counter()

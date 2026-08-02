@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 from backend.core.database import get_session
 from backend.modules.settings import service
 from backend.modules.settings.schemas import (
+    AnswerLanguageSetting,
     DescribeImagesSetting,
     LibraryPathRequest,
     LibraryPathResponse,
@@ -195,3 +196,20 @@ def set_ui_language(
 ) -> UiLanguageSetting:
     """Сохраняет язык интерфейса; Literal в схеме отсекает мусор."""
     return UiLanguageSetting(language=service.set_ui_language(db, body.language))
+
+
+@router.get("/settings/answer-language", response_model=AnswerLanguageSetting)
+def get_answer_language(db: Session = Depends(get_session)) -> AnswerLanguageSetting:
+    """Текущий язык ответа LLM."""
+    return AnswerLanguageSetting(language=service.get_answer_language(db))
+
+
+@router.put("/settings/answer-language", response_model=AnswerLanguageSetting)
+def set_answer_language(
+    body: AnswerLanguageSetting,
+    db: Session = Depends(get_session),
+) -> AnswerLanguageSetting:
+    """Сохраняет язык ответа; Literal в схеме отсекает мусор."""
+    return AnswerLanguageSetting(
+        language=service.set_answer_language(db, body.language)
+    )

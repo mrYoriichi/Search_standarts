@@ -121,7 +121,7 @@ def build_library_response(paths: list[Path], db: Session) -> LibraryResponse:
             # узел с пометкой; остальные папки и вся страница живут дальше.
             subtrees.append(
                 LibraryFolder(
-                    name=f"{lib.name} (nedostupná)",
+                    name=msg("lib.folder_unavailable", name=lib.name),
                     path=str(lib),
                     folders=[],
                     files=[],
@@ -130,7 +130,9 @@ def build_library_response(paths: list[Path], db: Session) -> LibraryResponse:
     if len(subtrees) == 1:
         root = subtrees[0]
     else:
-        root = LibraryFolder(name="Knihovny", path="", folders=subtrees, files=[])
+        root = LibraryFolder(
+            name=msg("lib.tree_root"), path="", folders=subtrees, files=[]
+        )
 
     seen_slugs: set[str] = set()
     _collect_slugs(root, seen_slugs)

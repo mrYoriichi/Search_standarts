@@ -32,11 +32,49 @@ def test_unknown_language_falls_back_to_english():
     assert "ALWAYS answer in English" in build_system_prompt("xx")
 
 
-def test_ask_request_default_language_is_english():
+def test_ask_request_default_language_is_none():
+    # None = «взять сохранённую настройку» (эндпоинт /api/settings/answer-language).
     req = AskRequest(question="jak se navrhuje most?")
-    assert req.answer_language == "en"
+    assert req.answer_language is None
 
 
 def test_ask_request_rejects_unknown_language():
     with pytest.raises(ValidationError):
         AskRequest(question="q", answer_language="fr")
+
+
+# --- настройка answer_language (хранится в профиле) --------------------------
+
+
+@pytest.fixture
+def db():
+    from sqlalchemy import create_engine
+    from sqlalchemy.orm import sessionmaker
+
+    from backend.core.database import Base
+
+    engine = create_engine("sqlite://")
+    Base.metadata.create_all(engine)
+    session = sessionmaker(bind=engine)()
+    yield session
+    session.close()
+
+
+def test_answer_language_setting_defaults_to_english(db):
+    from backend.modules.settings import service
+
+    assert service.get_answer_language(db) == "en"
+
+
+def test_answer_language_setting_roundtrip(db):
+    from backend.modules.settings import service
+
+    service.set_answer_language(db, "de")
+    assert service.get_answer_language(db) == "de"
+
+
+def test_answer_language_setting_rejects_unknown(db):
+    from backend.modules.settings import service
+
+    with pytest.raises(ValueError):
+        service.set_answer_language(db, "fr")

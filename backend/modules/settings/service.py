@@ -31,6 +31,8 @@ OPENAI_KEY_KEY = "openai_api_key"
 # Язык интерфейса (cs/en/de): фронт шлёт при переключении, бэкенд использует
 # для текстов ошибок (backend/core/ui_messages.py). Дефолт — английский.
 UI_LANGUAGE_KEY = "ui_language"
+# Язык ОТВЕТА LLM (cs/en/de) — настройка в профиле, независим от языка UI.
+ANSWER_LANGUAGE_KEY = "answer_language"
 
 
 def _validate_dir(raw_path: str) -> Path:
@@ -321,3 +323,22 @@ def set_ui_language(db: Session, lang: str) -> str:
 def apply_ui_language(db: Session) -> None:
     """Читает сохранённый язык и ставит его в ui_messages (вызов на старте)."""
     ui_messages.set_language(get_ui_language(db))
+
+
+def get_answer_language(db: Session) -> str:
+    """Язык ответа LLM (настройка в профиле). Дефолт — английский."""
+    setting = db.scalar(select(Setting).where(Setting.key == ANSWER_LANGUAGE_KEY))
+    return setting.value if setting and setting.value in ui_messages.LANGS else "en"
+
+
+def set_answer_language(db: Session, lang: str) -> str:
+    """Сохраняет язык ответа. Бросает ValueError на неизвестный код."""
+    if lang not in ui_messages.LANGS:
+        raise ValueError(f"Неизвестный язык: {lang}")
+    setting = db.scalar(select(Setting).where(Setting.key == ANSWER_LANGUAGE_KEY))
+    if setting is None:
+        db.add(Setting(key=ANSWER_LANGUAGE_KEY, value=lang))
+    else:
+        setting.value = lang
+    db.commit()
+    return lang
