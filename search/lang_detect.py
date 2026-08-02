@@ -1,23 +1,23 @@
-"""Определение языка документов корпуса — для многоязычного расширения.
+"""Corpus language detection — for multilingual query expansion.
 
-Эвристика по символам вместо ML-библиотеки: нормы и отчёты — печатный
-текст, где национальные символы встречаются в каждом предложении. Этого
-хватает, чтобы отличить cs/de/ru от «латиницы без диакритики» (en);
-зависимостей ноль, работает детерминированно и мгновенно.
+A character heuristic instead of an ML library: norms and reports are
+printed text where national characters appear in every sentence. That is
+enough to tell cs/de/ru apart from "latin without diacritics" (en) —
+zero dependencies, deterministic, instant.
 """
 
-# Символы, однозначно выдающие язык. Общие для cs/de буквы (á, é, ó, ú)
-# намеренно не используются.
+# Characters that identify a language unambiguously. Letters shared by
+# cs/de (á, é, ó, ú) are deliberately not used.
 _CZECH_CHARS = set("ěščřžůťďňĚŠČŘŽŮŤĎŇ")
 _GERMAN_CHARS = set("äöüßÄÖÜ")
 
-# Сколько символов текста читаем на документ: языку хватает первых страниц,
-# а хвост может содержать иноязычные цитаты/приложения.
+# How much text to read per document: the first pages settle the language,
+# while the tail may contain foreign-language quotes/appendices.
 SAMPLE_CHARS = 2000
 
 
 def detect_language(text: str) -> str:
-    """Язык текста: 'cs' | 'de' | 'ru' | 'en' (en — латиница без примет)."""
+    """Language of the text: 'cs' | 'de' | 'ru' | 'en' (en = plain latin)."""
     sample = text[:SAMPLE_CHARS]
     if any("а" <= ch.lower() <= "я" or ch.lower() == "ё" for ch in sample):
         return "ru"
@@ -29,11 +29,11 @@ def detect_language(text: str) -> str:
 
 
 def corpus_languages(chunks: list[dict]) -> set[str]:
-    """Языки документов по списку чанков (обычно уже отфильтрованному).
+    """Document languages for a chunk list (usually already filtered).
 
-    На документ читается ~SAMPLE_CHARS первых чанков — begin документа
-    (заголовки, преамбула) надёжнее хвоста. Стоимость на вопрос — миллисекунды
-    даже на потолке дизайна (30к чанков).
+    Reads ~SAMPLE_CHARS of each document's first chunks — the beginning
+    (headings, preamble) is more reliable than the tail. Costs
+    milliseconds per question even at the design ceiling (30k chunks).
     """
     samples: dict[str, str] = {}
     for chunk in chunks:

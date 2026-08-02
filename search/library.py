@@ -1,7 +1,7 @@
-"""Загрузка и фильтрация пула документов (chunks.json + embeddings.json).
+"""Loading and filtering the document pool (chunks.json + embeddings.json).
 
-Общая часть поиска: её используют и CLI-сценарий (cli/ask.py), и кеш
-библиотеки приложения (backend/core/library_cache.py).
+Shared search plumbing: used by the CLI (cli/ask.py) and by the app's
+library cache (backend/core/library_cache.py).
 """
 
 import json
@@ -14,36 +14,34 @@ from indexing.embeddings_index import build_matrix_index
 
 
 def load_chunks(json_path: Path) -> list[dict]:
-    """Читает chunks.json в список чанков."""
+    """Read chunks.json into a list of chunks."""
     with open(json_path, encoding="utf-8") as f:
         return json.load(f)
 
 
 def load_index(json_path: Path) -> dict:
-    """Читает векторный индекс из файла."""
+    """Read the vector index from disk."""
     with open(json_path, encoding="utf-8") as f:
         return json.load(f)
 
 
 class EmptyLibraryError(RuntimeError):
-    """В корне нет ни одного готового документа — такой корень можно тихо
-    пропустить при слиянии пулов (в отличие от несовместимых моделей)."""
+    """The root has no ready document — such a root can be silently
+    skipped when merging pools (unlike incompatible models)."""
 
 
 def load_library(data_root: Path) -> tuple[list[dict], dict]:
-    """
-    Объединяет чанки и эмбеддинги всех готовых документов в один пул.
+    """Merge chunks and embeddings of every ready document into one pool.
 
-    Сканирует подпапки data_root, у каждой берёт chunks.json и embeddings.json.
-    Папки без полного набора файлов (пайплайн не закончен) пропускаются.
+    Scans the subfolders of data_root, taking chunks.json and
+    embeddings.json from each. Folders without the complete pair
+    (unfinished pipeline) are skipped.
 
-    Все документы должны быть проиндексированы ОДНОЙ моделью эмбеддингов —
-    векторы из разных моделей несравнимы. Если встретим разные модели,
-    падаем с понятной ошибкой.
+    Every document must be indexed with ONE embedding model — vectors
+    from different models are incomparable; a mismatch raises loudly.
 
-    Возвращает (chunks, embeddings_index), где embeddings_index — матричный
-    индекс для поиска (см. build_matrix_index): векторы всех документов собраны
-    в одну нормированную float32-матрицу.
+    Returns (chunks, embeddings_index) where the index is the matrix form
+    from build_matrix_index: all vectors in one normalized float32 matrix.
     """
     all_chunks: list[dict] = []
     all_items: list[dict] = []
@@ -55,8 +53,7 @@ def load_library(data_root: Path) -> tuple[list[dict], dict]:
         chunks_path = doc_dir / "chunks.json"
         index_path = doc_dir / "embeddings.json"
         if not chunks_path.exists() or not index_path.exists():
-            # Пайплайн ещё не закончен для этого документа — тихо пропускаем
-            continue
+            continue  # pipeline not finished for this document
 
         try:
             chunks = load_chunks(chunks_path)
@@ -64,12 +61,12 @@ def load_library(data_root: Path) -> tuple[list[dict], dict]:
             index_model = index["model"]
             index_items = index["items"]
         except (OSError, json.JSONDecodeError, KeyError):
-            # Битый/недоступный файл индекса не должен класть весь поиск:
-            # пропускаем документ, остальная библиотека работает.
-            print(f"[!] Битый индекс, пропускаю документ: {doc_dir.name}")
+            # One broken index file must not take down the whole search:
+            # skip the document, the rest of the library keeps working.
+            print(f"[!] Broken index, skipping document: {doc_dir.name}")
             continue
 
-        # Сверяем модель эмбеддингов. Текст летит в UI через 400.
+        # Model check; the text reaches the UI via a 400 response.
         if model is None:
             model = index_model
         elif model != index_model:
@@ -86,7 +83,7 @@ def load_library(data_root: Path) -> tuple[list[dict], dict]:
         all_items.extend(index_items)
 
     if not all_chunks:
-        raise EmptyLibraryError(f"В {data_root} нет ни одного готового документа.")
+        raise EmptyLibraryError(f"No ready document found in {data_root}.")
 
     return all_chunks, build_matrix_index(all_items, model)
 
@@ -96,13 +93,12 @@ def filter_library(
     embeddings_index: dict,
     allowed_ids: set[str],
 ) -> tuple[list[dict], dict]:
-    """
-    Оставляет в библиотеке только чанки и эмбеддинги из выбранных документов.
-    Формат входа/выхода тот же — дальше BM25 и гибридный поиск работают как раньше.
+    """Keep only chunks and embeddings of the selected documents.
 
-    Матрица эмбеддингов не знает про document_id (только порядок строк ↔
-    chunk_ids), поэтому строим булеву маску по chunk_id отобранных чанков и
-    режем ей и матрицу, и список chunk_ids одинаково.
+    Input/output format is unchanged — BM25 and the hybrid search work on
+    the result as usual. The embedding matrix knows nothing about
+    document_id (only row order ↔ chunk_ids), so a boolean mask built
+    from the selected chunk ids cuts the matrix and the id list alike.
     """
     chunks_f = [c for c in chunks if c["document_id"] in allowed_ids]
     allowed_chunk_ids = {c["chunk_id"] for c in chunks_f}

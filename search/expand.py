@@ -1,26 +1,23 @@
-"""
-Расширение поискового запроса через LLM.
+"""LLM query expansion.
 
-Короткие запросы и ломаный чешский без диакритики бьют по поиску: вектор
-уходит в шум, BM25 не находит словоформы. Один дешёвый вызов mini
-переписывает вопрос в выразительный поисковый запрос: диакритика, термины,
-синонимы.
+Short queries and Czech typed without diacritics hurt retrieval: the
+vector drifts into noise and BM25 misses word forms. One cheap mini call
+rewrites the question into an expressive search query: diacritics,
+terminology, synonyms.
 
-Многоязычный корпус (2026-08-02): BM25 находит документ только словами его
-языка, поэтому запрос содержит термины НА ВСЕХ языках корпуса (языки
-определяет search/lang_detect по текстам документов). Оригинальный вопрос
-остаётся для генерации ответа.
+Multilingual corpus (2026-08-02): BM25 only matches a document's own
+language, so the query carries key terms in EVERY corpus language
+(detected by search/lang_detect from the document texts). The original
+question is kept for answer generation.
 """
 
 from openai import OpenAI
 
 EXPAND_MODEL = "gpt-5.4-mini"
 
-# Код языка → имя в промпте. Неизвестные коды пропускаются.
+# Language code → name used in the prompt. Unknown codes are skipped.
 LANGUAGE_NAMES = {"cs": "Czech", "en": "English", "de": "German", "ru": "Russian"}
 
-# Промпт по-английски (нейтрализует языковой bias); {languages} подставляет
-# build_expand_prompt.
 PROMPT_TEMPLATE = """You are a search-query rewriter for a library of construction-engineering documents: norms (ČSN, TP, VL, MVL, Eurocode) and bridge project documentation (technical reports, structural calculations, drawings).
 
 The library contains documents in: {languages}.
@@ -35,10 +32,10 @@ Return ONLY the search line, without quotes and without explanations."""
 
 
 def build_expand_prompt(languages: set[str] | None) -> str:
-    """Системный промпт расширения под языки корпуса.
+    """Expansion system prompt for the given corpus languages.
 
-    None/пусто или сплошь неизвестные коды → чешский (историческое
-    поведение: пилотный корпус чешский).
+    None/empty or all-unknown codes → Czech (historical behaviour: the
+    pilot corpus is Czech).
     """
     codes = sorted(languages or set())
     names = [LANGUAGE_NAMES[c] for c in codes if c in LANGUAGE_NAMES]
@@ -48,12 +45,11 @@ def build_expand_prompt(languages: set[str] | None) -> str:
 
 
 def expand_query(question: str, languages: set[str] | None = None) -> str:
-    """
-    Переписывает вопрос пользователя в поисковый запрос с терминами на всех
-    языках корпуса (languages; None → чешский).
+    """Rewrite the user's question into a search query carrying terms in
+    every corpus language (languages; None → Czech).
 
-    Возвращает одну строку. При любой ошибке/пустом ответе возвращает исходный
-    вопрос — расширение не должно ломать поиск.
+    Returns one line. On any error or empty response falls back to the
+    original question — expansion must never break the search.
     """
     try:
         client = OpenAI()
