@@ -165,4 +165,6 @@ same REST endpoints as the UI — the API is agent-ready by design.
 
 ## License
 
-TBD.
+[PolyForm Noncommercial 1.0.0](LICENSE.md) — you are welcome to read,
+learn from and use this software for any noncommercial purpose;
+commercial use rights stay with the author.
