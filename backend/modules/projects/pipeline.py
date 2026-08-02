@@ -15,6 +15,7 @@ from sqlalchemy import select
 
 from backend.core import progress
 from backend.core.database import SessionLocal
+from backend.core.ui_messages import msg
 from backend.core.errors import classify_pipeline_error
 from backend.core.paths import PROJECTS_DATA_DIR
 from backend.modules.projects.models import ProjectDocument
@@ -62,9 +63,9 @@ def process_text_document(
     from pipeline import parse as parser_step
 
     doc_dir = PROJECTS_DATA_DIR / slug
-    progress.set_progress(slug, "čtení PDF…")
+    progress.set_progress(slug, msg("progress.reading"))
     parser_step.process(slug, pdf_path=str(pdf_path), doc_dir=doc_dir, document_id=slug)
-    progress.set_progress(slug, "popis obrázků…")
+    progress.set_progress(slug, msg("progress.images"))
     describe_step.process(
         slug,
         vision_model=vision_model,
@@ -72,16 +73,16 @@ def process_text_document(
         pdf_path=str(pdf_path),
         describe_images=describe_images,
         on_progress=lambda done, total: progress.set_progress(
-            slug, f"popis obrázků: strana {done}/{total}"
+            slug, msg("progress.images_page", done=done, total=total)
         ),
         on_drawing_progress=lambda done, total: progress.set_progress(
-            slug, f"popis výkresů: strana {done}/{total}"
+            slug, msg("progress.drawings_page", done=done, total=total)
         ),
     )
-    progress.set_progress(slug, "řezání na části…")
+    progress.set_progress(slug, msg("progress.chunking"))
     chunk_step.process(slug, doc_dir=doc_dir)
     _prefix_project_context(doc_dir, project)
-    progress.set_progress(slug, "indexace…")
+    progress.set_progress(slug, msg("progress.embedding"))
     index_step.process(slug, doc_dir=doc_dir)
 
 

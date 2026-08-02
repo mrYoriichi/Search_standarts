@@ -123,9 +123,11 @@ function DocumentRow({
   freshlyReady: Set<string>
   onChange: () => void
 }) {
-  // Путь внутри проекта (без имени проекта) — короче и читабельнее.
-  // Делим по обоим разделителям: старые записи с Windows содержат `\`.
-  const insideProject = doc.relative_path.split(/[\\/]/).slice(1).join('/')
+  // relative_path уже относителен папке проекта (модель «папка = проект»,
+  // 2026-07-28) — показываем целиком. Отрезание первого сегмента осталось бы
+  // от старой модели и съедало бы имя файла в корне проекта. `\` → `/`:
+  // старые записи с Windows содержат обратный слэш.
+  const insideProject = doc.relative_path.split(/[\\/]/).join('/')
   return (
     <div>
       <div className="flex items-center gap-2 text-sm">

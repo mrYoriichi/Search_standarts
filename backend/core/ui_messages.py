@@ -181,6 +181,37 @@ MESSAGES: dict[str, dict[str, str]] = {
         "en": "Another computer is indexing this folder right now: {owner}",
         "de": "Ein anderer Computer indexiert diesen Ordner gerade: {owner}",
     },
+    # --- прогресс индексации (стадии пайплайна) ---
+    "progress.reading": {
+        "cs": "čtení PDF…",
+        "en": "reading PDF…",
+        "de": "PDF wird gelesen…",
+    },
+    "progress.images": {
+        "cs": "popis obrázků…",
+        "en": "describing images…",
+        "de": "Bilder werden beschrieben…",
+    },
+    "progress.images_page": {
+        "cs": "popis obrázků: strana {done}/{total}",
+        "en": "describing images: page {done}/{total}",
+        "de": "Bildbeschreibung: Seite {done}/{total}",
+    },
+    "progress.drawings_page": {
+        "cs": "popis výkresů: strana {done}/{total}",
+        "en": "describing drawings: page {done}/{total}",
+        "de": "Zeichnungsbeschreibung: Seite {done}/{total}",
+    },
+    "progress.chunking": {
+        "cs": "řezání na části…",
+        "en": "splitting into chunks…",
+        "de": "Aufteilen in Abschnitte…",
+    },
+    "progress.embedding": {
+        "cs": "indexace…",
+        "en": "indexing…",
+        "de": "Indexierung…",
+    },
     # --- профиль (auth) ---
     "profile.load_failed": {
         "cs": "Nepodařilo se načíst profil.",

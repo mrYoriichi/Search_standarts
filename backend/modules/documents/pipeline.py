@@ -14,6 +14,7 @@ from sqlalchemy import select
 
 from backend.core import index_lock, library_cache, progress
 from backend.core.database import SessionLocal
+from backend.core.ui_messages import msg
 from backend.core.errors import classify_pipeline_error
 from backend.modules.documents.models import Document
 from backend.modules.telemetry.service import track_event
@@ -75,7 +76,7 @@ def run_pipeline(slug: str, pdf_path: str | None, doc_dir: Path) -> None:
         try:
             with tempfile.TemporaryDirectory(prefix=f"ss_pages_{slug}_") as tmp:
                 pages_dir = Path(tmp)
-                progress.set_progress(slug, "čtení PDF…")
+                progress.set_progress(slug, msg("progress.reading"))
                 # document_id=slug: в артефакты должен попасть scoped-slug
                 # ({folder_id}__{файл}) из БД, а не id из имени файла — иначе
                 # фильтр «Kde hledat» не совпадёт ни с одним чанком.
@@ -86,7 +87,7 @@ def run_pipeline(slug: str, pdf_path: str | None, doc_dir: Path) -> None:
                     document_id=slug,
                     pages_dir=pages_dir,
                 )
-                progress.set_progress(slug, "popis obrázků…")
+                progress.set_progress(slug, msg("progress.images"))
                 describe_step.process(
                     slug,
                     vision_model=vision_model,
@@ -95,15 +96,15 @@ def run_pipeline(slug: str, pdf_path: str | None, doc_dir: Path) -> None:
                     pdf_path=pdf_path,
                     describe_images=describe_images,
                     on_progress=lambda done, total: progress.set_progress(
-                        slug, f"popis obrázků: strana {done}/{total}"
+                        slug, msg("progress.images_page", done=done, total=total)
                     ),
                     on_drawing_progress=lambda done, total: progress.set_progress(
-                        slug, f"popis výkresů: strana {done}/{total}"
+                        slug, msg("progress.drawings_page", done=done, total=total)
                     ),
                 )
-            progress.set_progress(slug, "řezání na části…")
+            progress.set_progress(slug, msg("progress.chunking"))
             chunk_step.process(slug, doc_dir=doc_dir)
-            progress.set_progress(slug, "indexace…")
+            progress.set_progress(slug, msg("progress.embedding"))
             index_step.process(slug, doc_dir=doc_dir)
         except Exception as exc:
             logger.exception("Pipeline для %s упал", slug)
