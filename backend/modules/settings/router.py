@@ -1,4 +1,4 @@
-"""HTTP-эндпоинты модуля settings."""
+"""HTTP endpoints of the settings module."""
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
@@ -24,7 +24,7 @@ router = APIRouter()
 
 @router.get("/settings/library", response_model=LibraryPathResponse)
 def get_library_path(db: Session = Depends(get_session)) -> LibraryPathResponse:
-    """Возвращает текущий путь к папке библиотеки. None — путь не задан."""
+    """Current library folder path. None — not set."""
     return LibraryPathResponse(path=service.get_library_path(db))
 
 
@@ -33,7 +33,7 @@ def set_library_path(
     body: LibraryPathRequest,
     db: Session = Depends(get_session),
 ) -> LibraryPathResponse:
-    """Сохраняет путь к папке библиотеки. Валидирует, что папка существует."""
+    """Store the library folder path; validates that the folder exists."""
     try:
         saved = service.set_library_path(db, body.path)
     except ValueError as exc:
@@ -43,7 +43,7 @@ def set_library_path(
 
 @router.get("/settings/libraries", response_model=LibraryPathsResponse)
 def get_library_paths(db: Session = Depends(get_session)) -> LibraryPathsResponse:
-    """Список папок библиотеки (мигрирует со старого одиночного пути)."""
+    """Library folder list (migrates from the old single path)."""
     return LibraryPathsResponse(paths=service.get_library_paths(db))
 
 
@@ -52,7 +52,7 @@ def add_library_path(
     body: LibraryPathRequest,
     db: Session = Depends(get_session),
 ) -> LibraryPathsResponse:
-    """Добавляет папку в список библиотеки. 400, если папки нет на диске."""
+    """Add a folder to the library list. 400 when absent on disk."""
     try:
         paths = service.add_library_path(db, body.path)
     except ValueError as exc:
@@ -65,7 +65,7 @@ def update_library_path(
     body: LibraryPathUpdate,
     db: Session = Depends(get_session),
 ) -> LibraryPathsResponse:
-    """Правит путь папки в списке. 400, если новой папки нет на диске."""
+    """Edit a folder path in the list. 400 when the new folder is absent."""
     try:
         paths = service.update_library_path(db, body.old_path, body.new_path)
     except ValueError as exc:
@@ -78,14 +78,14 @@ def remove_library_path(
     body: LibraryPathRequest,
     db: Session = Depends(get_session),
 ) -> LibraryPathsResponse:
-    """Убирает папку из списка библиотеки. Индексы на диске не трогаем."""
+    """Remove a folder from the library list. Indexes on disk stay."""
     paths = service.remove_library_path(db, body.path)
     return LibraryPathsResponse(paths=paths)
 
 
 @router.get("/settings/projects-libraries", response_model=LibraryPathsResponse)
 def get_projects_paths(db: Session = Depends(get_session)) -> LibraryPathsResponse:
-    """Список папок архива проектов (мигрирует со старого одиночного пути)."""
+    """Archive folder list (migrates from the old single path)."""
     return LibraryPathsResponse(paths=service.get_projects_paths(db))
 
 
@@ -94,7 +94,7 @@ def add_projects_path(
     body: LibraryPathRequest,
     db: Session = Depends(get_session),
 ) -> LibraryPathsResponse:
-    """Добавляет папку в список архива. 400, если папки нет на диске."""
+    """Add a folder to the archive list. 400 when absent on disk."""
     try:
         paths = service.add_projects_path(db, body.path)
     except ValueError as exc:
@@ -107,7 +107,7 @@ def update_projects_path(
     body: LibraryPathUpdate,
     db: Session = Depends(get_session),
 ) -> LibraryPathsResponse:
-    """Правит путь папки архива. 400, если новой папки нет на диске."""
+    """Edit an archive folder path. 400 when the new folder is absent."""
     try:
         paths = service.update_projects_path(db, body.old_path, body.new_path)
     except ValueError as exc:
@@ -120,14 +120,14 @@ def remove_projects_path(
     body: LibraryPathRequest,
     db: Session = Depends(get_session),
 ) -> LibraryPathsResponse:
-    """Убирает папку из списка архива. Индексы на диске не трогаем."""
+    """Remove a folder from the archive list. Indexes on disk stay."""
     paths = service.remove_projects_path(db, body.path)
     return LibraryPathsResponse(paths=paths)
 
 
 @router.get("/settings/vision-model", response_model=VisionModelSetting)
 def get_vision_model(db: Session = Depends(get_session)) -> VisionModelSetting:
-    """Текущая vision-модель для обработки документов."""
+    """Current vision model for document processing."""
     return VisionModelSetting(model=service.get_vision_model(db))
 
 
@@ -136,7 +136,7 @@ def set_vision_model(
     body: VisionModelSetting,
     db: Session = Depends(get_session),
 ) -> VisionModelSetting:
-    """Сохраняет выбор vision-модели. 400 на неизвестную модель."""
+    """Store the vision-model choice. 400 on an unknown model."""
     try:
         saved = service.set_vision_model(db, body.model)
     except ValueError as exc:
@@ -146,7 +146,7 @@ def set_vision_model(
 
 @router.get("/settings/describe-images", response_model=DescribeImagesSetting)
 def get_describe_images(db: Session = Depends(get_session)) -> DescribeImagesSetting:
-    """Включён ли vision при обработке (описание картинок)."""
+    """Is vision enabled during processing (image descriptions)?"""
     return DescribeImagesSetting(enabled=service.get_describe_images(db))
 
 
@@ -155,14 +155,14 @@ def set_describe_images(
     body: DescribeImagesSetting,
     db: Session = Depends(get_session),
 ) -> DescribeImagesSetting:
-    """Сохраняет тумблер описания картинок. ВЫКЛ = режим «Без LLM» (бесплатно)."""
+    """Store the description toggle. OFF = "No LLM" mode (free)."""
     saved = service.set_describe_images(db, body.enabled)
     return DescribeImagesSetting(enabled=saved)
 
 
 @router.get("/settings/openai-key", response_model=OpenAIKeyStatus)
 def get_openai_key(db: Session = Depends(get_session)) -> OpenAIKeyStatus:
-    """Статус ключа OpenAI: задан ли он и его маскированный хвост."""
+    """OpenAI key status: whether set, plus the masked tail."""
     key = service.get_openai_key(db)
     return OpenAIKeyStatus(
         is_set=bool(key),
@@ -175,7 +175,7 @@ def set_openai_key(
     body: OpenAIKeyRequest,
     db: Session = Depends(get_session),
 ) -> OpenAIKeyStatus:
-    """Сохраняет ключ OpenAI. Проверяет формат, кладёт в БД и в окружение."""
+    """Store the OpenAI key: format check, DB and environment."""
     try:
         saved = service.set_openai_key(db, body.key)
     except ValueError as exc:
@@ -185,7 +185,7 @@ def set_openai_key(
 
 @router.get("/settings/language", response_model=UiLanguageSetting)
 def get_ui_language(db: Session = Depends(get_session)) -> UiLanguageSetting:
-    """Текущий язык интерфейса (для текстов ошибок бэкенда)."""
+    """Current interface language (used for backend error texts)."""
     return UiLanguageSetting(language=service.get_ui_language(db))
 
 
@@ -194,13 +194,13 @@ def set_ui_language(
     body: UiLanguageSetting,
     db: Session = Depends(get_session),
 ) -> UiLanguageSetting:
-    """Сохраняет язык интерфейса; Literal в схеме отсекает мусор."""
+    """Store the interface language; the Literal schema rejects junk."""
     return UiLanguageSetting(language=service.set_ui_language(db, body.language))
 
 
 @router.get("/settings/answer-language", response_model=AnswerLanguageSetting)
 def get_answer_language(db: Session = Depends(get_session)) -> AnswerLanguageSetting:
-    """Текущий язык ответа LLM."""
+    """Current LLM answer language."""
     return AnswerLanguageSetting(language=service.get_answer_language(db))
 
 
@@ -209,7 +209,7 @@ def set_answer_language(
     body: AnswerLanguageSetting,
     db: Session = Depends(get_session),
 ) -> AnswerLanguageSetting:
-    """Сохраняет язык ответа; Literal в схеме отсекает мусор."""
+    """Store the answer language; the Literal schema rejects junk."""
     return AnswerLanguageSetting(
         language=service.set_answer_language(db, body.language)
     )
