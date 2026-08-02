@@ -1,6 +1,7 @@
-"""FastAPI-зависимость для защиты эндпоинтов.
+"""FastAPI dependency guarding endpoints.
 
-Прицепляем к роутерам, требующим логина. /api/auth/* и /api/health — без неё.
+Attached to routers that require login. /api/auth/* and /api/health go
+without it.
 """
 
 from fastapi import Depends, HTTPException, status
@@ -12,7 +13,7 @@ from backend.modules.auth.models import AuthSession
 
 
 def require_auth(db: Session = Depends(get_session)) -> AuthSession:
-    """401, если нет локальной сессии или сессия в состоянии 'blocked'."""
+    """401 when there is no local session or the session is 'blocked'."""
     session = service.get_session(db)
     if session is None:
         raise HTTPException(

@@ -1,4 +1,4 @@
-"""Pydantic-схемы модуля auth."""
+"""Pydantic schemas of the auth module."""
 
 from datetime import datetime
 
@@ -11,14 +11,15 @@ class LoginRequest(BaseModel):
 
 
 class LoginResponse(BaseModel):
-    """Возвращаем username, токен наружу не отдаём — он живёт в БД."""
+    """Only the username is returned — the token stays in the DB."""
 
     username: str
 
 
 class RegisterRequest(BaseModel):
-    """Саморегистрация. Логином служит email. После успеха клиент сразу залогинен
-    (тот же LoginResponse). linkedin — единственное необязательное поле."""
+    """Self-registration. The email is the login. On success the client is
+    logged in right away (same LoginResponse). linkedin is the only
+    optional field."""
 
     email: str
     password: str
@@ -29,7 +30,7 @@ class RegisterRequest(BaseModel):
 
 
 class ProfileResponse(BaseModel):
-    """Профиль юзера (приходит с сервера лицензий). username — только чтение."""
+    """User profile (comes from the license server). username is read-only."""
 
     username: str
     email: str | None = None
@@ -40,7 +41,7 @@ class ProfileResponse(BaseModel):
 
 
 class ProfileUpdate(BaseModel):
-    """Редактируемые поля профиля."""
+    """Editable profile fields."""
 
     email: str | None = None
     full_name: str | None = None
@@ -55,12 +56,12 @@ class ChangePasswordRequest(BaseModel):
 
 
 class StatusResponse(BaseModel):
-    """Текущее состояние авторизации.
+    """Current authorization state.
 
-    logged_in=False — нет строки в auth_session.
-    logged_in=True  — есть строка; status показывает результат последнего verify.
-    effective_status — что показывать UI: 'ok' разрешает работу, 'blocked' блокирует
-                       (см. compute_effective_status в service.py).
+    logged_in=False — no auth_session row.
+    logged_in=True  — a row exists; status is the last verify result.
+    effective_status — what the UI acts on: 'ok' allows work, 'blocked'
+                       locks it (see compute_effective_status).
     """
 
     logged_in: bool
@@ -68,6 +69,6 @@ class StatusResponse(BaseModel):
     status: str | None = None  # 'ok' | 'revoked' | 'offline' | 'update_required'
     effective_status: str | None = None  # 'ok' | 'blocked'
     last_verified_at: datetime | None = None
-    # Заполнен, если status='update_required'. Фронт показывает в оверлее
-    # «Установите новую версию» как ссылку.
+    # Set when status='update_required'; the frontend shows it as the
+    # download link in the "Install the new version" overlay.
     download_url: str | None = None

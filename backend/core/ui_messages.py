@@ -229,6 +229,11 @@ MESSAGES: dict[str, dict[str, str]] = {
         "de": "Der OpenAI-Schlüssel muss mit 'sk-' beginnen.",
     },
     # --- profile (auth) ---
+    "auth.server_unavailable": {
+        "cs": "Licenční server není dostupný. Zkuste to později.",
+        "en": "The license server is unavailable. Try again later.",
+        "de": "Der Lizenzserver ist nicht erreichbar. Versuchen Sie es später.",
+    },
     "profile.load_failed": {
         "cs": "Nepodařilo se načíst profil.",
         "en": "Failed to load the profile.",

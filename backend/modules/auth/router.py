@@ -1,17 +1,18 @@
-"""HTTP-эндпоинты модуля auth.
+"""HTTP endpoints of the auth module.
 
-POST /api/auth/login           — обмен логина/пароля на JWT через сервер лицензий.
-GET  /api/auth/status          — есть ли локальная сессия и в каком она статусе.
-POST /api/auth/logout          — удаляет локальную сессию.
-GET  /api/auth/profile         — профиль текущего юзера (прокси на сервер лицензий).
-PUT  /api/auth/profile         — обновить профиль (прокси).
-POST /api/auth/change-password — сменить пароль (прокси).
+POST /api/auth/login           — trade login/password for a JWT via the license server.
+GET  /api/auth/status          — is there a local session and in what state.
+POST /api/auth/logout          — delete the local session.
+GET  /api/auth/profile         — current user profile (license-server proxy).
+PUT  /api/auth/profile         — update the profile (proxy).
+POST /api/auth/change-password — change the password (proxy).
 """
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from backend.core.database import get_session
+from backend.core.ui_messages import msg
 from backend.modules.auth import service
 from backend.modules.auth.schemas import (
     ChangePasswordRequest,
@@ -32,8 +33,8 @@ def login(body: LoginRequest, db: Session = Depends(get_session)) -> LoginRespon
     try:
         session = service.login(db, body.username, body.password)
     except service.UpdateRequiredError as exc:
-        # 426 — версия клиента младше MIN_SUPPORTED_VERSION на сервере лицензий.
-        # detail-dict позволяет фронту достать ссылку на скачивание.
+        # 426 — the client is older than the server's MIN_SUPPORTED_VERSION.
+        # The detail dict lets the frontend pull the download link.
         raise HTTPException(
             status_code=426,
             detail={
@@ -44,10 +45,10 @@ def login(body: LoginRequest, db: Session = Depends(get_session)) -> LoginRespon
     except service.LoginError as exc:
         raise HTTPException(status_code=exc.status_code, detail=exc.message) from exc
     except service.LicenseServerUnavailable as exc:
-        # 503 — корректный код для «зависимый сервис не отвечает».
+        # 503 — the proper code for "a dependency is not answering".
         raise HTTPException(
             status_code=503,
-            detail="Сервер лицензий недоступен. Попробуйте позже.",
+            detail=msg("auth.server_unavailable"),
         ) from exc
     return LoginResponse(username=session.username)
 
@@ -67,12 +68,12 @@ def register(
             },
         ) from exc
     except service.LoginError as exc:
-        # 409 — имя занято, 400 — короткий логин/пароль (текст с сервера лицензий).
+        # 409 — name taken, 400 — short login/password (server text).
         raise HTTPException(status_code=exc.status_code, detail=exc.message) from exc
     except service.LicenseServerUnavailable as exc:
         raise HTTPException(
             status_code=503,
-            detail="Сервер лицензий недоступен. Попробуйте позже.",
+            detail=msg("auth.server_unavailable"),
         ) from exc
     return LoginResponse(username=session.username)
 
@@ -99,13 +100,13 @@ def logout(db: Session = Depends(get_session)) -> dict:
 
 
 def _handle_profile_errors(exc: Exception) -> None:
-    """Переводит ошибки сервиса профиля в HTTPException. Общая обёртка."""
+    """Translate profile-service errors into HTTPException. Shared wrapper."""
     if isinstance(exc, service.NotLoggedInError):
         raise HTTPException(status_code=401, detail="Not logged in") from exc
     if isinstance(exc, service.LicenseServerUnavailable):
         raise HTTPException(
             status_code=503,
-            detail="Licenční server není dostupný. Zkuste to později.",
+            detail=msg("auth.server_unavailable"),
         ) from exc
     if isinstance(exc, service.ProfileError):
         raise HTTPException(status_code=exc.status_code, detail=exc.message) from exc
@@ -114,10 +115,10 @@ def _handle_profile_errors(exc: Exception) -> None:
 
 @router.get("/auth/profile", response_model=ProfileResponse)
 def get_profile(db: Session = Depends(get_session)) -> ProfileResponse:
-    """Профиль текущего юзера (проксируем на сервер лицензий)."""
+    """Current user profile (license-server proxy)."""
     try:
         return ProfileResponse(**service.get_profile(db))
-    except Exception as exc:  # noqa: BLE001 — раскладываем по типам в обёртке
+    except Exception as exc:  # noqa: BLE001 — typed in the wrapper
         _handle_profile_errors(exc)
 
 
@@ -125,7 +126,7 @@ def get_profile(db: Session = Depends(get_session)) -> ProfileResponse:
 def update_profile(
     body: ProfileUpdate, db: Session = Depends(get_session)
 ) -> ProfileResponse:
-    """Сохраняет профиль (проксируем на сервер лицензий)."""
+    """Save the profile (license-server proxy)."""
     try:
         return ProfileResponse(**service.update_profile(db, body.model_dump()))
     except Exception as exc:  # noqa: BLE001
@@ -136,7 +137,7 @@ def update_profile(
 def change_password(
     body: ChangePasswordRequest, db: Session = Depends(get_session)
 ) -> dict:
-    """Смена пароля (проксируем на сервер лицензий)."""
+    """Change the password (license-server proxy)."""
     try:
         service.change_password(db, body.old_password, body.new_password)
         return {"ok": True}

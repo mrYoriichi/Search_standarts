@@ -1,15 +1,16 @@
-"""Модель AuthSession — локальное состояние авторизации.
+"""AuthSession — local authorization state.
 
-Хранится одна строка-синглтон (id=1). Если строки нет — юзер не залогинен.
-Поля:
-  - token: JWT от сервера лицензий
-  - username: логин юзера (для отображения в UI)
-  - last_verified_at: время последнего успешного verify на сервере
+A single singleton row (id=1). No row — not logged in.
+Fields:
+  - token: JWT from the license server
+  - username: the user's login (shown in the UI)
+  - last_verified_at: time of the last successful server verify
   - last_verify_status: 'ok' | 'revoked' | 'offline'
-        ok       — сервер ответил 200, токен валиден
-        revoked  — сервер ответил 401/403, доступ отозван (мгновенный блок)
-        offline  — сервер недоступен (network error / 5xx); работаем,
-                   пока last_verified_at не старше 1 дня (grace period)
+        ok       — server answered 200, token valid
+        revoked  — server answered 401/403, access revoked (instant block)
+        offline  — server unreachable (network error / 5xx); the app works
+                   while last_verified_at is younger than 1 day (grace
+                   period; the public build never blocks on offline)
 """
 
 from datetime import datetime
@@ -30,6 +31,6 @@ class AuthSession(Base):
         DateTime, server_default=func.now()
     )
     last_verify_status: Mapped[str] = mapped_column(String, default="ok")
-    # Если сервер прислал 426 — кладём сюда URL, фронт покажет в оверлее
-    # «Установите новую версию». Иначе остаётся NULL.
+    # When the server sent 426, the URL lands here; the frontend shows it
+    # in the "Install the new version" overlay. Otherwise NULL.
     download_url: Mapped[str | None] = mapped_column(String, nullable=True)
