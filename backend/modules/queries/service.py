@@ -17,6 +17,7 @@ from search.library import filter_library
 from indexing.bm25_index import build_bm25_from_tokens
 from common.pricing import model_cost
 from search.expand import expand_query
+from search.lang_detect import corpus_languages
 from search.hybrid import search_by_mode
 from search.answer import generate_answer
 
@@ -164,7 +165,11 @@ def ask(
     # Расширяем запрос для поиска (диакритика, термины, синонимы), но ответ
     # генерим по ОРИГИНАЛЬНОМУ вопросу — чтобы отвечать на то, что спросил юзер.
     # Расширение можно отключить галочкой (expand=False) — тогда ищем как есть.
-    search_query = expand_query(question) if expand else question
+    # Языки корпуса считаем по УЖЕ отфильтрованным чанкам: если юзер ищет
+    # только в чешской папке, английские термины в запросе не нужны.
+    search_query = (
+        expand_query(question, corpus_languages(chunks)) if expand else question
+    )
 
     # BM25 собираем из закешированных токенов текущего набора чанков (с учётом
     # фильтра) — IDF считается по этому же набору, как и раньше.
