@@ -1,15 +1,16 @@
-"""Lock-файл индексации папки: не даёт двум машинам индексировать общую
-сетевую папку одновременно (задвоенные траты на vision + гонки записи в
+"""Folder indexing lock file: stops two machines from indexing one
+shared network folder at once (doubled vision spending + write races in
 `.search_index`).
 
-Лок — файл `<папка>/.search_index/index.lock` с `{owner, ts}`. Пока идёт
-индексация, `ts` освежается (heartbeat); по завершении последнего документа
-папки лок снимается. Если приложение упало или потеряло сеть, лок протухнет
-(TTL) и другая машина сможет его перехватить — папка не залипнет навсегда.
+The lock is the file `<folder>/.search_index/index.lock` with
+`{owner, ts}`. While indexing runs, `ts` is refreshed (heartbeat); when
+the folder's last document finishes, the lock is removed. If the app
+crashed or lost the network, the lock goes stale (TTL) and another
+machine may take it over — the folder never sticks forever.
 
-Координация нужна между РАЗНЫМИ машинами на общей папке. Внутри одного
-приложения двойной запуск и так не проходит (двухшаговый скан + статус
-processing), поэтому тут — только межмашинная страховка.
+Coordination is needed between DIFFERENT machines on a shared folder.
+Inside one app a double start is already impossible (two-step scan +
+processing status), so this is inter-machine insurance only.
 """
 
 import json
@@ -22,20 +23,22 @@ from pathlib import Path
 from backend.core import index_store
 
 LOCK_FILENAME = "index.lock"
-# Лок старше этого времени считаем брошенным (машина упала/ушла из сети).
+# A lock older than this is considered abandoned (machine crashed/offline).
 TTL_SECONDS = 15 * 60
-# Heartbeat освежает локи втрое чаще TTL — запас на пару пропущенных тиков.
+# The heartbeat refreshes locks three times per TTL — margin for a couple
+# of missed ticks.
 HEARTBEAT_SECONDS = 5 * 60
 
-# Счётчик документов «в работе» по папкам: последний закончивший снимает лок.
-# Живёт в памяти (как progress); при падении лок снимет TTL, не счётчик.
+# In-flight document counter per folder: the last one to finish releases
+# the lock. Lives in memory (like progress); after a crash the TTL, not
+# the counter, releases the lock.
 _inflight_lock = threading.Lock()
 _inflight: dict[str, int] = {}
 _heartbeat_started = False
 
 
 def owner() -> str:
-    """Кто держит лок — имя машины (узнаваемо для коллег в сообщении)."""
+    """Who holds the lock — the machine name (recognizable to colleagues)."""
     return socket.gethostname() or "neznámý"
 
 
@@ -44,17 +47,18 @@ def _lock_path(library_path: Path) -> Path:
 
 
 def read_lock(library_path: Path) -> dict | None:
-    """Содержимое лок-файла; None — файла нет.
+    """Lock file contents; None — no file.
 
-    Сбой ЧТЕНИЯ (сеть моргнула, нет прав) — это НЕ «свободно»: OSError уходит
-    выше, и holder() считает папку занятой. Иначе сетевой сбой перезаписывал
-    бы живой чужой лок, и две машины индексировали бы папку параллельно.
+    A READ failure (network blip, no permission) is NOT "free": the
+    OSError propagates and holder() treats the folder as busy. Otherwise
+    a network hiccup would overwrite a live foreign lock and two machines
+    would index in parallel.
 
-    Мусор в файле (битый/недописанный JSON) — владельца не знаем, поэтому
-    возраст берём из mtime файла: {owner: None, ts: mtime}. Свежий мусор может
-    быть чужим локом, который ПРЯМО СЕЙЧАС дописывается (создание файла и
-    запись JSON — два разных системных вызова) — перехватывать нельзя;
-    протухший по TTL — можно, как раньше.
+    Garbage in the file (broken/partially written JSON) — the owner is
+    unknown, so the age comes from the file mtime: {owner: None,
+    ts: mtime}. Fresh garbage may be a foreign lock being written RIGHT
+    NOW (creating the file and writing JSON are two separate syscalls) —
+    it must not be taken over; stale-by-TTL garbage may be, as before.
     """
     try:
         with open(_lock_path(library_path), encoding="utf-8") as f:
@@ -65,7 +69,7 @@ def read_lock(library_path: Path) -> dict | None:
         try:
             return {"owner": None, "ts": _lock_path(library_path).stat().st_mtime}
         except OSError:
-            return None  # файл исчез между чтением и stat — свободно
+            return None  # vanished between read and stat — free
 
 
 def _is_stale(lock: dict) -> bool:
@@ -73,17 +77,17 @@ def _is_stale(lock: dict) -> bool:
 
 
 def holder(library_path: Path) -> str | None:
-    """Кто СЕЙЧАС держит свежий чужой лок, иначе None (свободно/наш/протух)."""
+    """Who holds a fresh foreign lock NOW; None = free/ours/stale."""
     try:
         lock = read_lock(library_path)
     except OSError:
-        # Лок не читается (сеть/права) — безопаснее считать папку занятой.
+        # Unreadable lock (network/permissions) — safer to treat as busy.
         return "neznámý počítač (zámek nelze přečíst)"
     if lock is None or _is_stale(lock):
         return None
     who = lock.get("owner")
     if who is None:
-        # Свежий недописанный лок — владельца ещё не видно, но папка занята.
+        # A fresh half-written lock: owner not visible yet, folder busy.
         return "neznámý počítač (zámek se právě zapisuje)"
     return None if who == owner() else who
 
@@ -95,25 +99,27 @@ def _write(library_path: Path) -> None:
         with open(_lock_path(library_path), "w", encoding="utf-8") as f:
             json.dump({"owner": owner(), "ts": time.time()}, f)
     except OSError:
-        pass  # read-only папка — координировать нечем, индексация там всё равно упадёт
+        pass  # read-only folder — nothing to coordinate with; indexing
+        # there will fail with a clear error anyway
 
 
 def _mark_inflight(library_path: Path) -> None:
     with _inflight_lock:
-        # setdefault, НЕ сброс: повторный «Indexovat» во время работы папки
-        # не должен обнулять счётчик — иначе первый же done() старой партии
-        # снял бы лок, пока остальные документы ещё пишут в .search_index.
+        # setdefault, NOT reset: a repeated "Index" click while the folder
+        # is working must not zero the counter — the first done() of the
+        # old batch would drop the lock while other documents still write
+        # into .search_index.
         _inflight.setdefault(str(library_path), 0)
 
 
 def _try_create(library_path: Path) -> bool:
-    """Атомарно создаёт лок-файл: O_EXCL — «создать, ТОЛЬКО если файла нет».
+    """Atomically create the lock file: O_EXCL — create ONLY if absent.
 
-    Гарантию даёт файловая система: из одновременных попыток выигрывает ровно
-    одна — окна «прочитал → решил → записал» больше нет. True — лок наш.
-    False — файл уже существует (кто-то успел раньше). Прочие OSError
-    (read-only папка) — как раньше в _write: координировать нечем, работаем
-    без лока, индексация там всё равно упадёт с понятной ошибкой.
+    The filesystem guarantees exactly one winner among concurrent
+    attempts — no more "read → decide → write" window. True — the lock is
+    ours. False — the file already exists (someone was faster). Other
+    OSErrors (read-only folder) behave like _write: nothing to
+    coordinate with, we work unlocked and indexing there fails clearly.
     """
     try:
         index_store.index_root(library_path).mkdir(parents=True, exist_ok=True)
@@ -126,21 +132,21 @@ def _try_create(library_path: Path) -> bool:
         with os.fdopen(fd, "w", encoding="utf-8") as f:
             json.dump({"owner": owner(), "ts": time.time()}, f)
     except OSError:
-        pass  # сеть моргнула после создания — пустой лок дочитают как мусор
+        pass  # network blip after creation — the empty lock reads as garbage
     return True
 
 
 def acquire(library_path: Path) -> str | None:
-    """Пытается занять лок папки.
+    """Try to take the folder lock.
 
-    None — заняли (было свободно / протухло / уже наш). Иначе — имя машины,
-    которая держит свежий лок: индексацию этой папки НЕ начинаем.
+    None — taken (was free / stale / already ours). Otherwise the name of
+    the machine holding a fresh lock: do NOT start indexing this folder.
     """
     if _try_create(library_path):
         _mark_inflight(library_path)
         return None
 
-    # Файл уже существует. Свежий чужой лок — папка занята.
+    # The file already exists. A fresh foreign lock — folder busy.
     who = holder(library_path)
     if who is not None:
         return who
@@ -150,14 +156,15 @@ def acquire(library_path: Path) -> str | None:
     except OSError:
         return "neznámý počítač (zámek nelze přečíst)"
     if lock is not None and lock.get("owner") == owner() and not _is_stale(lock):
-        _write(library_path)  # наш живой лок — просто освежаем ts
+        _write(library_path)  # our live lock — just refresh ts
         _mark_inflight(library_path)
         return None
 
-    # Протухший/мусорный/успевший исчезнуть лок: сносим и пробуем создать
-    # ровно ещё раз — O_EXCL решит, какая из машин успела первой. Крошечное
-    # окно остаётся (обе снесли протухший лок одновременно), но это доли
-    # секунды на редком сценарии вместо гонки при каждом захвате.
+    # Stale/garbage/just-vanished lock: remove it and try to create
+    # exactly once more — O_EXCL decides which machine wins. A tiny
+    # window remains (both removed the stale lock simultaneously), but
+    # that is a sub-second race on a rare path instead of a race on
+    # every acquisition.
     try:
         _lock_path(library_path).unlink()
     except FileNotFoundError:
@@ -171,18 +178,18 @@ def acquire(library_path: Path) -> str | None:
 
 
 def register(library_path: Path, n: int) -> None:
-    """Сколько документов папки уходит в обработку (для снятия лока в конце)."""
+    """How many folder documents enter processing (for the final release)."""
     with _inflight_lock:
         _inflight[str(library_path)] = _inflight.get(str(library_path), 0) + n
     _ensure_heartbeat()
 
 
 def refresh(library_path: Path) -> None:
-    """Освежает ts нашего лока — heartbeat."""
+    """Refresh our lock's ts — the heartbeat."""
     try:
         lock = read_lock(library_path)
     except OSError:
-        return  # сеть моргнула — попробуем в следующий heartbeat
+        return  # network blip — retried on the next heartbeat
     if lock and lock.get("owner") == owner():
         _write(library_path)
 
@@ -197,13 +204,14 @@ def _heartbeat_loop() -> None:
 
 
 def _ensure_heartbeat() -> None:
-    """Ленивый старт daemon-потока, освежающего локи занятых папок.
+    """Lazily start the daemon thread refreshing locks of busy folders.
 
-    refresh только в начале документа мало: документы могут часами ждать
-    очереди executor'а (3 потока), а один документ — обрабатываться дольше
-    TTL. Без heartbeat лок протухал, и другая машина заходила в папку
-    параллельно. Поток daemon: умирает вместе с процессом; после падения
-    лок честно снимет TTL.
+    Refreshing only at document start is not enough: documents can wait
+    hours in the executor queue (3 threads), and one document can process
+    longer than the TTL. Without the heartbeat the lock went stale and
+    another machine entered the folder in parallel. The thread is a
+    daemon: it dies with the process; after a crash the TTL honestly
+    releases the lock.
     """
     global _heartbeat_started
     with _inflight_lock:
@@ -216,7 +224,7 @@ def _ensure_heartbeat() -> None:
 
 
 def done(library_path: Path) -> None:
-    """Документ папки закончил обработку. Последний — снимает лок."""
+    """A folder document finished processing. The last one drops the lock."""
     key = str(library_path)
     with _inflight_lock:
         left = _inflight.get(key, 1) - 1
@@ -229,7 +237,7 @@ def done(library_path: Path) -> None:
         try:
             lock = read_lock(library_path)
         except OSError:
-            return  # лок не читается — его снимет TTL
+            return  # unreadable lock — the TTL will release it
         if lock and lock.get("owner") == owner():
             try:
                 _lock_path(library_path).unlink()
