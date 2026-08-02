@@ -12,6 +12,11 @@ Local-first desktop app for civil engineers working with Czech and European
 norms (ČSN, Eurocode) and their own project archives. Built by a bridge
 engineer; piloted daily by a real engineering office.
 
+**Your documents never leave your computer.** The index and the database
+live on your machine; there is no cloud storage and nobody — including the
+author — ever sees your files or questions. The only outbound traffic is
+OpenAI API calls made with your own key.
+
 ![Search page](docs/screenshots/search.png)
 
 ## Features

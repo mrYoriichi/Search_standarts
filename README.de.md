@@ -10,6 +10,11 @@ Eine lokale Desktop-App für Bauingenieure, die mit ČSN, Eurocodes und
 eigenen Projektarchiven arbeiten. Der Autor ist Brückeningenieur; die App
 wird täglich in einem echten Ingenieurbüro eingesetzt.
 
+**Ihre Dokumente verlassen Ihren Rechner nie.** Index und Datenbank
+laufen lokal; es gibt keinen Cloud-Speicher, und niemand — auch nicht der
+Autor — sieht Ihre Dateien oder Fragen. Der einzige ausgehende Verkehr
+sind OpenAI-API-Aufrufe mit Ihrem eigenen Schlüssel.
+
 ![Suche](docs/screenshots/search.png)
 
 ## Funktionen

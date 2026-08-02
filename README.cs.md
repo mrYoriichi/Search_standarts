@@ -7,8 +7,13 @@ s odkazem na konkrétní dokument, kapitolu a stránku. Konec listování
 třísetstránkovými PDF.
 
 Aplikace pro stavební inženýry pracující s ČSN, Eurokódy a vlastními
-archivy projektů. Vše běží lokálně na vašem počítači. Autor je mostní
-inženýr; aplikaci denně používá skutečná projekční kancelář.
+archivy projektů. Autor je mostní inženýr; aplikaci denně používá
+skutečná projekční kancelář.
+
+**Vaše dokumenty nikdy neopouštějí váš počítač.** Index i databáze běží
+lokálně; žádné cloudové úložiště neexistuje a nikdo — ani autor — vaše
+soubory a dotazy nevidí. Jediný odchozí provoz jsou volání OpenAI API
+s vaším vlastním klíčem.
 
 ![Vyhledávání](docs/screenshots/search.png)
 
