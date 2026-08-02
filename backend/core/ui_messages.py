@@ -176,6 +176,11 @@ MESSAGES: dict[str, dict[str, str]] = {
         "en": "{name} (unavailable)",
         "de": "{name} (nicht erreichbar)",
     },
+    "lib.doc_busy": {
+        "cs": "Dokument {slug} se právě indexuje — počkejte na dokončení.",
+        "en": "Document {slug} is being indexed right now — wait for it to finish.",
+        "de": "Dokument {slug} wird gerade indexiert — warten Sie, bis es fertig ist.",
+    },
     "lib.folder_busy": {
         "cs": "Složku právě indexuje jiný počítač: {owner}",
         "en": "Another computer is indexing this folder right now: {owner}",

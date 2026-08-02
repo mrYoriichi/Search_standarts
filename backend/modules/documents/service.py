@@ -1,4 +1,4 @@
-"""Бизнес-логика модуля documents."""
+"""Business logic of the documents module."""
 
 import json
 import shutil
@@ -16,28 +16,26 @@ from common.jsonio import save_json_atomic
 
 
 class DocumentBusyError(Exception):
-    """Операция отклонена: документ сейчас обрабатывается пайплайном.
+    """Operation rejected: the document is being processed right now.
 
-    Удаление/переиндексация/relink во время работы фонового pipeline дают
-    гонку: пайплайн дописал бы артефакты уже ПОСЛЕ rmtree, и следующий
-    «Skenovat» «усыновил» бы удалённый документ обратно (двойная оплата).
+    Delete/reindex/relink during a running pipeline race it: the pipeline
+    would finish writing artifacts AFTER the rmtree, and the next scan
+    would adopt the deleted document back (double payment).
     """
 
 
 def _ensure_not_processing(doc: Document) -> None:
-    """Кидает DocumentBusyError, если документ сейчас в работе у пайплайна."""
+    """Raise DocumentBusyError when the pipeline is working on the document."""
     if doc.status == "processing":
-        raise DocumentBusyError(
-            f"Документ {doc.slug} сейчас индексируется — дождись конца обработки"
-        )
+        raise DocumentBusyError(msg("lib.doc_busy", slug=doc.slug))
 
 
 def _artifact_dirs(slug: str, library_path: Path | None) -> list[Path]:
-    """Папка артефактов документа в пуле .search_index его папки библиотеки.
+    """The document's artifact folder inside its library's .search_index.
 
-    Список (а не один путь) — вызывающий код чистит все кандидаты подряд и не
-    обязан знать, что кандидат сейчас один; отключённая папка даёт пустой
-    список, а не ошибку.
+    A list (not a single path): callers clean every candidate and need
+    not know there is currently one; a detached folder yields an empty
+    list, not an error.
     """
     if library_path is None:
         return []
@@ -45,27 +43,27 @@ def _artifact_dirs(slug: str, library_path: Path | None) -> list[Path]:
 
 
 def _doc_folder(paths: list[Path], slug: str) -> Path | None:
-    """Папка библиотеки, которой принадлежит документ (по метке в slug)."""
+    """The library folder owning the document (by the slug tag)."""
     return index_store.resolve_folder(paths, slug)
 
 
 def _ensure_folder_not_locked(library_path: Path | None) -> None:
-    """Кидает DocumentBusyError, если папку сейчас индексирует ДРУГАЯ машина.
+    """Raise DocumentBusyError when ANOTHER machine is indexing the folder.
 
-    delete/relink меняют общий .search_index — под чужим пайплайном rmtree/
-    rename уронили бы его запись (оплаченный vision пропал бы). Лок здесь
-    только проверяем, НЕ берём: acquire+done сбили бы счётчик документов,
-    которые прямо сейчас индексирует наша собственная машина.
+    delete/relink mutate the shared .search_index — under a foreign
+    pipeline an rmtree/rename would break its writes (paid vision lost).
+    The lock is only checked, NOT taken: acquire+done would corrupt the
+    in-flight counter of documents our own machine is indexing.
     """
     if library_path is None:
-        return  # папка библиотеки неизвестна — координировать нечего
+        return  # library folder unknown — nothing to coordinate
     busy = index_lock.holder(library_path)
     if busy is not None:
         raise DocumentBusyError(msg("lib.folder_busy", owner=busy))
 
 
 def list_documents(db: Session) -> list[Document]:
-    """Все документы из библиотеки, упорядоченные по дате создания."""
+    """All library documents ordered by creation date."""
     stmt = select(Document).order_by(Document.created_at)
     return list(db.scalars(stmt))
 
@@ -76,38 +74,36 @@ def reindex_document(
     paths: list[Path],
     executor: ThreadPoolExecutor,
 ) -> Document:
-    """Полностью переобрабатывает документ: удаляет старые артефакты и запускает pipeline.
+    """Fully re-process a document: drop old artifacts, run the pipeline.
 
-    Нужно, когда юзер заменил содержимое PDF (имя файла осталось то же).
-    Старые чанки/эмбеддинги тогда устарели — выбрасываем их и собираем заново.
-    Сам PDF в библиотеке НЕ трогаем.
+    Needed when the user replaced the PDF content (same file name). Old
+    chunks/embeddings are stale — thrown away and rebuilt. The PDF itself
+    is untouched.
     """
     doc = db.scalar(select(Document).where(Document.slug == slug))
     if doc is None:
-        raise ValueError(f"Документ {slug} не найден")
+        raise ValueError(f"Document {slug} not found")
     _ensure_not_processing(doc)
     if doc.relative_path is None:
-        raise ValueError(
-            f"У документа {slug} нет relative_path — нужен Сканировать сначала"
-        )
+        raise ValueError(f"Document {slug} has no relative_path — scan first")
 
     library_path = _doc_folder(paths, slug)
     if library_path is None:
-        raise ValueError(f"Папка документа {slug} не подключена")
+        raise ValueError(f"The folder of document {slug} is not attached")
 
     pdf_path = library_path / doc.relative_path
     if not pdf_path.exists():
-        raise ValueError(f"PDF не найден в библиотеке: {pdf_path}")
+        raise ValueError(f"PDF not found in the library: {pdf_path}")
 
-    # Межмашинный лок папки — как при обычной индексации: без него reindex
-    # писал бы в .search_index параллельно с другой машиной.
+    # The inter-machine folder lock, as in regular indexing: without it
+    # reindex would write into .search_index in parallel with another machine.
     busy = index_lock.acquire(library_path)
     if busy is not None:
         raise DocumentBusyError(msg("lib.folder_busy", owner=busy))
 
-    # Готовый документ пересобираем с нуля. Упавший (failed) — ПРОДОЛЖАЕМ с
-    # чекпоинта descriptions.json: resume в describe пропустит оплаченные
-    # страницы (живой случай 2026-08-02 — сбой vision на одной странице).
+    # A ready document rebuilds from scratch. A failed one RESUMES from
+    # the descriptions.json checkpoint: describe skips the already-paid
+    # pages (live case 2026-08-02 — a vision hiccup on a single page).
     if doc.status == "ready":
         for artifacts_dir in _artifact_dirs(slug, library_path):
             if artifacts_dir.exists():
@@ -117,11 +113,11 @@ def reindex_document(
     doc.error_message = None
     db.commit()
 
-    # Старые чанки документа уже удалены — убираем их из кеша сразу, не дожидаясь
-    # конца переобработки (pipeline сбросит кеш ещё раз, когда документ снова готов).
+    # The old chunks are already gone from disk — drop them from the
+    # cache now; the pipeline invalidates again when the document is ready.
     library_cache.invalidate()
 
-    # Ленивый импорт: embeddings_index тянет openai/tiktoken.
+    # Lazy import: embeddings_index pulls in openai/tiktoken.
     from indexing.embeddings_index import EMBEDDING_MODEL
 
     index_store.ensure_meta(library_path, EMBEDDING_MODEL)
@@ -137,15 +133,14 @@ def reindex_document(
 
 
 def delete_document(db: Session, slug: str, paths: list[Path] | None = None) -> None:
-    """Убирает документ из индекса: удаляет запись и наши артефакты.
+    """Remove a document from the index: the DB row and our artifacts.
 
-    PDF в папке юзера НЕ трогаем — программа никогда не модифицирует
-    файлы пользователя (см. PROJECT_STATE.md, принцип 16). Пишем только
-    внутрь своей подпапки .search_index.
+    The PDF in the user's folder is untouched — the app never modifies
+    user files; it writes only inside its own .search_index subfolder.
     """
     doc = db.scalar(select(Document).where(Document.slug == slug))
     if doc is None:
-        raise ValueError(f"Документ {slug} не найден")
+        raise ValueError(f"Document {slug} not found")
     _ensure_not_processing(doc)
 
     library_path = _doc_folder(paths or [], slug)
@@ -156,14 +151,14 @@ def delete_document(db: Session, slug: str, paths: list[Path] | None = None) -> 
 
     db.delete(doc)
     db.commit()
-    library_cache.invalidate()  # документ исчез с диска — обновить кеш
+    library_cache.invalidate()  # the document left the disk — refresh
 
 
 def toggle_pin(db: Session, slug: str) -> Document:
-    """Переключает закреплённость документа. Бросает ValueError, если не найден."""
+    """Toggle the pin. ValueError when the document is missing."""
     doc = db.scalar(select(Document).where(Document.slug == slug))
     if doc is None:
-        raise ValueError(f"Документ {slug} не найден")
+        raise ValueError(f"Document {slug} not found")
     doc.pinned = not doc.pinned
     db.commit()
     return doc
@@ -172,47 +167,46 @@ def toggle_pin(db: Session, slug: str) -> Document:
 def relink_document(
     db: Session, old_slug: str, new_slug: str, paths: list[Path] | None = None
 ) -> Document:
-    """Переносит существующий индекс со старого slug на новый — для переименования файла.
+    """Move an existing index from the old slug to the new one (rename).
 
-    Юзер переименовал PDF в папке библиотеки. Чтобы не платить за повторный
-    vision LLM ($$$ за тот же документ), переносим уже готовые чанки и
-    эмбеддинги на новое имя.
+    The user renamed a PDF in the library folder. To avoid paying vision
+    again for the same document, the ready chunks and embeddings move to
+    the new name.
 
-    Шаги:
-    1. Переименовать папку артефактов {old_slug}/ -> {new_slug}/ в том пуле,
-       где она лежит (.search_index папки библиотеки)
-    2. В chunks.json заменить document_id и префикс chunk_id со старого на новый
-    3. В embeddings.json заменить префикс chunk_id
-    4. Обновить Document.slug в БД
+    Steps:
+    1. Rename the artifact folder {old_slug}/ -> {new_slug}/.
+    2. In chunks.json replace document_id and the chunk_id prefix.
+    3. In embeddings.json replace the chunk_id prefix.
+    4. Update Document.slug in the DB.
     """
     if old_slug == new_slug:
-        raise ValueError("old_slug и new_slug совпадают")
+        raise ValueError("old_slug and new_slug are identical")
 
     doc = db.scalar(select(Document).where(Document.slug == old_slug))
     if doc is None:
-        raise ValueError(f"Документ {old_slug} не найден в БД")
+        raise ValueError(f"Document {old_slug} not found in the DB")
     _ensure_not_processing(doc)
 
     conflicting = db.scalar(select(Document).where(Document.slug == new_slug))
     if conflicting is not None:
-        raise ValueError(f"Документ с slug {new_slug} уже существует")
+        raise ValueError(f"A document with slug {new_slug} already exists")
 
-    # Индекс переносим внутри того пула, где он реально лежит.
+    # The index moves within the pool where it actually lives.
     library_path = _doc_folder(paths or [], old_slug)
     _ensure_folder_not_locked(library_path)
     old_dir = next(
         (d for d in _artifact_dirs(old_slug, library_path) if d.exists()), None
     )
     if old_dir is None:
-        raise ValueError(f"Папка артефактов {old_slug} не найдена на диске")
+        raise ValueError(f"Artifact folder of {old_slug} not found on disk")
     new_dir = old_dir.parent / new_slug
     if new_dir.exists():
-        raise ValueError(f"Папка {new_dir} уже существует — конфликт")
+        raise ValueError(f"Folder {new_dir} already exists — conflict")
 
-    # 1. Переименовываем папку с артефактами.
+    # 1. Rename the artifact folder.
     old_dir.rename(new_dir)
 
-    # 2. chunks.json: подменяем document_id и префикс chunk_id.
+    # 2. chunks.json: swap document_id and the chunk_id prefix.
     chunks_path = new_dir / "chunks.json"
     if chunks_path.exists():
         with open(chunks_path, encoding="utf-8") as f:
@@ -222,7 +216,7 @@ def relink_document(
             chunk["chunk_id"] = _replace_prefix(chunk["chunk_id"], old_slug, new_slug)
         save_json_atomic(chunks_path, chunks)
 
-    # 3. embeddings.json: chunk_id внутри items.
+    # 3. embeddings.json: chunk_id inside items.
     emb_path = new_dir / "embeddings.json"
     if emb_path.exists():
         with open(emb_path, encoding="utf-8") as f:
@@ -231,15 +225,15 @@ def relink_document(
             item["chunk_id"] = _replace_prefix(item["chunk_id"], old_slug, new_slug)
         save_json_atomic(emb_path, emb)
 
-    # 4. Обновляем slug в БД.
+    # 4. Update the slug in the DB.
     doc.slug = new_slug
     db.commit()
-    library_cache.invalidate()  # document_id/chunk_id поменялись — обновить кеш
+    library_cache.invalidate()  # document_id/chunk_id changed — refresh
     return doc
 
 
 def _replace_prefix(value: str, old: str, new: str) -> str:
-    """Заменяет старый префикс на новый. Если префикса нет — возвращает как есть."""
+    """Replace the old prefix with the new; no prefix — returned as is."""
     if value.startswith(old):
         return new + value[len(old) :]
     return value

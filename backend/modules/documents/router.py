@@ -1,4 +1,4 @@
-"""HTTP-эндпоинты модуля documents."""
+"""HTTP endpoints of the documents module."""
 
 from pathlib import Path
 
@@ -16,7 +16,7 @@ router = APIRouter()
 
 
 class RelinkRequest(BaseModel):
-    """Запрос: «документ old_slug — это переименование, новое имя даёт new_slug»."""
+    """Request: "document old_slug was renamed; the new name gives new_slug"."""
 
     old_slug: str
     new_slug: str
@@ -24,7 +24,7 @@ class RelinkRequest(BaseModel):
 
 @router.get("/documents", response_model=list[DocumentResponse])
 def list_documents(db: Session = Depends(get_session)) -> list:
-    """Список всех документов в библиотеке."""
+    """All documents in the library."""
     return service.list_documents(db)
 
 
@@ -34,10 +34,10 @@ def reindex_document(
     request: Request,
     db: Session = Depends(get_session),
 ) -> DocumentResponse:
-    """Полная переобработка документа: старые чанки удаляем, pipeline запускаем заново."""
+    """Full re-processing: drop old chunks, run the pipeline again."""
     paths = [Path(p) for p in settings_service.get_library_paths(db)]
     if not paths:
-        raise HTTPException(status_code=400, detail="Папка библиотеки не задана")
+        raise HTTPException(status_code=400, detail="No library folder is set")
     executor = request.app.state.executor
     try:
         return service.reindex_document(db, slug, paths, executor)
@@ -49,7 +49,7 @@ def reindex_document(
 
 @router.delete("/documents/{slug}")
 def delete_document(slug: str, db: Session = Depends(get_session)) -> dict:
-    """Убирает документ из индекса. Файл PDF в библиотеке остаётся на месте."""
+    """Remove the document from the index. The PDF stays in place."""
     paths = [Path(p) for p in settings_service.get_library_paths(db)]
     try:
         service.delete_document(db, slug, paths)
@@ -62,7 +62,7 @@ def delete_document(slug: str, db: Session = Depends(get_session)) -> dict:
 
 @router.post("/documents/{slug}/pin", response_model=DocumentResponse)
 def toggle_pin(slug: str, db: Session = Depends(get_session)) -> DocumentResponse:
-    """Переключает закреплённость документа."""
+    """Toggle the document pin."""
     try:
         return service.toggle_pin(db, slug)
     except ValueError as exc:
@@ -74,7 +74,7 @@ def relink_document(
     body: RelinkRequest,
     db: Session = Depends(get_session),
 ) -> DocumentResponse:
-    """Переносит индекс со старого slug на новый — для переименования файла."""
+    """Move the index from the old slug to the new one — for renamed files."""
     paths = [Path(p) for p in settings_service.get_library_paths(db)]
     try:
         return service.relink_document(db, body.old_slug, body.new_slug, paths)
