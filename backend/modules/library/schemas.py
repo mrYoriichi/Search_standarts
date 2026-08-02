@@ -1,44 +1,45 @@
-"""Pydantic-схемы для эндпоинтов модуля library.
+"""Pydantic schemas for the library module endpoints.
 
-Возвращаем папку библиотеки в виде дерева: каждая папка содержит
-вложенные папки и PDF-файлы. У PDF — статус обработки (если есть запись
-в БД), иначе None («не индексирован»).
+The library folder is returned as a tree: each folder contains
+nested folders and PDF files. A PDF has a processing status (if there is
+a DB record), otherwise None ("not indexed").
 """
 
 from pydantic import BaseModel
 
 
 class LibraryFile(BaseModel):
-    """PDF-файл в папке библиотеки."""
+    """A PDF file in the library folder."""
 
     name: str
-    path: str  # абсолютный путь к файлу на диске
-    slug: str  # id, который получился бы при индексации (для матчинга с Document)
-    # status — None, если документ ещё не в БД (не индексирован).
-    # Иначе processing/ready/failed.
+    path: str  # absolute path to the file on disk
+    slug: str  # id it would get when indexed (for matching with Document)
+    # status — None if the document is not in the DB yet (not indexed).
+    # Otherwise processing/ready/failed.
     status: str | None
     pinned: bool
-    # Человекочитаемая причина падения (только при status='failed').
+    # Human-readable failure reason (only when status='failed').
     error: str | None = None
-    # Текущая стадия обработки (только при status='processing'), напр.
-    # "popis obrázků: strana 12/47". Эфемерное, из backend.core.progress.
+    # Current processing stage (only when status='processing'), e.g.
+    # "popis obrázků: strana 12/47". Ephemeral, from backend.core.progress.
     progress: str | None = None
 
 
 class LibraryFolder(BaseModel):
-    """Папка в дереве библиотеки. Может содержать подпапки и PDF."""
+    """A folder in the library tree. May contain subfolders and PDFs."""
 
     name: str
-    path: str  # абсолютный путь к папке
+    path: str  # absolute path to the folder
     folders: list["LibraryFolder"]
     files: list[LibraryFile]
 
 
 class OrphanDocument(BaseModel):
-    """Документ в БД, чей PDF исчез из папки библиотеки.
+    """A DB document whose PDF disappeared from the library folder.
 
-    Юзер мог удалить файл или переименовать. UI показывает их в отдельной
-    секции «Висячие» с кнопками «Это переименование» и (в будущем) «Убрать».
+    The user may have deleted or renamed the file. The UI shows them in a
+    separate "orphans" section with "This is a rename" and (later) "Remove"
+    buttons.
     """
 
     slug: str
@@ -47,23 +48,24 @@ class OrphanDocument(BaseModel):
 
 
 class LibraryResponse(BaseModel):
-    """Полный ответ GET /api/library: дерево + висячие документы."""
+    """Full GET /api/library response: tree + orphan documents."""
 
     tree: LibraryFolder
     orphans: list[OrphanDocument]
 
 
 class ScanSummary(BaseModel):
-    """Ответ POST /api/library/scan: сколько PDF было найдено и что с ними сделали."""
+    """POST /api/library/scan response: how many PDFs were found and handled."""
 
-    created: int  # новые документы, отправленные в pipeline
-    already_indexed: int  # PDF, для которых запись в БД уже есть
-    # Новые PDF с готовым индексом в .search_index (кто-то уже проиндексировал
-    # эту папку, например коллега на сетевом диске) — сразу ready, бесплатно.
+    created: int  # new documents sent to the pipeline
+    already_indexed: int  # PDFs that already have a DB record
+    # New PDFs with a ready index in .search_index (someone already indexed
+    # this folder, e.g. a colleague on a network drive) — ready at once, free.
     adopted: int = 0
-    # Файлы, пропущенные из-за совпадения имён (несколько PDF дают один id).
-    # Их не трогаем, чтобы один не перезатёр другого — просим юзера переименовать.
+    # Files skipped because of name collisions (several PDFs map to one id).
+    # We leave them alone so one does not overwrite another — ask the user
+    # to rename.
     duplicates: list[str] = []
-    # Готовые индексы, НЕ усыновлённые из-за лимита страниц публичной сборки
-    # (см. backend/core/limits.py) — зарегистрированы как pending.
+    # Ready indexes NOT adopted because of the public build page limit
+    # (see backend/core/limits.py) — registered as pending.
     limit_skipped: int = 0

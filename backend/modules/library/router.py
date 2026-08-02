@@ -1,4 +1,4 @@
-"""HTTP-эндпоинты модуля library."""
+"""HTTP endpoints of the library module."""
 
 from pathlib import Path
 
@@ -8,6 +8,7 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from backend.core.database import get_session
+from backend.core.ui_messages import msg
 from backend.modules.library import service
 from backend.modules.library.schemas import LibraryResponse, ScanSummary
 from backend.modules.settings import service as settings_service
@@ -17,22 +18,22 @@ router = APIRouter()
 
 
 class OpenFileRequest(BaseModel):
-    """Запрос на открытие файла из библиотеки."""
+    """Request to open a file from the library."""
 
     path: str
 
 
 def _library_paths(db: Session) -> list[Path]:
-    """Список папок библиотеки как Path. HTTP 400, если ни одной не задано."""
+    """Library folders as Path objects. HTTP 400 if none is configured."""
     paths = settings_service.get_library_paths(db)
     if not paths:
-        raise HTTPException(status_code=400, detail="Папка библиотеки не задана")
+        raise HTTPException(status_code=400, detail=msg("lib.no_library_path"))
     return [Path(p) for p in paths]
 
 
 @router.get("/library", response_model=LibraryResponse)
 def get_library(db: Session = Depends(get_session)) -> LibraryResponse:
-    """Возвращает дерево папок библиотеки + список висячих документов."""
+    """Return the library folder tree + the list of orphan documents."""
     return service.build_library_response(_library_paths(db), db)
 
 
@@ -41,7 +42,7 @@ def open_library_file(
     body: OpenFileRequest,
     db: Session = Depends(get_session),
 ) -> dict:
-    """Открывает PDF из библиотеки в системном просмотрщике."""
+    """Open a library PDF in the system viewer."""
     try:
         service.open_file(_library_paths(db), body.path)
     except ValueError as exc:
@@ -53,7 +54,7 @@ def open_library_file(
 def scan_library(
     db: Session = Depends(get_session),
 ) -> ScanSummary:
-    """Сканирует папки библиотеки: новые PDF регистрирует как pending (čeká)."""
+    """Scan the library folders: register new PDFs as pending (čeká)."""
     return service.scan_library(_library_paths(db), db)
 
 
@@ -62,7 +63,7 @@ def index_library(
     request: Request,
     db: Session = Depends(get_session),
 ) -> dict:
-    """Отправляет обнаруженные (pending) PDF в обработку — платный шаг."""
+    """Send discovered (pending) PDFs to processing — the paid step."""
     executor = request.app.state.executor
     started, locked, over_limit = service.start_indexing(
         _library_paths(db), db, executor
@@ -72,12 +73,12 @@ def index_library(
 
 @router.get("/library/pdf/{slug}")
 def get_pdf(slug: str, db: Session = Depends(get_session)) -> FileResponse:
-    """Отдаёт PDF по slug — для просмотра в браузере. Ищет во всех пулах.
+    """Serve a PDF by slug — for viewing in the browser. Looks in all pools.
 
-    Папки библиотеки → архив проектов — источник в ответе может быть из
-    любого пула. Браузер сам поддерживает `#page=N`.
+    Library folders -> project archive — the source in an answer may come
+    from any pool. The browser natively supports `#page=N`.
     """
     pdf_path = service.resolve_pdf_by_slug(db, slug)
     if pdf_path is None:
-        raise HTTPException(status_code=404, detail=f"PDF для slug={slug} не найден")
+        raise HTTPException(status_code=404, detail=msg("lib.pdf_not_found", slug=slug))
     return FileResponse(pdf_path, media_type="application/pdf")

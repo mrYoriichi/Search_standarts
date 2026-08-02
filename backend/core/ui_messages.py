@@ -186,6 +186,26 @@ MESSAGES: dict[str, dict[str, str]] = {
         "en": "Another computer is indexing this folder right now: {owner}",
         "de": "Ein anderer Computer indexiert diesen Ordner gerade: {owner}",
     },
+    "lib.no_library_path": {
+        "cs": "Složka knihovny není nastavena.",
+        "en": "The library folder is not set.",
+        "de": "Der Bibliotheksordner ist nicht festgelegt.",
+    },
+    "lib.pdf_not_found": {
+        "cs": "PDF pro dokument {slug} nebylo nalezeno.",
+        "en": "PDF for document {slug} was not found.",
+        "de": "PDF für Dokument {slug} wurde nicht gefunden.",
+    },
+    "lib.file_outside": {
+        "cs": "Soubor je mimo složky knihovny.",
+        "en": "The file is outside the library folders.",
+        "de": "Die Datei liegt außerhalb der Bibliotheksordner.",
+    },
+    "lib.file_not_found": {
+        "cs": "Soubor nenalezen: {path}",
+        "en": "File not found: {path}",
+        "de": "Datei nicht gefunden: {path}",
+    },
     # --- indexing progress (pipeline stages) ---
     "progress.reading": {
         "cs": "čtení PDF…",

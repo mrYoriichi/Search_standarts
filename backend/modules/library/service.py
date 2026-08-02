@@ -1,8 +1,8 @@
-"""Бизнес-логика модуля library.
+"""Business logic of the library module.
 
-Сканирует папку библиотеки и строит дерево, размечает PDF статусом
-из БД (если уже индексированы). Открывает файл в системном просмотрщике
-с проверкой, что путь находится внутри библиотеки.
+Scans the library folder and builds a tree, marks PDFs with their DB
+status (if already indexed). Opens a file in the system viewer after
+checking that the path is inside the library.
 """
 
 import json
@@ -32,17 +32,17 @@ from pdf_processing.page_count import count_pages
 from pdf_processing.parser import make_document_id
 
 
-# Резолвер статуса PDF по slug: (status, pinned, error, progress). Различает пул
-# юзера (статус из БД) и общую базу (статус по наличию индексов). Так дерево
-# строится одним _walk. error — причина падения, progress — текущая стадия
-# обработки (оба только у пула юзера, иначе None).
+# PDF status resolver by slug: (status, pinned, error, progress). Tells the
+# user's pool (status from the DB) apart from the shared base (status by index
+# presence), so the tree is built by a single _walk. error — failure reason,
+# progress — current processing stage (both only for the user's pool, else None).
 StatusResolver = Callable[[str], tuple[str | None, bool, str | None, str | None]]
-# Функция id документа по имени файла (для scoped-slug нужна метка папки).
+# Document id from a file name (scoped slugs need the folder label).
 SlugOf = Callable[[str], str]
 
 
 def _unique_dirs(paths: list[Path]) -> list[Path]:
-    """Убирает повторы одной и той же физической папки (симлинк/второй путь)."""
+    """Drop repeats of the same physical folder (symlink/second path)."""
     result: list[Path] = []
     for p in paths:
         if any(index_store.same_dir(p, seen) for seen in result):
@@ -52,17 +52,17 @@ def _unique_dirs(paths: list[Path]) -> list[Path]:
 
 
 def _folder_ids(paths: list[Path]) -> dict[Path, str | None]:
-    """Метки всех папок, гарантированно уникальные между собой.
+    """Labels of all folders, guaranteed unique among themselves.
 
-    Если папку скопировали вместе с `.search_index` (одинаковый folder_id),
-    коллизию чиним: второй папке метка перевыдаётся (см.
-    index_store.ensure_unique_folder_id). Персистим в meta.json, чтобы все
-    читатели (дерево, resolve_folder, кеш) видели уже исправленные метки.
+    If a folder was copied together with `.search_index` (same folder_id),
+    the collision is fixed: the second folder gets a new label (see
+    index_store.ensure_unique_folder_id). Persisted in meta.json so that all
+    readers (tree, resolve_folder, cache) see the corrected labels.
 
-    Одна и та же ФИЗИЧЕСКАЯ папка под двумя путями (симлинк, двойной маунт) —
-    НЕ коллизия: обе записи получают общую метку, meta.json не трогаем. Иначе
-    метка перевыдавалась бы «пинг-понгом» на каждый запрос, а документы
-    становились бы сиротами.
+    The same PHYSICAL folder under two paths (symlink, double mount) is
+    NOT a collision: both entries share one label, meta.json stays intact.
+    Otherwise the label would be reissued in a "ping-pong" on every request
+    and documents would become orphans.
     """
     from indexing.embeddings_index import EMBEDDING_MODEL
 
@@ -86,7 +86,7 @@ def _folder_ids(paths: list[Path]) -> dict[Path, str | None]:
 
 
 def _slug_fn(folder_id: str | None) -> SlugOf:
-    """Строит функцию «имя файла → id документа» для конкретной папки."""
+    """Build a "file name -> document id" function for a specific folder."""
 
     def slug_of(name: str) -> str:
         base = make_document_id(name)
@@ -96,11 +96,11 @@ def _slug_fn(folder_id: str | None) -> SlugOf:
 
 
 def build_library_response(paths: list[Path], db: Session) -> LibraryResponse:
-    """Дерево всех папок библиотеки + список висячих документов (файла нет).
+    """Tree of all library folders + the list of orphan documents (no file).
 
-    Одна папка → её дерево как есть. Несколько → общий синтетический корень
-    «Knihovny» с папками внутри (фронтенд и фильтр «Kde hledat» рекурсивны,
-    так что работают в обоих случаях без изменений).
+    One folder -> its tree as is. Several -> a synthetic common root
+    "Knihovny" with the folders inside (the frontend and the "Kde hledat"
+    filter are recursive, so both cases work unchanged).
     """
     paths = _unique_dirs(paths)
     docs_by_slug = {doc.slug: doc for doc in db.scalars(select(Document)).all()}
@@ -117,8 +117,8 @@ def build_library_response(paths: list[Path], db: Session) -> LibraryResponse:
         try:
             subtrees.append(_walk(lib, resolve, _slug_fn(folder_ids[lib])))
         except OSError:
-            # Папка недоступна (отвалился сетевой диск) — показываем пустой
-            # узел с пометкой; остальные папки и вся страница живут дальше.
+            # Folder unavailable (network drive dropped) — show an empty
+            # node with a mark; other folders and the whole page live on.
             subtrees.append(
                 LibraryFolder(
                     name=msg("lib.folder_unavailable", name=lib.name),
@@ -155,7 +155,7 @@ def _walk(folder: Path, resolve: StatusResolver, slug_of: SlugOf) -> LibraryFold
     folders: list[LibraryFolder] = []
     files: list[LibraryFile] = []
     for entry in sorted(folder.iterdir(), key=lambda p: p.name.lower()):
-        # Скрытые файлы и системный мусор macOS — пропускаем.
+        # Skip hidden files and macOS system junk.
         if entry.name.startswith("."):
             continue
         if entry.is_dir():
@@ -180,11 +180,12 @@ def _walk(folder: Path, resolve: StatusResolver, slug_of: SlugOf) -> LibraryFold
 
 
 def find_pdf_by_slug(paths: list[Path], slug: str) -> Path | None:
-    """Ищет по папкам библиотеки PDF, чей id документа совпадает со slug.
+    """Search the library folders for a PDF whose document id matches the slug.
 
-    Метку папки из slug сводим к конкретной папке (index_store.resolve_folder),
-    ищем только в ней — одноимённые файлы из других папок не спутаем. Если
-    метки нет (легаси-slug), ищем во всех папках по имени файла.
+    The folder label from the slug maps to a specific folder
+    (index_store.resolve_folder); we search only there — same-named files from
+    other folders cannot be confused. Without a label (legacy slug), search
+    all folders by file name.
     """
     folder = index_store.resolve_folder(paths, slug)
     if folder is not None:
@@ -195,7 +196,7 @@ def find_pdf_by_slug(paths: list[Path], slug: str) -> Path | None:
             if index_store.scoped_slug(fid, make_document_id(entry.name)) == slug:
                 return entry
         return None
-    # Легаси-slug без метки папки — ищем по имени файла во всех папках.
+    # Legacy slug without a folder label — search all folders by file name.
     for lib in paths:
         for entry in lib.rglob("*.pdf"):
             if entry.name.startswith("."):
@@ -206,10 +207,10 @@ def find_pdf_by_slug(paths: list[Path], slug: str) -> Path | None:
 
 
 def resolve_pdf_by_slug(db: Session, slug: str) -> Path | None:
-    """Путь к PDF документа по slug — по ВСЕМ пулам (библиотека + архив).
+    """Path to a document's PDF by slug — across ALL pools (library + archive).
 
-    Единственное место, знающее оба пула: им пользуются раздача PDF
-    (`GET /library/pdf/{slug}`) и сильный поиск (рендер страниц источников).
+    The only place aware of both pools: used by PDF serving
+    (`GET /library/pdf/{slug}`) and strong search (rendering source pages).
     """
     from backend.modules.projects import service as projects_service
     from backend.modules.projects.models import ProjectDocument
@@ -221,7 +222,7 @@ def resolve_pdf_by_slug(db: Session, slug: str) -> Path | None:
         if pdf_path is not None:
             return pdf_path
 
-    # Архив проектов: relative_path знает БД, папку — по наличию файла.
+    # Project archive: the DB knows relative_path, the folder — by file presence.
     projects_paths = [Path(p) for p in settings_service.get_projects_paths(db)]
     pdoc = db.scalar(select(ProjectDocument).where(ProjectDocument.slug == slug))
     if projects_paths and pdoc is not None:
@@ -234,22 +235,22 @@ def resolve_pdf_by_slug(db: Session, slug: str) -> Path | None:
 
 
 def scan_library(paths: list[Path], db: Session) -> ScanSummary:
-    """Сканирует все папки библиотеки: НОВЫЕ PDF только регистрирует (pending).
+    """Scan all library folders: NEW PDFs are only registered (pending).
 
-    Скан бесплатный (обнаружение), индексация платная (vision LLM) — поэтому
-    это два осознанных шага юзера: Skenovat → список «čeká» → Indexovat
+    Scanning is free (discovery), indexing is paid (vision LLM) — hence two
+    deliberate user steps: Skenovat -> "čeká" list -> Indexovat
     (start_indexing).
 
-    Id документа = `{folder_id}__{файл}`, поэтому одноимённые файлы в РАЗНЫХ
-    папках — разные документы. Коллизией остаётся только совпадение имён
-    ВНУТРИ одной папки: такие файлы пропускаем и просим переименовать.
+    Document id = `{folder_id}__{file}`, so same-named files in DIFFERENT
+    folders are different documents. The only remaining collision is a name
+    clash WITHIN one folder: such files are skipped, the user is asked to
+    rename them.
 
-    Для каждого PDF:
-      - если запись в БД есть (по slug) — дозаполняем relative_path при
-        переезде;
-      - если нет, но в `.search_index/{slug}` есть полный индекс на нашей
-        модели — «усыновляем» (сразу ready, без трат);
-      - иначе — Document(status='pending'), в пайплайн НЕ шлём.
+    For each PDF:
+      - if a DB record exists (by slug) — update relative_path after a move;
+      - if not, but `.search_index/{slug}` holds a complete index on our
+        model — "adopt" it (ready at once, at no cost);
+      - otherwise — Document(status='pending'), NOT sent to the pipeline.
     """
     from indexing.embeddings_index import EMBEDDING_MODEL
 
@@ -258,18 +259,18 @@ def scan_library(paths: list[Path], db: Session) -> ScanSummary:
     summary = ScanSummary(created=0, already_indexed=0, adopted=0, duplicates=[])
     any_adopted = False
     folder_ids = _folder_ids(paths)
-    # Остаток лимита страниц (None — лимита нет). Усыновление тоже под
-    # лимитом: готовые индексы грузятся в RAM так же, как оплаченные.
+    # Remaining page limit (None — no limit). Adoption is under the limit
+    # too: ready indexes load into RAM the same way as paid ones.
     remaining = limits.pages_remaining(db)
 
     for library_path in paths:
         folder_id = folder_ids[library_path]
         slug_of = _slug_fn(folder_id)
-        # folder_id нет — в папку не удалось записать .search_index (read-only,
-        # сетевой диск без прав). Вместо вечного молчаливого «čeká» помечаем
-        # документы failed с понятной причиной.
+        # No folder_id — .search_index could not be written to the folder
+        # (read-only, network drive without permissions). Instead of an
+        # eternal silent "čeká", mark documents failed with a clear reason.
         ro_error = None if folder_id else msg("lib.readonly_folder")
-        # Усыновлять чужие индексы можно только на нашей модели эмбеддингов.
+        # Foreign indexes can be adopted only on our embedding model.
         meta = index_store.read_meta(library_path)
         can_adopt = meta is not None and meta.get("embedding_model") == EMBEDDING_MODEL
 
@@ -280,15 +281,15 @@ def scan_library(paths: list[Path], db: Session) -> ScanSummary:
                 if not p.name.startswith(".")
             ]
         except OSError:
-            continue  # папка недоступна (сетевой диск) — скан остальных живёт
-        # Сколько файлов дают каждый slug ВНУТРИ этой папки. >1 — совпадение имён.
+            continue  # folder unavailable (network drive) — others scan on
+        # How many files map to each slug WITHIN this folder. >1 — name clash.
         slug_counts: dict[str, int] = {}
         for p in pdf_paths:
             slug_counts[slug_of(p.name)] = slug_counts.get(slug_of(p.name), 0) + 1
 
         for pdf_path in pdf_paths:
             slug = slug_of(pdf_path.name)
-            # as_posix: на Windows str() дал бы `\`; храним пути единообразно.
+            # as_posix: on Windows str() would give `\`; store paths uniformly.
             relative_path = pdf_path.relative_to(library_path).as_posix()
 
             if slug_counts[slug] > 1:
@@ -300,7 +301,7 @@ def scan_library(paths: list[Path], db: Session) -> ScanSummary:
                 if existing.relative_path != relative_path:
                     existing.relative_path = relative_path
                 if ro_error and existing.status == "pending":
-                    # Документ застрял «čeká» ещё до фикса — рескан лечит.
+                    # Document stuck in "čeká" before the fix — rescan heals.
                     existing.status = "failed"
                     existing.error_message = ro_error
                 summary.already_indexed += 1
@@ -309,8 +310,8 @@ def scan_library(paths: list[Path], db: Session) -> ScanSummary:
             if can_adopt and index_store.has_complete_index(library_path, slug):
                 pages = _safe_count_pages(pdf_path)
                 if remaining is not None and pages > remaining:
-                    # Сверх лимита не усыновляем: документ регистрируем как
-                    # pending — виден в списке, но в RAM не попадёт.
+                    # Over the limit — no adoption: register the document as
+                    # pending — visible in the list, but stays out of RAM.
                     summary.limit_skipped += 1
                 else:
                     if remaining is not None:
@@ -330,7 +331,7 @@ def scan_library(paths: list[Path], db: Session) -> ScanSummary:
 
             doc = Document(
                 slug=slug,
-                title=pdf_path.stem,  # реальный title подменит pipeline
+                title=pdf_path.stem,  # the pipeline will set the real title
                 status="failed" if ro_error else "pending",
                 relative_path=relative_path,
                 error_message=ro_error,
@@ -341,17 +342,17 @@ def scan_library(paths: list[Path], db: Session) -> ScanSummary:
 
     db.commit()
     if any_adopted:
-        # В пуле появились готовые документы без прогона пайплайна —
-        # следующий вопрос должен их увидеть.
+        # Ready documents appeared in the pool without a pipeline run —
+        # the next question must see them.
         library_cache.invalidate()
     return summary
 
 
 def _safe_count_pages(pdf_path: Path) -> int:
-    """Число страниц PDF; битый/недоступный файл считаем за 0 — не роняем скан.
+    """PDF page count; a broken/unreadable file counts as 0 — don't fail the scan.
 
-    Такой файл всё равно упадёт с внятной ошибкой в пайплайне/усыновлении,
-    лимит из-за нуля не пострадает заметно.
+    Such a file will still fail with a clear error in the pipeline/adoption;
+    the limit is not noticeably hurt by the zero.
     """
     try:
         return count_pages(pdf_path)
@@ -360,7 +361,7 @@ def _safe_count_pages(pdf_path: Path) -> int:
 
 
 def _ensure_page_count(doc: Document, library_path: Path) -> int:
-    """Число страниц документа; считает и запоминает при первом обращении."""
+    """Document page count; computed and stored on first access."""
     if doc.page_count is not None:
         return doc.page_count
     if not doc.relative_path:
@@ -370,7 +371,7 @@ def _ensure_page_count(doc: Document, library_path: Path) -> int:
 
 
 def _adopted_title(library_path: Path, slug: str) -> str | None:
-    """Название усыновляемого документа из descriptions.json, если оно там есть."""
+    """Title of an adopted document from descriptions.json, if present there."""
     path = index_store.doc_dir(library_path, slug) / "descriptions.json"
     try:
         with open(path, encoding="utf-8") as f:
@@ -379,9 +380,9 @@ def _adopted_title(library_path: Path, slug: str) -> str | None:
         return None
 
 
-# Сериализует одновременные POST /library/index (даблклик): без этого оба
-# запроса успевали прочитать одни и те же pending до чужого commit —
-# документ уходил в пайплайн дважды (двойная оплата vision).
+# Serializes concurrent POST /library/index (double-click): without this both
+# requests managed to read the same pending rows before the other's commit —
+# a document went to the pipeline twice (vision paid twice).
 _start_indexing_lock = threading.Lock()
 
 
@@ -390,45 +391,45 @@ def start_indexing(
     db: Session,
     executor: ThreadPoolExecutor,
 ) -> tuple[int, list[str], int]:
-    """Отправляет pending-документы в пайплайн, каждый — в свою папку.
+    """Send pending documents to the pipeline, each into its own folder.
 
-    Статус сразу переводим в processing: повторный клик по «Indexovat» не
-    отправит те же документы второй раз (двойная трата на vision), а после
-    падения приложения их подхватит возобновление на старте. Артефакты
-    пишутся в `<папка документа>/.search_index/{slug}`.
+    Status flips to processing right away: a repeated "Indexovat" click will
+    not send the same documents twice (vision paid twice), and after an app
+    crash the startup resume picks them up. Artifacts are written to
+    `<document folder>/.search_index/{slug}`.
 
-    Папку перед индексацией запираем лок-файлом: если её уже индексирует
-    другая машина (общая сетевая папка) — документы этой папки НЕ трогаем,
-    оставляем pending и сообщаем, кто занят.
+    The folder is locked with a lock file before indexing: if another machine
+    is already indexing it (shared network folder) — its documents are left
+    pending and we report who is busy.
 
-    Лимит страниц публичной сборки (backend/core/limits.py) режет и запуск
-    пайплайна, и усыновление: документы сверх лимита остаются pending.
+    The public build page limit (backend/core/limits.py) cuts both pipeline
+    launches and adoption: documents over the limit stay pending.
 
-    Возвращает (отправлено, список «папка: кто индексирует», сверх лимита).
+    Returns (submitted, list of "folder: who is indexing", over limit).
     """
     from indexing.embeddings_index import EMBEDDING_MODEL
 
     with _start_indexing_lock:
         pending = db.scalars(select(Document).where(Document.status == "pending")).all()
 
-        # Группируем pending по папкам — лок берём один на папку.
+        # Group pending by folder — one lock per folder.
         by_folder: dict[Path, list[Document]] = {}
         for doc in pending:
             library_path = index_store.resolve_folder(paths, doc.slug)
             if library_path is None:
-                continue  # папка документа отключена — пропускаем
+                continue  # the document's folder is disconnected — skip
             by_folder.setdefault(library_path, []).append(doc)
 
         submitted = 0
         locked: list[str] = []
         over_limit = 0
         any_adopted = False
-        remaining = limits.pages_remaining(db)  # None — лимита нет (пилот)
+        remaining = limits.pages_remaining(db)  # None — no limit (pilot)
         for library_path, docs in by_folder.items():
-            # Перепроверка ПЕРЕД запуском: коллега мог доиндексировать документ
-            # в общей папке после нашего скана (pending-запись это не видела).
-            # Готовый индекс усыновляем бесплатно; принудительная переработка
-            # остаётся на кнопке 🔄.
+            # Re-check BEFORE launch: a colleague may have finished indexing a
+            # document in the shared folder after our scan (the pending row
+            # didn't see it). A ready index is adopted for free; forced
+            # reprocessing stays on the 🔄 button.
             meta = index_store.read_meta(library_path)
             can_adopt = (
                 meta is not None and meta.get("embedding_model") == EMBEDDING_MODEL
@@ -438,7 +439,7 @@ def start_indexing(
                 if can_adopt and index_store.has_complete_index(library_path, doc.slug):
                     pages = _ensure_page_count(doc, library_path)
                     if remaining is not None and pages > remaining:
-                        over_limit += 1  # остаётся pending, в RAM не попадёт
+                        over_limit += 1  # stays pending, kept out of RAM
                         continue
                     if remaining is not None:
                         remaining -= pages
@@ -451,7 +452,7 @@ def start_indexing(
             if any_adopted:
                 db.commit()
 
-            # Лимит для платного запуска — тем более: сверх остатка не шлём.
+            # The limit applies to paid launches even more: nothing over it.
             allowed: list[Document] = []
             for doc in to_run:
                 pages = _ensure_page_count(doc, library_path)
@@ -462,14 +463,14 @@ def start_indexing(
                     remaining -= pages
                 allowed.append(doc)
             if not allowed:
-                db.commit()  # сохранить дозаполненные page_count
-                continue  # всё усыновлено/за лимитом — лок папки не нужен
+                db.commit()  # persist the filled-in page_count values
+                continue  # all adopted/over limit — no folder lock needed
             docs = allowed
 
             busy_owner = index_lock.acquire(library_path)
             if busy_owner is not None:
                 locked.append(f"{library_path.name}: {busy_owner}")
-                continue  # держит другая машина — оставляем документы pending
+                continue  # held by another machine — leave documents pending
             index_lock.register(library_path, len(docs))
             for doc in docs:
                 doc.status = "processing"
@@ -487,14 +488,14 @@ def start_indexing(
                 )
                 submitted += 1
         if any_adopted:
-            # В пуле появились готовые документы без пайплайна — следующий
-            # вопрос должен их увидеть (зеркально scan_library).
+            # Ready documents appeared in the pool without the pipeline — the
+            # next question must see them (mirrors scan_library).
             library_cache.invalidate()
         return submitted, locked, over_limit
 
 
 def _is_within(target: Path, root: Path) -> bool:
-    """target лежит внутри root (или совпадает с ним)?"""
+    """Is target inside root (or equal to it)?"""
     try:
         target.relative_to(root)
         return True
@@ -503,24 +504,24 @@ def _is_within(target: Path, root: Path) -> bool:
 
 
 def open_file(paths: list[Path], file_path: str) -> None:
-    """Открывает PDF в системном просмотрщике.
+    """Open a PDF in the system viewer.
 
-    Безопасность: файл должен находиться внутри одной из папок библиотеки,
-    иначе через API можно открыть что угодно на диске.
+    Security: the file must be inside one of the library folders,
+    otherwise the API could open anything on the disk.
     """
     target = Path(file_path).expanduser().resolve()
     if not any(_is_within(target, lib) for lib in paths):
-        raise ValueError("Файл вне папок библиотеки")
+        raise ValueError(msg("lib.file_outside"))
     if not target.is_file():
-        raise ValueError(f"Файл не найден: {target}")
+        raise ValueError(msg("lib.file_not_found", path=target))
 
     system = platform.system()
     if system == "Darwin":
         subprocess.run(["open", str(target)], check=False)
     elif system == "Windows":
-        # startfile = ShellExecute, открывает файл ассоциированной программой.
-        # НЕ shell-команда `start`: через неё имя файла вида `a&calc.pdf`
-        # из общей папки исполнило бы команду.
-        os.startfile(str(target))  # существует только на Windows
+        # startfile = ShellExecute, opens the file with its associated app.
+        # NOT the shell command `start`: through it a file name like
+        # `a&calc.pdf` from a shared folder would execute a command.
+        os.startfile(str(target))  # exists only on Windows
     else:
         subprocess.run(["xdg-open", str(target)], check=False)
