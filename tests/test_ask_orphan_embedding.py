@@ -47,7 +47,9 @@ def test_orphan_embedding_id_skipped_not_500(db, monkeypatch):
     monkeypatch.setattr(service, "track_event", lambda name, **props: None)
     answered: list[list[dict]] = []
 
-    def fake_answer(question, top_chunks, model, page_images=None):
+    def fake_answer(
+        question, top_chunks, model, page_images=None, answer_language="cs"
+    ):
         answered.append(top_chunks)
         return {
             "answer": "odpověď",

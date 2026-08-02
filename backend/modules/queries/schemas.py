@@ -34,6 +34,10 @@ class AskRequest(BaseModel):
         description="Сильный поиск: приложить снимки страниц топ-источников "
         "к отвечающей LLM (дороже и медленнее, для тяжёлых вопросов).",
     )
+    answer_language: Literal["cs", "en", "de"] = Field(
+        default="cs",
+        description="Язык ответа LLM. Независим от языка интерфейса.",
+    )
 
 
 class UsedChunk(BaseModel):

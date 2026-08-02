@@ -2,9 +2,9 @@
 Этап 6, часть 2: генерация ответа по найденным чанкам.
 
 На входе: вопрос + список топ-чанков (от hybrid_search через сценарий).
-На выходе: краткий ответ всегда на чешском (язык фиксирован, см. SYSTEM_PROMPT)
-+ источники (документ, раздел, страницы) только для тех чанков, на которые
-модель реально опиралась.
+На выходе: краткий ответ на выбранном языке (дефолт — чешский, см.
+build_system_prompt) + источники (документ, раздел, страницы) только для
+тех чанков, на которые модель реально опиралась.
 
 Модуль не лезет в файловую систему — чанки приходят аргументом.
 """
@@ -56,19 +56,35 @@ RESPONSE_SCHEMA = {
 }
 
 
-SYSTEM_PROMPT = """You are an assistant for construction standards. The source documents are Czech construction norms (ČSN, MVL); their content is in Czech.
+# Языки ответа: код из UI → имя языка в промпте. Дефолт — чешский
+# (решение №12 смягчено 2026-08-02: жёсткое требование стало дефолтом).
+ANSWER_LANGUAGES = {"cs": "Czech", "en": "English", "de": "German"}
+
+# Системный промпт по-английски (нейтрализует языковой bias модели);
+# {language} подставляет build_system_prompt.
+SYSTEM_PROMPT_TEMPLATE = """You are an assistant for construction standards. The source documents are Czech construction norms (ČSN, MVL); their content is in Czech.
 
 Answer strictly based on the provided fragments.
 
 Rules:
 1. Use ONLY information from the fragments. Do not add outside knowledge.
-2. ALWAYS answer in Czech, regardless of the language of the question. The question may be in any language (Russian, English, Czech without diacritics) — your answer must always be in Czech.
-3. If the fragments do not contain the answer, say so honestly in Czech and return an empty used_chunk_ids.
+2. ALWAYS answer in {language}, regardless of the language of the question. The question may be in any language (Russian, English, Czech without diacritics) — your answer must always be in {language}.
+3. If the fragments do not contain the answer, say so honestly in {language} and return an empty used_chunk_ids.
 4. Preserve technical designations in their original form: standard codes (ČSN 73 6201), section numbers (7.12.6), section names in Czech.
 5. Cite the source INLINE in the answer text: after each fact or claim, note in parentheses which section and page it comes from, using the fragment's "Раздел" and "Страницы" metadata — e.g. "(7.3 Založení propustků, s. 24)". If several facts come from the same fragment, you may cite it once. Cite only fragments you actually used.
 6. In used_chunk_ids list ONLY the fragments you directly based the answer on. If you used 2 of 5, return 2.
 7. In related_chunk_ids list other fragments that are relevant and useful to the question but that you did NOT directly use for the answer (e.g. related sections, drawings, or details worth checking). Do NOT include fragments that are off-topic. Do not repeat ids already in used_chunk_ids. If there are none, return an empty list.
 8. Be brief and concrete."""
+
+
+def build_system_prompt(answer_language: str = "cs") -> str:
+    """Системный промпт с требуемым языком ответа.
+
+    Неизвестный код языка тихо падает на чешский — мусор в запросе не должен
+    ронять генерацию (эндпоинт и так валидирует Literal, это второй рубеж).
+    """
+    language = ANSWER_LANGUAGES.get(answer_language, ANSWER_LANGUAGES["cs"])
+    return SYSTEM_PROMPT_TEMPLATE.format(language=language)
 
 
 def format_chunk_for_prompt(chunk: dict) -> str:
@@ -135,6 +151,7 @@ def generate_answer(
     chunks: list[dict],
     model: str = ANSWER_MODEL,
     page_images: list[dict] | None = None,
+    answer_language: str = "cs",
 ) -> dict:
     """
     Главная функция: вопрос + чанки → ответ + источники.
@@ -143,6 +160,7 @@ def generate_answer(
     чтобы сравнивать модели (gpt-5.4-mini ↔ gpt-5.5) из UI.
     page_images — снимки страниц топ-источников (сильный поиск), см.
     build_user_content; None = обычный текстовый режим.
+    answer_language — язык ответа ("cs"/"en"/"de", дефолт чешский).
 
     Один вызов LLM со structured output: модель возвращает текст ответа
     и список chunk_id, на которые реально опиралась. Источники собираем
@@ -166,7 +184,7 @@ def generate_answer(
     response = client.chat.completions.create(
         model=model,
         messages=[
-            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "system", "content": build_system_prompt(answer_language)},
             {
                 "role": "user",
                 "content": build_user_content(question, chunks, page_images),

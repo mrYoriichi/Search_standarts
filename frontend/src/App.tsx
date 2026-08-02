@@ -364,7 +364,7 @@ const MODE_KEYS = {
 
 function App() {
   // Подписка на смену языка: смена перерисует App и всё дерево под ним.
-  useI18n()
+  const { lang } = useI18n()
   const [auth, setAuth] = useState<AuthState>({ phase: 'loading' })
   const [view, setView] = useState<View>('search')
   const [theme, setTheme] = useState<'light' | 'dark'>(getInitialTheme)
@@ -393,6 +393,9 @@ function App() {
   const [searchMode, setSearchMode] = useState<'hybrid' | 'vector' | 'keyword'>('hybrid')
   // Модель генерации ответа.
   const [answerModel, setAnswerModel] = useState<'gpt-5.4-mini' | 'gpt-5.5'>('gpt-5.4-mini')
+  // Язык ответа LLM: независим от языка UI (норма чешская — ответ может быть
+  // нужен английский). Стартует с языка интерфейса на момент открытия.
+  const [answerLang, setAnswerLang] = useState<'cs' | 'en' | 'de'>(lang)
   // Расширять ли запрос через LLM перед поиском (диакритика/синонимы). По умолчанию да.
   const [expandQuery, setExpandQuery] = useState(true)
   // Сильный поиск: снимки страниц топ-источников идут картинками в отвечающую
@@ -542,12 +545,14 @@ function App() {
         answer_model: string
         expand: boolean
         strong: boolean
+        answer_language: string
       } = {
         question,
         mode: searchMode,
         answer_model: answerModel,
         expand: expandQuery,
         strong: strongSearch,
+        answer_language: answerLang,
       }
       if (!searchAll) {
         body.document_ids = Array.from(selectedSlugs)
@@ -795,6 +800,28 @@ function App() {
                 }
               >
                 {value}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="rounded-md border bg-card p-4 flex flex-col gap-2">
+          <h2 className="text-sm font-semibold text-muted-foreground">
+            {t('search.answerLang')}
+          </h2>
+          <div className="flex gap-2">
+            {(['cs', 'en', 'de'] as const).map((value) => (
+              <button
+                key={value}
+                onClick={() => setAnswerLang(value)}
+                className={
+                  'px-3 py-1.5 text-sm rounded-md border ' +
+                  (answerLang === value
+                    ? 'bg-foreground text-background font-medium'
+                    : 'text-muted-foreground hover:text-foreground')
+                }
+              >
+                {t(`lang.${value}`)}
               </button>
             ))}
           </div>

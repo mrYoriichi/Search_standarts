@@ -44,6 +44,10 @@ const cs = {
   'search.modeVector': 'Podle významu',
   'search.modeKeyword': 'Podle slov',
   'search.answerModel': 'Model odpovědi',
+  'search.answerLang': 'Jazyk odpovědi',
+  'lang.cs': 'Čeština',
+  'lang.en': 'English',
+  'lang.de': 'Deutsch',
   'search.expand': 'Rozšířit dotaz (diakritika, synonyma) před hledáním',
   'search.strong':
     'Silné hledání — přiložit snímky stránek zdrojů (pomalejší, dražší)',
@@ -261,6 +265,10 @@ const en: Record<MsgKey, string> = {
   'search.modeVector': 'By meaning',
   'search.modeKeyword': 'By keywords',
   'search.answerModel': 'Answer model',
+  'search.answerLang': 'Answer language',
+  'lang.cs': 'Čeština',
+  'lang.en': 'English',
+  'lang.de': 'Deutsch',
   'search.expand': 'Expand the query (diacritics, synonyms) before searching',
   'search.strong':
     'Strong search — attach page snapshots of the sources (slower, pricier)',
@@ -467,6 +475,10 @@ const de: Record<MsgKey, string> = {
   'search.modeVector': 'Nach Bedeutung',
   'search.modeKeyword': 'Nach Stichwörtern',
   'search.answerModel': 'Antwortmodell',
+  'search.answerLang': 'Antwortsprache',
+  'lang.cs': 'Čeština',
+  'lang.en': 'English',
+  'lang.de': 'Deutsch',
   'search.expand': 'Anfrage vor der Suche erweitern (Diakritika, Synonyme)',
   'search.strong':
     'Starke Suche — Seitenabbilder der Quellen anhängen (langsamer, teurer)',

@@ -133,6 +133,7 @@ def ask(
     answer_model: str = "gpt-5.4-mini",
     expand: bool = True,
     strong: bool = False,
+    answer_language: str = "cs",
 ) -> AskResponse:
     """Главная функция: вопрос → ответ + источники + id записи в QueryLog.
 
@@ -142,6 +143,7 @@ def ask(
     expand — расширять ли запрос через LLM перед поиском (диакритика/синонимы).
     strong — сильный поиск: приложить к ответу снимки страниц топ-источников
     (тяжёлые вопросы по чертежам/таблицам; дороже и медленнее).
+    answer_language — язык ответа LLM (cs/en/de), независим от языка UI.
     """
     started_at = time.perf_counter()
 
@@ -191,7 +193,11 @@ def ask(
     # Время генерации ответа меряем отдельно — чтобы сравнивать скорость моделей.
     gen_start = time.perf_counter()
     result = generate_answer(
-        question, top_chunks, model=answer_model, page_images=page_images
+        question,
+        top_chunks,
+        model=answer_model,
+        page_images=page_images,
+        answer_language=answer_language,
     )
     answer_ms = int((time.perf_counter() - gen_start) * 1000)
 
