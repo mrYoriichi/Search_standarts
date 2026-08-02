@@ -1,13 +1,13 @@
-"""Тексты бэкенда для UI на трёх языках (en — дефолт и fallback).
+"""Backend texts for the UI in three languages (en — default and fallback).
 
-Бэкенд не знает язык каждого HTTP-запроса, поэтому язык хранится одним
-значением: фронт при переключении шлёт PUT /api/settings/language,
-значение сохраняется в settings (переживает рестарт) и в module-global
-(читается при формировании текста). Ошибки, уже записанные в БД
-(Document.error_message упавших документов), остаются на языке момента
-падения — переписывать историю не пытаемся.
+The backend cannot know each HTTP request's language, so it is one
+value: the frontend PUTs /api/settings/language on switch, the value
+persists in settings (survives restarts) and lives in a module global
+(read when a text is built). Errors already written to the DB
+(Document.error_message of failed documents) keep the language of the
+moment they happened — history is not rewritten.
 
-Ключи зеркалят frontend/src/messages.ts по духу: короткий id → тексты.
+Keys mirror frontend/src/messages.ts in spirit: short id → texts.
 """
 
 LANGS = ("cs", "en", "de")
@@ -16,8 +16,8 @@ _current = "en"
 
 
 def set_language(lang: str) -> None:
-    """Ставит текущий язык; неизвестный код молча игнорируется (второй
-    рубеж за валидацией Literal в эндпоинте)."""
+    """Set the current language; unknown codes are silently ignored
+    (second guard behind the endpoint's Literal validation)."""
     global _current
     if lang in LANGS:
         _current = lang
@@ -28,7 +28,7 @@ def get_language() -> str:
 
 
 MESSAGES: dict[str, dict[str, str]] = {
-    # --- классификатор ошибок пайплайна (backend/core/errors.py) ---
+    # --- pipeline error classifier (backend/core/errors.py) ---
     "err.bad_api_key": {
         "cs": "Neplatný OpenAI API klíč — zkontrolujte ho v Nastavení.",
         "en": "Invalid OpenAI API key — check it in Settings.",
@@ -93,7 +93,7 @@ MESSAGES: dict[str, dict[str, str]] = {
         "en": "Unexpected error ({name}): {exc}",
         "de": "Unerwarteter Fehler ({name}): {exc}",
     },
-    # --- библиотека и поиск ---
+    # --- library and search ---
     "lib.empty_library": {
         "cs": (
             "V knihovně zatím není žádný hotový dokument — "
@@ -181,7 +181,7 @@ MESSAGES: dict[str, dict[str, str]] = {
         "en": "Another computer is indexing this folder right now: {owner}",
         "de": "Ein anderer Computer indexiert diesen Ordner gerade: {owner}",
     },
-    # --- прогресс индексации (стадии пайплайна) ---
+    # --- indexing progress (pipeline stages) ---
     "progress.reading": {
         "cs": "čtení PDF…",
         "en": "reading PDF…",
@@ -212,7 +212,7 @@ MESSAGES: dict[str, dict[str, str]] = {
         "en": "indexing…",
         "de": "Indexierung…",
     },
-    # --- профиль (auth) ---
+    # --- profile (auth) ---
     "profile.load_failed": {
         "cs": "Nepodařilo se načíst profil.",
         "en": "Failed to load the profile.",
@@ -232,7 +232,7 @@ MESSAGES: dict[str, dict[str, str]] = {
 
 
 def msg(key: str, **params: object) -> str:
-    """Текст сообщения на текущем языке; английский — fallback."""
+    """Message text in the current language; English is the fallback."""
     entry = MESSAGES[key]
     template = entry.get(_current) or entry["en"]
     return template.format(**params) if params else template

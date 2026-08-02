@@ -1,16 +1,16 @@
-"""In-memory кеш библиотеки (чанки + эмбеддинги).
+"""In-memory library cache (chunks + embeddings).
 
-Читать chunks.json и embeddings.json всех документов на КАЖДЫЙ вопрос дорого
-(на 200 документах это сотни МБ с диска перед каждым ответом). Документы между
-вопросами не меняются — поэтому грузим один раз и держим в памяти.
+Reading every document's chunks.json and embeddings.json on EVERY
+question is expensive (hundreds of MB from disk at 200 documents).
+Documents do not change between questions — so load once, keep in RAM.
 
-При изменении библиотеки (документ обработан / удалён / переименован /
-переиндексирован) вызывается invalidate() — следующий get_library() перечитает
-диск заново.
+When the library changes (a document processed / deleted / renamed /
+re-indexed) invalidate() is called — the next get_library() re-reads
+disk.
 
-Загруженные данные считаем «только для чтения»: поиск и фильтрация их не мутируют
-(filter_library создаёт новые списки), поэтому отдавать один и тот же объект разным
-запросам безопасно.
+Loaded data is treated as read-only: search and filtering never mutate
+it (filter_library builds new lists), so handing the same object to
+different requests is safe.
 """
 
 import os
@@ -27,31 +27,33 @@ from backend.core.paths import PROJECTS_DATA_DIR
 from backend.core.ui_messages import msg
 
 
-# Кеш и замок к нему. Запросы FastAPI и фоновый pipeline работают в разных
-# потоках — замок защищает от гонки при одновременной загрузке/сбросе.
+# The cache and its lock. FastAPI requests and the background pipeline
+# run on different threads — the lock guards concurrent load/invalidate.
 _lock = threading.Lock()
 _cache: tuple[list[dict], dict] | None = None
-# Токены BM25 по chunk_id. Считаются один раз; на каждый вопрос строим BM25 из
-# них, а не токенизируем корпус заново. Сбрасывается вместе с _cache.
+# BM25 tokens by chunk_id. Computed once; every question builds BM25 from
+# them instead of re-tokenizing the corpus. Reset together with _cache.
 _tokens_cache: dict[str, list[str]] | None = None
-# Отпечаток общих папок на момент загрузки кеша (см. _current_fingerprint).
+# Fingerprint of the shared folders at cache-load time (_current_fingerprint).
 _fingerprint: dict[str, int] | None = None
-# Троттлинг свипа: на сетевой папке 200 stat'ов стоят 0.2-10 с (SMB/VPN),
-# а свип идёт под _lock перед КАЖДЫМ вопросом. Внутри TTL отпечаток не
-# пересчитываем — чужая переиндексация заметится с задержкой до минуты
-# (допустимо); локальные изменения идут через invalidate() и TTL обходят.
+# Sweep throttle: on a network share 200 stats cost 0.2-10 s (SMB/VPN),
+# and the sweep runs under _lock before EVERY question. Inside the TTL
+# the fingerprint is not recomputed — a colleague's re-index is noticed
+# up to a minute late (acceptable); local changes go through
+# invalidate() and bypass the TTL.
 _FINGERPRINT_TTL_S = 60.0
-_last_sweep = 0.0  # time.monotonic() последнего свипа; 0 — свипа не было
+_last_sweep = 0.0  # time.monotonic() of the last sweep; 0 = never
 
 
 def _library_index_roots() -> list[Path]:
-    """Корни .search_index всех папок библиотеки (включая недоступные).
+    """.search_index roots of every library folder (unreachable included).
 
-    Индексы лежат рядом с PDF юзера — в `<папка>/.search_index/`.
-    chunk_id несёт метку папки (`{folder_id}__…`), поэтому чанки разных папок
-    не сталкиваются в слитом пуле. Существование НЕ проверяем: _load_merged
-    пропускает отсутствующие корни сам, а отпечатку нужны и недоступные —
-    чтобы отличать «диск отвалился» от «документы удалили».
+    Indexes live next to the user's PDFs — in `<folder>/.search_index/`.
+    chunk_id carries the folder tag (`{folder_id}__…`), so chunks of
+    different folders cannot collide in the merged pool. Existence is NOT
+    checked here: _load_merged skips missing roots itself, and the
+    fingerprint needs unreachable roots too — to tell "the drive
+    dropped" from "the documents were deleted".
     """
     from backend.core.database import SessionLocal
     from backend.modules.settings import service as settings_service
@@ -66,19 +68,19 @@ def _library_index_roots() -> list[Path]:
     for library_path in library_paths:
         p = Path(library_path)
         if any(index_store.same_dir(p, s) for s in seen):
-            continue  # та же физическая папка под вторым путём — чанки не двоим
+            continue  # same physical folder under a second path — no doubling
         seen.append(p)
         roots.append(index_store.index_root(p))
     return roots
 
 
 def _load_merged() -> tuple[list[dict], dict]:
-    """Сливает пулы в один (chunks, embeddings_index): нормы юзера
-    (папки библиотеки) и архив проектов.
+    """Merge the pools into one (chunks, embeddings_index): the user's
+    norms (library folders) and the project archive.
 
-    Все пулы обязаны быть на одной модели эмбеддингов — векторы из разных
-    моделей несравнимы. Пустой/отсутствующий пул тихо пропускаем; ошибка только
-    если готовых документов нет нигде.
+    All pools must share one embedding model — vectors from different
+    models are incomparable. An empty/missing pool is silently skipped;
+    it is only an error when no pool has any ready document.
     """
     roots = _library_index_roots()
     if PROJECTS_DATA_DIR.exists():
@@ -94,13 +96,14 @@ def _load_merged() -> tuple[list[dict], dict]:
         try:
             chunks, index = load_library(root)
         except EmptyLibraryError:
-            continue  # в этом корне нет готовых документов — не страшно
-        # Прочие RuntimeError (смешанные модели внутри корня) летят наверх:
-        # роутер отдаст 400 с текстом вместо молчаливого выпадения папки.
+            continue  # no ready documents in this root — fine
+        # Other RuntimeErrors (mixed models inside a root) propagate: the
+        # router returns 400 with the text instead of silently dropping
+        # the folder.
         if model is None:
             model = index["model"]
         elif model != index["model"]:
-            # Текст уходит юзеру в UI (роутер отдаёт его как detail).
+            # The text reaches the user in the UI (router detail).
             raise RuntimeError(
                 msg("lib.mixed_models_pools", model_a=model, model_b=index["model"])
             )
@@ -109,27 +112,29 @@ def _load_merged() -> tuple[list[dict], dict]:
         matrices.append(index["matrix"])
 
     if not all_chunks:
-        # Текст уходит юзеру в UI (роутер отдаёт его как detail).
+        # The text reaches the user in the UI (router detail).
         raise RuntimeError(msg("lib.empty_library"))
-    # Матрицы пулов уже нормированы (build_matrix_index) — просто составляем их
-    # в одну. Порядок строк совпадает с порядком all_chunk_ids.
+    # Pool matrices are already normalized (build_matrix_index) — just
+    # stack them. Row order matches all_chunk_ids.
     matrix = np.vstack(matrices)
     return all_chunks, {"model": model, "chunk_ids": all_chunk_ids, "matrix": matrix}
 
 
 def _current_fingerprint(prev: dict[str, int] | None) -> dict[str, int]:
-    """Отпечаток общих папок: mtime embeddings.json каждого документа.
+    """Fingerprint of the shared folders: mtime of each embeddings.json.
 
-    Только корни библиотек (_library_index_roots): их может переписать ДРУГАЯ
-    машина через общую сетевую папку, и наш локальный invalidate() этого не
-    видит. Локальный пул архива (projects_data) мутирует только этот
-    процесс — он и так зовёт invalidate(). embeddings.json — последний файл
-    пайплайна, его смена означает завершённую переиндексацию; новый или
-    удалённый документ — появившийся/пропавший ключ.
+    Only library roots (_library_index_roots): ANOTHER machine can
+    rewrite them through the shared network folder, and our local
+    invalidate() never sees it. The local archive pool (projects_data)
+    is mutated only by this process — it calls invalidate() itself.
+    embeddings.json is the last pipeline file; its change means a
+    completed re-index, and a new/removed document shows up as an
+    appeared/vanished key.
 
-    НЕДОСТУПНЫЙ корень (сетевой диск отвалился, VPN) ≠ «документы удалили»:
-    переносим его записи из прошлого отпечатка prev — тёплый кеш продолжает
-    отвечать полным корпусом, а после возврата диска сравнение честное.
+    An UNREACHABLE root (network drive dropped, VPN) ≠ "documents
+    deleted": its entries are carried over from the previous fingerprint
+    prev — the warm cache keeps answering with the full corpus, and the
+    comparison is honest once the drive returns.
     """
     fp: dict[str, int] = {}
     for root in _library_index_roots():
@@ -150,38 +155,39 @@ def _current_fingerprint(prev: dict[str, int] | None) -> dict[str, int]:
 
 
 def _ensure_fresh_locked() -> None:
-    """Под _lock: сбрасывает и перечитывает кеш, если общие папки изменились."""
+    """Under _lock: drop and reload the cache if the shared folders changed."""
     global _cache, _tokens_cache, _fingerprint, _last_sweep
     now = time.monotonic()
     if _cache is not None and now - _last_sweep < _FINGERPRINT_TTL_S:
-        return  # свип был недавно — отвечаем из тёплого кеша без stat'ов
+        return  # recent sweep — serve the warm cache without stats
     fp = _current_fingerprint(_fingerprint)
     _last_sweep = now
     if _cache is not None and fp != _fingerprint:
         _cache = None
         _tokens_cache = None
     if _cache is None:
-        # Отпечаток снимаем ДО загрузки: запись, гонящаяся с чтением, даст
-        # расхождение и честную перечитку на следующем вопросе.
+        # Take the fingerprint BEFORE loading: a write racing the read
+        # produces a mismatch and an honest reload on the next question.
         _fingerprint = fp
         _cache = _load_merged()
 
 
 def get_library() -> tuple[list[dict], dict]:
-    """Возвращает (chunks, embeddings_index). При первом обращении читает диск."""
+    """Return (chunks, embeddings_index); reads disk on first use."""
     with _lock:
         _ensure_fresh_locked()
         return _cache
 
 
 def get_library_with_tokens() -> tuple[list[dict], dict, dict[str, list[str]]]:
-    """Возвращает (chunks, embeddings_index, {chunk_id: токены BM25}) РАЗОМ.
+    """Return (chunks, embeddings_index, {chunk_id: BM25 tokens}) AT ONCE.
 
-    Всё берётся под одним локом — chunks и токены гарантированно одного
-    поколения кеша. Раздельные вызовы get_library() + «get_tokens()» ловили
-    гонку: invalidate() между ними давал токены нового поколения к чанкам
-    старого → KeyError на вопросе. Токены считаются один раз; на каждый вопрос
-    BM25 собирается из них (build_bm25_from_tokens) без токенизации корпуса.
+    Everything is taken under one lock — chunks and tokens are guaranteed
+    to be of the same cache generation. Separate get_library() +
+    "get_tokens()" calls used to race: invalidate() between them paired
+    new-generation tokens with old chunks → KeyError on a question.
+    Tokens are computed once; each question builds BM25 from them
+    (build_bm25_from_tokens) without re-tokenizing the corpus.
     """
     global _tokens_cache
     with _lock:
@@ -192,7 +198,7 @@ def get_library_with_tokens() -> tuple[list[dict], dict, dict[str, list[str]]]:
 
 
 def invalidate() -> None:
-    """Сбрасывает кеши — следующий get_library()/get_tokens() перечитает диск."""
+    """Drop the caches — the next get_library()/get_tokens() re-reads disk."""
     global _cache, _tokens_cache, _fingerprint, _last_sweep
     with _lock:
         _cache = None

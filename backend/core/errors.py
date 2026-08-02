@@ -1,16 +1,16 @@
-"""Перевод исключений пайплайна в понятные пользователю причины.
+"""Translate pipeline exceptions into user-readable causes.
 
-Классифицируем по имени типа и тексту, а не по isinstance, чтобы модуль
-не зависел от openai/pypdfium2 и легко тестировался. Полный traceback
-всегда остаётся в логе — здесь только сообщение для UI. Язык сообщения —
-текущий язык приложения (backend/core/ui_messages.py).
+Classification is by type name and message text, not isinstance, so the
+module has no openai/pypdfium2 dependency and tests easily. The full
+traceback always stays in the log — only the UI message is built here,
+in the current app language (backend/core/ui_messages.py).
 """
 
 from backend.core.ui_messages import msg
 
 
 def classify_pipeline_error(exc: Exception) -> str:
-    """Возвращает человекочитаемую причину ошибки для показа в UI."""
+    """Return a human-readable cause for the UI."""
     name = type(exc).__name__
     text = str(exc).lower()
 
@@ -25,7 +25,7 @@ def classify_pipeline_error(exc: Exception) -> str:
     if name in ("APIConnectionError", "APITimeoutError"):
         return msg("err.no_connection")
 
-    # Свежая установка: ключ ещё не введён, клиент OpenAI падает при создании.
+    # Fresh install: no key yet, the OpenAI client fails at creation.
     if name == "OpenAIError" and "api_key" in text:
         return msg("err.missing_api_key")
 
@@ -40,9 +40,9 @@ def classify_pipeline_error(exc: Exception) -> str:
     if name == "ConversionError":
         return msg("err.pdf_read")
 
-    # Типовой Windows-кейс — файл держит Acrobat/антивирус/OneDrive, поэтому
-    # путь из исключения оставляем видимым. Специфичный текст про read-only
-    # папку библиотеки даёт сам scan_library.
+    # Typical Windows case: the file is held by Acrobat/antivirus/OneDrive,
+    # so the path from the exception stays visible. The specific read-only
+    # library-folder text comes from scan_library itself.
     if name == "PermissionError":
         return msg("err.locked_or_no_write", exc=exc)
 
