@@ -6,6 +6,7 @@ import LibraryPage from './LibraryPage'
 import { Logo } from './Logo'
 import LoginPage from './LoginPage'
 import SettingsPage from './SettingsPage'
+import { LangSwitcher, t, useI18n } from './i18n'
 
 type AuthState =
   | { phase: 'loading' }
@@ -80,7 +81,7 @@ type ArchiveApiResponse = {
 // из relative_path (проект / подпапки раздела / файл).
 function buildArchiveTree(archive: ArchiveApiResponse): LibraryFolder {
   const root: LibraryFolder = {
-    name: 'Archiv projektů',
+    name: t('nav.archive'),
     path: '',
     folders: [],
     files: [],
@@ -238,13 +239,13 @@ function SourceLink({ src }: { src: Source }) {
         target="_blank"
         rel="noopener noreferrer"
         className="hover:underline"
-        title="Otevřít PDF"
+        title={t('source.openPdf')}
       >
         <span className="font-medium">{src.document}</span>
         {' / '}
         <span>{src.section}</span>
       </a>
-      {' / s. '}
+      {t('source.pagesPrefix')}
       {src.pages.map((page, i) => (
         <span key={page}>
           {i > 0 && ', '}
@@ -253,7 +254,7 @@ function SourceLink({ src }: { src: Source }) {
             target="_blank"
             rel="noopener noreferrer"
             className="underline hover:no-underline"
-            title={`Otevřít PDF na straně ${page}`}
+            title={t('source.openPdfPage', { page })}
           >
             {page}
           </a>
@@ -293,9 +294,9 @@ function ReportAnswer({
         }),
       })
       if (res.ok) setSent(true)
-      else alert(`Chyba ${res.status}`)
+      else alert(t('common.errorStatus', { status: res.status }))
     } catch {
-      alert('Nepodařilo se odeslat hlášení.')
+      alert(t('report.failed'))
     } finally {
       setSending(false)
     }
@@ -304,7 +305,7 @@ function ReportAnswer({
   if (sent) {
     return (
       <p className="text-xs text-green-600 dark:text-green-400">
-        Děkujeme, hlášení bylo odesláno.
+        {t('report.thanks')}
       </p>
     )
   }
@@ -314,15 +315,13 @@ function ReportAnswer({
         onClick={() => setOpen(true)}
         className="text-xs text-muted-foreground underline self-start"
       >
-        Odpověď nepomohla / nenašlo se to — nahlásit
+        {t('report.link')}
       </button>
     )
   }
   return (
     <div className="flex flex-col gap-2 rounded-md border bg-card p-3">
-      <p className="text-xs text-muted-foreground">
-        Co bylo špatně? (nepovinné — např. „mělo by být v MVL649, odd. 4“)
-      </p>
+      <p className="text-xs text-muted-foreground">{t('report.prompt')}</p>
       <Textarea
         value={note}
         onChange={(e) => setNote(e.target.value)}
@@ -331,7 +330,7 @@ function ReportAnswer({
       />
       <div className="flex gap-2">
         <Button onClick={submit} disabled={sending} size="sm">
-          {sending ? 'Odesílám…' : 'Odeslat hlášení'}
+          {sending ? t('report.sending') : t('report.send')}
         </Button>
         <Button
           onClick={() => setOpen(false)}
@@ -339,7 +338,7 @@ function ReportAnswer({
           size="sm"
           variant="outline"
         >
-          Zrušit
+          {t('common.cancel')}
         </Button>
       </div>
     </div>
@@ -356,7 +355,16 @@ function getInitialTheme(): 'light' | 'dark' {
     : 'light'
 }
 
+// Ключи подписей режимов поиска — по значению режима.
+const MODE_KEYS = {
+  hybrid: 'search.modeHybrid',
+  vector: 'search.modeVector',
+  keyword: 'search.modeKeyword',
+} as const
+
 function App() {
+  // Подписка на смену языка: смена перерисует App и всё дерево под ним.
+  useI18n()
   const [auth, setAuth] = useState<AuthState>({ phase: 'loading' })
   const [view, setView] = useState<View>('search')
   const [theme, setTheme] = useState<'light' | 'dark'>(getInitialTheme)
@@ -412,11 +420,11 @@ function App() {
       if (data.effective_status === 'blocked') {
         let reason: string
         if (data.status === 'revoked') {
-          reason = 'Přístup byl odebrán administrátorem.'
+          reason = t('blocked.revoked')
         } else if (data.status === 'update_required') {
-          reason = 'Je dostupná nová verze aplikace. Nainstalujte ji, abyste mohli pokračovat.'
+          reason = t('blocked.updateRequired')
         } else {
-          reason = 'Spojení s licenčním serverem chybí déle než 1 den. Připojte se k internetu.'
+          reason = t('blocked.offline')
         }
         setAuth({
           phase: 'blocked',
@@ -517,7 +525,7 @@ function App() {
     // Снята «Вся база», но ничего не выбрано — раньше молча искали везде.
     // Теперь требуем явный выбор области, иначе непонятно, где искали.
     if (!searchAll && selectedSlugs.size === 0) {
-      setError('Vyberte, kde hledat — zaškrtněte „Celá databáze“ nebo vyberte dokumenty.')
+      setError(t('search.selectWhere'))
       return
     }
 
@@ -554,13 +562,15 @@ function App() {
         // Бэк шлёт понятную причину в detail (пустая библиотека, устаревший
         // выбор…) — показываем её, а не голый код статуса.
         const errData = await res.json().catch(() => null)
-        throw new Error(errData?.detail ?? `Server vrátil ${res.status}`)
+        throw new Error(
+          errData?.detail ?? t('common.serverReturned', { status: res.status }),
+        )
       }
       const data: AskResponse = await res.json()
       setResult(data)
       setAskedQuestion(question)
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Neznámá chyba')
+      setError(e instanceof Error ? e.message : t('common.unknownError'))
     } finally {
       setLoading(false)
     }
@@ -583,10 +593,11 @@ function App() {
     return (
       <div className="min-h-screen bg-background text-foreground flex items-center justify-center px-6">
         <div className="w-full max-w-md flex flex-col gap-4 rounded-md border bg-card p-6">
-          <h1 className="text-2xl font-bold">Přístup zablokován</h1>
+          <h1 className="text-2xl font-bold">{t('blocked.title')}</h1>
           <p className="text-sm text-muted-foreground">{auth.reason}</p>
           <p className="text-sm text-muted-foreground">
-            Uživatel: <span className="text-foreground">{auth.username}</span>
+            {t('blocked.user')}{' '}
+            <span className="text-foreground">{auth.username}</span>
           </p>
           {auth.downloadUrl && (
             <a
@@ -595,11 +606,11 @@ function App() {
               rel="noopener noreferrer"
               className="text-sm text-foreground underline self-start"
             >
-              Stáhnout aktualizaci →
+              {t('blocked.download')}
             </a>
           )}
           <Button onClick={handleLogout} className="self-start" variant="outline">
-            Odhlásit se
+            {t('common.logout')}
           </Button>
         </div>
       </div>
@@ -614,9 +625,10 @@ function App() {
             <Logo />
           </h1>
           <div className="flex items-center gap-3 text-sm text-muted-foreground">
+            <LangSwitcher />
             <button
               onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
-              title={theme === 'dark' ? 'Světlý režim' : 'Tmavý režim'}
+              title={theme === 'dark' ? t('theme.toLight') : t('theme.toDark')}
               className="text-base leading-none"
             >
               {theme === 'dark' ? '☀️' : '🌙'}
@@ -627,7 +639,7 @@ function App() {
                 'hover:text-foreground hover:underline ' +
                 (view === 'settings' ? 'text-foreground font-medium' : '')
               }
-              title="Nastavení"
+              title={t('header.settingsTitle')}
             >
               👤 {auth.username}
             </button>
@@ -635,7 +647,7 @@ function App() {
               onClick={handleLogout}
               className="hover:text-foreground hover:underline"
             >
-              Odhlásit se
+              {t('common.logout')}
             </button>
           </div>
         </div>
@@ -650,7 +662,7 @@ function App() {
                 : 'border-transparent text-muted-foreground hover:text-foreground')
             }
           >
-            Vyhledávání
+            {t('nav.search')}
           </button>
           <button
             onClick={() => setView('library')}
@@ -661,7 +673,7 @@ function App() {
                 : 'border-transparent text-muted-foreground hover:text-foreground')
             }
           >
-            Knihovna
+            {t('nav.library')}
           </button>
           <button
             onClick={() => setView('archive')}
@@ -672,7 +684,7 @@ function App() {
                 : 'border-transparent text-muted-foreground hover:text-foreground')
             }
           >
-            Archiv projektů
+            {t('nav.archive')}
           </button>
         </nav>
 
@@ -686,7 +698,7 @@ function App() {
           <>
         <div className="rounded-md border bg-card p-4 flex flex-col gap-2">
           <h2 className="text-sm font-semibold text-muted-foreground">
-            Kde hledat
+            {t('search.where')}
           </h2>
           {(() => {
             const userReady = library ? collectReadySlugs(library.tree).length : 0
@@ -695,9 +707,7 @@ function App() {
               : 0
             if (userReady + archiveReady === 0) {
               return (
-                <p className="text-sm text-muted-foreground">
-                  Žádné indexované dokumenty. Přejděte do „Knihovny“ a klikněte na „Skenovat“.
-                </p>
+                <p className="text-sm text-muted-foreground">{t('search.noDocs')}</p>
               )
             }
             return (
@@ -709,13 +719,13 @@ function App() {
                     onChange={() => setSearchAll((v) => !v)}
                     className="h-4 w-4"
                   />
-                  <span>Celá databáze</span>
+                  <span>{t('search.wholeDb')}</span>
                 </label>
                 <div className="mt-1 flex flex-col sm:flex-row gap-8">
                   {userReady > 0 && library && (
                     <div className="flex-1">
                       <p className="text-xs font-medium text-muted-foreground mb-1">
-                        Vlastní knihovna
+                        {t('search.ownLibrary')}
                       </p>
                       <FilterTree
                         folder={library.tree}
@@ -729,7 +739,7 @@ function App() {
                   {archiveReady > 0 && archiveTree && (
                     <div className="flex-1">
                       <p className="text-xs font-medium text-muted-foreground mb-1">
-                        Archiv projektů
+                        {t('nav.archive')}
                       </p>
                       <FilterTree
                         folder={archiveTree}
@@ -748,14 +758,10 @@ function App() {
 
         <div className="rounded-md border bg-card p-4 flex flex-col gap-2">
           <h2 className="text-sm font-semibold text-muted-foreground">
-            Režim hledání
+            {t('search.mode')}
           </h2>
           <div className="flex gap-2">
-            {([
-              ['hybrid', 'Hybridní'],
-              ['vector', 'Podle významu'],
-              ['keyword', 'Podle slov'],
-            ] as const).map(([value, label]) => (
+            {(['hybrid', 'vector', 'keyword'] as const).map((value) => (
               <button
                 key={value}
                 onClick={() => setSearchMode(value)}
@@ -766,7 +772,7 @@ function App() {
                     : 'text-muted-foreground hover:text-foreground')
                 }
               >
-                {label}
+                {t(MODE_KEYS[value])}
               </button>
             ))}
           </div>
@@ -774,7 +780,7 @@ function App() {
 
         <div className="rounded-md border bg-card p-4 flex flex-col gap-2">
           <h2 className="text-sm font-semibold text-muted-foreground">
-            Model odpovědi
+            {t('search.answerModel')}
           </h2>
           <div className="flex gap-2">
             {(['gpt-5.4-mini', 'gpt-5.5'] as const).map((value) => (
@@ -800,7 +806,7 @@ function App() {
             checked={expandQuery}
             onChange={(e) => setExpandQuery(e.target.checked)}
           />
-          Rozšířit dotaz (diakritika, synonyma) před hledáním
+          {t('search.expand')}
         </label>
 
         <label className="flex items-center gap-2 px-1 text-sm text-muted-foreground cursor-pointer select-none">
@@ -809,11 +815,11 @@ function App() {
             checked={strongSearch}
             onChange={(e) => setStrongSearch(e.target.checked)}
           />
-          Silné hledání — přiložit snímky stránek zdrojů (pomalejší, dražší)
+          {t('search.strong')}
         </label>
 
         <Textarea
-          placeholder="Zadejte dotaz ke stavebním normám..."
+          placeholder={t('search.placeholder')}
           value={question}
           onChange={(e) => setQuestion(e.target.value)}
           rows={4}
@@ -821,7 +827,7 @@ function App() {
         />
 
         <Button onClick={handleAsk} disabled={!canSubmit} className="self-start">
-          {loading ? 'Hledám...' : 'Zeptat se'}
+          {loading ? t('search.asking') : t('search.ask')}
         </Button>
 
         {error && (
@@ -834,26 +840,30 @@ function App() {
           <div className="flex flex-col gap-4">
             {result.search_query && result.search_query !== askedQuestion && (
               <p className="text-xs text-muted-foreground">
-                Hledáno jako: <span className="italic">{result.search_query}</span>
+                {t('search.searchedAs')}{' '}
+                <span className="italic">{result.search_query}</span>
               </p>
             )}
             <p className="text-xs text-muted-foreground">
-              Model: {result.answer_model} · {(result.answer_ms / 1000).toFixed(1)} s
+              {t('search.modelLine', {
+                model: result.answer_model,
+                seconds: (result.answer_ms / 1000).toFixed(1),
+              })}
             </p>
             <div className="rounded-md border bg-card p-4">
               <h2 className="text-sm font-semibold text-muted-foreground mb-2">
-                Odpověď
+                {t('search.answer')}
               </h2>
               <p className="whitespace-pre-wrap">{result.answer}</p>
             </div>
 
             <div className="rounded-md border bg-card p-4">
               <h2 className="text-sm font-semibold text-muted-foreground mb-2">
-                Zdroje
+                {t('search.sources')}
               </h2>
               {result.sources.length === 0 ? (
                 <p className="text-sm text-muted-foreground">
-                  Model nenašel odpověď v nalezených úryvcích.
+                  {t('search.noAnswer')}
                 </p>
               ) : (
                 <ul className="flex flex-col gap-2 text-sm">
@@ -867,7 +877,7 @@ function App() {
             {result.related_sources.length > 0 && (
               <div className="rounded-md border bg-card p-4">
                 <h2 className="text-sm font-semibold text-muted-foreground mb-2">
-                  Související
+                  {t('search.related')}
                 </h2>
                 <ul className="flex flex-col gap-2 text-sm">
                   {result.related_sources.map((src, i) => (

@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Button } from '@/components/ui/button'
+import { t, useI18n } from './i18n'
 
 // Общие настройки индексации (модель vision + тумблер описания картинок).
 // Настройки глобальные — их читают оба пайплайна (нормы и архив проектов),
@@ -28,9 +29,9 @@ function VisionModelCard() {
         body: JSON.stringify({ model: m }),
       })
       if (res.ok) setModel((await res.json()).model)
-      else alert(`Chyba ${res.status}`)
+      else alert(t('common.errorStatus', { status: res.status }))
     } catch {
-      alert('Chyba sítě')
+      alert(t('common.networkError'))
     } finally {
       setSaving(false)
     }
@@ -39,12 +40,9 @@ function VisionModelCard() {
   return (
     <div className="rounded-md border bg-card p-4 flex flex-col gap-2">
       <h2 className="text-sm font-semibold text-muted-foreground">
-        Model pro zpracování (vision)
+        {t('idx.visionModel')}
       </h2>
-      <p className="text-xs text-muted-foreground">
-        Použije se při skenování dokumentů. Vision tvoří ~99 % ceny dokumentu —
-        „gpt-5.4-mini“ je výrazně levnější, „gpt-5.5“ kvalitnější.
-      </p>
+      <p className="text-xs text-muted-foreground">{t('idx.visionModelText')}</p>
       <div className="flex gap-2">
         {VISION_MODELS.map((m) => (
           <button
@@ -87,28 +85,25 @@ function DescribeImagesCard() {
         body: JSON.stringify({ enabled: value }),
       })
       if (res.ok) setEnabled((await res.json()).enabled)
-      else alert(`Chyba ${res.status}`)
+      else alert(t('common.errorStatus', { status: res.status }))
     } catch {
-      alert('Chyba sítě')
+      alert(t('common.networkError'))
     } finally {
       setSaving(false)
     }
   }
 
   const options = [
-    { value: true, label: 'Standardní (s popisem)' },
-    { value: false, label: 'Bez LLM (jen OCR)' },
+    { value: true, label: t('idx.standard') },
+    { value: false, label: t('idx.noLlm') },
   ]
 
   return (
     <div className="rounded-md border bg-card p-4 flex flex-col gap-2">
       <h2 className="text-sm font-semibold text-muted-foreground">
-        Popis obrázků a výkresů (vision)
+        {t('idx.describeImages')}
       </h2>
-      <p className="text-xs text-muted-foreground">
-        „Standardní“ nechá vision popsat schémata a výkresy (lepší vyhledávání,
-        vision tvoří ~99 % ceny). „Bez LLM“ použije jen OCR a text — zdarma.
-      </p>
+      <p className="text-xs text-muted-foreground">{t('idx.describeImagesText')}</p>
       <div className="flex gap-2">
         {options.map((o) => (
           <button
@@ -133,12 +128,13 @@ function DescribeImagesCard() {
 // Кнопка, открывающая модалку с настройками индексации. Модалка — простой
 // оверлей (готового Dialog в проекте нет): клик по фону/крестику закрывает.
 export function IndexingSettingsButton() {
+  useI18n() // подписка: смена языка перерисовывает модалку
   const [open, setOpen] = useState(false)
 
   return (
     <>
       <Button variant="outline" onClick={() => setOpen(true)}>
-        Nastavení indexace
+        {t('idx.button')}
       </Button>
 
       {open && (
@@ -151,18 +147,16 @@ export function IndexingSettingsButton() {
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex items-center justify-between">
-              <h2 className="text-base font-semibold">Nastavení indexace</h2>
+              <h2 className="text-base font-semibold">{t('idx.button')}</h2>
               <button
                 onClick={() => setOpen(false)}
-                aria-label="Zavřít"
+                aria-label={t('idx.close')}
                 className="text-muted-foreground hover:text-foreground text-xl leading-none px-1"
               >
                 ×
               </button>
             </div>
-            <p className="text-xs text-muted-foreground">
-              Platí pro knihovnu i archiv projektů.
-            </p>
+            <p className="text-xs text-muted-foreground">{t('idx.scope')}</p>
             <VisionModelCard />
             <DescribeImagesCard />
           </div>

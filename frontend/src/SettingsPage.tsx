@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Button } from '@/components/ui/button'
+import { useI18n } from './i18n'
 
 const inputClass = 'rounded-md border bg-background px-3 py-2 text-sm max-w-md'
 const cardClass = 'rounded-md border bg-card p-4 flex flex-col gap-3'
@@ -26,6 +27,7 @@ type Profile = {
 }
 
 function ProfileSection() {
+  const { t } = useI18n()
   const [profile, setProfile] = useState<Profile | null>(null)
   const [email, setEmail] = useState('')
   const [fullName, setFullName] = useState('')
@@ -48,8 +50,9 @@ function ProfileSection() {
         setPosition(data.position ?? '')
         setLinkedin(data.linkedin ?? '')
       })
-      .catch(() => setError('Profil se nepodařilo načíst.'))
-  }, [])
+      .catch(() => setError(t('settings.profileLoadFailed')))
+    // t стабилен (module-level функция) — эффект выполнится один раз.
+  }, [t])
 
   async function handleSave() {
     setError(null)
@@ -70,13 +73,17 @@ function ProfileSection() {
       })
       if (!res.ok) {
         const data = await res.json().catch(() => ({}))
-        setError(typeof data?.detail === 'string' ? data.detail : 'Uložení profilu selhalo.')
+        setError(
+          typeof data?.detail === 'string'
+            ? data.detail
+            : t('settings.profileSaveFailed'),
+        )
         return
       }
       setProfile(await res.json())
       setSaved(true)
     } catch {
-      setError('Aplikace není dostupná. Zkuste to později.')
+      setError(t('settings.appUnavailable'))
     } finally {
       setLoading(false)
     }
@@ -84,10 +91,12 @@ function ProfileSection() {
 
   return (
     <div className={cardClass}>
-      <h2 className="text-sm font-semibold text-muted-foreground">Profil</h2>
+      <h2 className="text-sm font-semibold text-muted-foreground">
+        {t('settings.profile')}
+      </h2>
 
       <label className="flex flex-col gap-1 text-sm">
-        <span className="text-muted-foreground">Přihlašovací jméno</span>
+        <span className="text-muted-foreground">{t('login.username')}</span>
         <input
           type="text"
           value={profile?.username ?? ''}
@@ -97,7 +106,7 @@ function ProfileSection() {
       </label>
 
       <label className="flex flex-col gap-1 text-sm">
-        <span className="text-muted-foreground">Jméno</span>
+        <span className="text-muted-foreground">{t('settings.name')}</span>
         <input
           type="text"
           value={fullName}
@@ -108,7 +117,7 @@ function ProfileSection() {
       </label>
 
       <label className="flex flex-col gap-1 text-sm">
-        <span className="text-muted-foreground">E-mail</span>
+        <span className="text-muted-foreground">{t('login.email')}</span>
         <input
           type="email"
           value={email}
@@ -119,7 +128,7 @@ function ProfileSection() {
       </label>
 
       <label className="flex flex-col gap-1 text-sm">
-        <span className="text-muted-foreground">Společnost</span>
+        <span className="text-muted-foreground">{t('login.company')}</span>
         <input
           type="text"
           value={company}
@@ -130,7 +139,7 @@ function ProfileSection() {
       </label>
 
       <label className="flex flex-col gap-1 text-sm">
-        <span className="text-muted-foreground">Pozice</span>
+        <span className="text-muted-foreground">{t('login.position')}</span>
         <input
           type="text"
           value={position}
@@ -141,7 +150,7 @@ function ProfileSection() {
       </label>
 
       <label className="flex flex-col gap-1 text-sm">
-        <span className="text-muted-foreground">LinkedIn (nepovinné)</span>
+        <span className="text-muted-foreground">{t('settings.linkedinOptional')}</span>
         <input
           type="text"
           value={linkedin}
@@ -152,11 +161,15 @@ function ProfileSection() {
       </label>
 
       <Button onClick={handleSave} disabled={loading} className="self-start">
-        {loading ? 'Ukládání...' : 'Uložit profil'}
+        {loading ? t('settings.saving') : t('settings.saveProfile')}
       </Button>
 
       {error && <ErrorBox text={error} />}
-      {saved && <p className="text-sm text-green-600 dark:text-green-400">Profil byl uložen.</p>}
+      {saved && (
+        <p className="text-sm text-green-600 dark:text-green-400">
+          {t('settings.profileSaved')}
+        </p>
+      )}
     </div>
   )
 }
@@ -164,6 +177,7 @@ function ProfileSection() {
 // ── Смена пароля ──────────────────────────────────────────────────────────────
 
 function PasswordSection() {
+  const { t } = useI18n()
   const [oldPassword, setOldPassword] = useState('')
   const [newPassword, setNewPassword] = useState('')
   const [error, setError] = useState<string | null>(null)
@@ -182,14 +196,18 @@ function PasswordSection() {
       })
       if (!res.ok) {
         const data = await res.json().catch(() => ({}))
-        setError(typeof data?.detail === 'string' ? data.detail : 'Změna hesla selhala.')
+        setError(
+          typeof data?.detail === 'string'
+            ? data.detail
+            : t('settings.passwordChangeFailed'),
+        )
         return
       }
       setOldPassword('')
       setNewPassword('')
       setSaved(true)
     } catch {
-      setError('Aplikace není dostupná. Zkuste to později.')
+      setError(t('settings.appUnavailable'))
     } finally {
       setLoading(false)
     }
@@ -201,10 +219,12 @@ function PasswordSection() {
 
   return (
     <div className={cardClass}>
-      <h2 className="text-sm font-semibold text-muted-foreground">Změna hesla</h2>
+      <h2 className="text-sm font-semibold text-muted-foreground">
+        {t('settings.changePassword')}
+      </h2>
 
       <label className="flex flex-col gap-1 text-sm">
-        <span className="text-muted-foreground">Současné heslo</span>
+        <span className="text-muted-foreground">{t('settings.currentPassword')}</span>
         <input
           type="password"
           value={oldPassword}
@@ -215,7 +235,7 @@ function PasswordSection() {
       </label>
 
       <label className="flex flex-col gap-1 text-sm">
-        <span className="text-muted-foreground">Nové heslo (min. 8 znaků)</span>
+        <span className="text-muted-foreground">{t('settings.newPassword')}</span>
         <input
           type="password"
           value={newPassword}
@@ -226,11 +246,15 @@ function PasswordSection() {
       </label>
 
       <Button onClick={handleSave} disabled={!canSubmit} className="self-start">
-        {loading ? 'Ukládání...' : 'Změnit heslo'}
+        {loading ? t('settings.saving') : t('settings.changePasswordBtn')}
       </Button>
 
       {error && <ErrorBox text={error} />}
-      {saved && <p className="text-sm text-green-600 dark:text-green-400">Heslo bylo změněno.</p>}
+      {saved && (
+        <p className="text-sm text-green-600 dark:text-green-400">
+          {t('settings.passwordChanged')}
+        </p>
+      )}
     </div>
   )
 }
@@ -243,6 +267,7 @@ type KeyStatus = {
 }
 
 function OpenAIKeySection() {
+  const { t } = useI18n()
   const [status, setStatus] = useState<KeyStatus | null>(null)
   const [keyInput, setKeyInput] = useState('')
   const [error, setError] = useState<string | null>(null)
@@ -270,14 +295,18 @@ function OpenAIKeySection() {
       })
       if (!res.ok) {
         const data = await res.json().catch(() => ({}))
-        setError(typeof data?.detail === 'string' ? data.detail : 'Uložení klíče selhalo.')
+        setError(
+          typeof data?.detail === 'string'
+            ? data.detail
+            : t('settings.keySaveFailed'),
+        )
         return
       }
       setStatus(await res.json())
       setKeyInput('')
       setSaved(true)
     } catch {
-      setError('Aplikace není dostupná. Zkuste to později.')
+      setError(t('settings.appUnavailable'))
     } finally {
       setLoading(false)
     }
@@ -287,16 +316,16 @@ function OpenAIKeySection() {
 
   return (
     <div className={cardClass}>
-      <h2 className="text-sm font-semibold text-muted-foreground">Klíč OpenAI</h2>
-      <p className="text-sm text-muted-foreground">
-        Klíč se ukládá pouze na vašem počítači. Náklady na dotazy se účtují na tento klíč.
-      </p>
+      <h2 className="text-sm font-semibold text-muted-foreground">
+        {t('settings.openaiKey')}
+      </h2>
+      <p className="text-sm text-muted-foreground">{t('settings.openaiKeyText')}</p>
 
       {status && (
         <p className="text-sm">
           {status.is_set
-            ? `Aktuální klíč: ${status.masked}`
-            : 'Klíč zatím není nastaven.'}
+            ? t('settings.currentKey', { masked: status.masked ?? '' })
+            : t('settings.keyNotSet')}
         </p>
       )}
 
@@ -310,11 +339,15 @@ function OpenAIKeySection() {
       />
 
       <Button onClick={handleSave} disabled={!canSubmit} className="self-start">
-        {loading ? 'Ukládání...' : 'Uložit klíč'}
+        {loading ? t('settings.saving') : t('settings.saveKey')}
       </Button>
 
       {error && <ErrorBox text={error} />}
-      {saved && <p className="text-sm text-green-600 dark:text-green-400">Klíč byl uložen.</p>}
+      {saved && (
+        <p className="text-sm text-green-600 dark:text-green-400">
+          {t('settings.keySaved')}
+        </p>
+      )}
     </div>
   )
 }

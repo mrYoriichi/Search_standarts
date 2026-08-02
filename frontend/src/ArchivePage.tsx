@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { IndexingSettingsButton } from './IndexingSettings'
+import { t, useI18n } from './i18n'
 
 // Архив проектов юзера: каждая подключённая папка = один проект (все PDF
 // внутри, включая подпапки). «Skenovat», документы по проектам со статусами.
@@ -39,32 +40,28 @@ async function togglePin(slug: string): Promise<void> {
     const res = await fetch(`/api/projects/${slug}/pin`, { method: 'POST' })
     if (!res.ok) {
       const data = await res.json().catch(() => ({}))
-      alert(data.detail ?? `Nepodařilo se přepnout připnutí: ${res.status}`)
+      alert(data.detail ?? t('lib.pinFailed', { status: res.status }))
     }
   } catch {
-    alert('Chyba sítě')
+    alert(t('common.networkError'))
   }
 }
 
 async function reindexDocument(slug: string, name: string): Promise<boolean> {
   // Полная переобработка: старые артефакты удаляются, pipeline запускается
   // заново. Vision оплачивается повторно — поэтому подтверждение.
-  const ok = confirm(
-    `Přeindexovat „${name}“?\n\n` +
-      `Staré úryvky a embeddingy budou smazány a dokument se zpracuje znovu. ` +
-      `Popisy stránek (vision) se platí znovu.`,
-  )
+  const ok = confirm(t('arch.reindexConfirm', { title: name }))
   if (!ok) return false
   try {
     const res = await fetch(`/api/projects/${slug}/reindex`, { method: 'POST' })
     if (!res.ok) {
       const data = await res.json().catch(() => ({}))
-      alert(data.detail ?? `Chyba ${res.status}`)
+      alert(data.detail ?? t('common.errorStatus', { status: res.status }))
       return false
     }
     return true
   } catch {
-    alert('Chyba sítě')
+    alert(t('common.networkError'))
     return false
   }
 }
@@ -88,21 +85,25 @@ function StatusLabel({
   freshlyReady: boolean
 }) {
   if (doc.status === 'pending') {
-    return <span className="text-xs text-amber-600 dark:text-amber-400">čeká na indexaci</span>
+    return (
+      <span className="text-xs text-amber-600 dark:text-amber-400">
+        {t('status.pending')}
+      </span>
+    )
   }
   if (doc.status === 'processing') {
     return (
       <span className="text-xs text-blue-600 dark:text-blue-400">
-        {doc.progress ?? 'zpracovává se…'}
+        {doc.progress ?? t('status.processing')}
       </span>
     )
   }
   if (doc.status === 'error') {
-    return <span className="text-xs text-red-600 dark:text-red-400">chyba</span>
+    return <span className="text-xs text-red-600 dark:text-red-400">{t('status.failed')}</span>
   }
   // ready: зелёную плашку показываем только на переходе (как в knihovně).
   if (freshlyReady) {
-    return <span className="text-xs text-green-600 dark:text-green-400">hotovo</span>
+    return <span className="text-xs text-green-600 dark:text-green-400">{t('status.ready')}</span>
   }
   return null
 }
@@ -127,7 +128,7 @@ function DocumentRow({
             await togglePin(doc.slug)
             onChange()
           }}
-          title={doc.pinned ? 'Odepnout' : 'Připnout'}
+          title={doc.pinned ? t('lib.unpin') : t('lib.pin')}
           className={
             doc.pinned
               ? 'text-base leading-none'
@@ -142,7 +143,7 @@ function DocumentRow({
             target="_blank"
             rel="noopener noreferrer"
             className="text-foreground hover:underline flex-1"
-            title="Otevřít PDF v prohlížeči"
+            title={t('arch.openPdf')}
           >
             📄 {insideProject}
           </a>
@@ -151,14 +152,16 @@ function DocumentRow({
             📄 {insideProject}
           </span>
         )}
-        <span className="text-xs text-muted-foreground">{doc.page_count} s.</span>
+        <span className="text-xs text-muted-foreground">
+          {t('arch.pages', { n: doc.page_count })}
+        </span>
         <StatusLabel doc={doc} freshlyReady={freshlyReady.has(doc.slug)} />
         {(doc.status === 'ready' || doc.status === 'error') && (
           <button
             onClick={async () => {
               if (await reindexDocument(doc.slug, insideProject)) onChange()
             }}
-            title="Přeindexovat"
+            title={t('lib.reindexTitle')}
             className="text-base leading-none opacity-25 hover:opacity-100"
           >
             🔄
@@ -173,6 +176,7 @@ function DocumentRow({
 }
 
 export default function ArchivePage() {
+  useI18n() // подписка: смена языка перерисовывает страницу
   const [paths, setPaths] = useState<string[]>([])
   const [pathInput, setPathInput] = useState('')
   const [editingPath, setEditingPath] = useState<string | null>(null)
@@ -231,7 +235,7 @@ export default function ArchivePage() {
         setError(data.detail ?? `Chyba ${res.status}`)
       }
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Nepodařilo se načíst archiv')
+      setError(e instanceof Error ? e.message : t('arch.loadFailed'))
     } finally {
       setLoading(false)
     }
@@ -273,7 +277,7 @@ export default function ArchivePage() {
       })
       if (!res.ok) {
         const data = await res.json().catch(() => ({}))
-        alert(data.detail ?? `Chyba ${res.status}`)
+        alert(data.detail ?? t('common.errorStatus', { status: res.status }))
         return
       }
       setPathInput('')
@@ -284,7 +288,7 @@ export default function ArchivePage() {
   }
 
   async function removePath(target: string) {
-    if (!confirm(`Odpojit složku archivu?\n${target}\n\nIndexy zůstanou.`)) return
+    if (!confirm(t('arch.removePathConfirm', { path: target }))) return
     const res = await fetch('/api/settings/projects-libraries', {
       method: 'DELETE',
       headers: { 'Content-Type': 'application/json' },
@@ -292,7 +296,7 @@ export default function ArchivePage() {
     })
     if (!res.ok) {
       const data = await res.json().catch(() => ({}))
-      alert(data.detail ?? `Chyba ${res.status}`)
+      alert(data.detail ?? t('common.errorStatus', { status: res.status }))
       return
     }
     await loadAll()
@@ -319,7 +323,7 @@ export default function ArchivePage() {
       })
       if (!res.ok) {
         const data = await res.json().catch(() => ({}))
-        alert(data.detail ?? `Chyba ${res.status}`)
+        alert(data.detail ?? t('common.errorStatus', { status: res.status }))
         return
       }
       setEditingPath(null)
@@ -336,7 +340,7 @@ export default function ArchivePage() {
       const res = await fetch('/api/projects/scan', { method: 'POST' })
       if (!res.ok) {
         const data = await res.json().catch(() => ({}))
-        alert(data.detail ?? `Chyba ${res.status}`)
+        alert(data.detail ?? t('common.errorStatus', { status: res.status }))
         return
       }
       setSummary(await res.json())
@@ -352,41 +356,32 @@ export default function ArchivePage() {
       const res = await fetch('/api/projects/index', { method: 'POST' })
       if (!res.ok) {
         const data = await res.json().catch(() => ({}))
-        alert(data.detail ?? `Chyba ${res.status}`)
+        alert(data.detail ?? t('common.errorStatus', { status: res.status }))
         return
       }
       const data: { started: number; over_limit?: number } = await res.json()
       if (data.over_limit && data.over_limit > 0) {
-        alert(
-          `${data.over_limit} dokumentů se nevešlo do limitu veřejné verze ` +
-            '(3000 stran) — nebyly indexovány. Uvolněte místo smazáním ' +
-            'nepotřebných dokumentů.',
-        )
+        alert(t('lib.overLimitMsg', { n: data.over_limit }))
       }
       await loadAll()
     } catch {
-      alert('Chyba sítě')
+      alert(t('common.networkError'))
     } finally {
       setIndexing(false)
     }
   }
 
   if (loading) {
-    return <p className="text-sm text-muted-foreground">Načítání…</p>
+    return <p className="text-sm text-muted-foreground">{t('common.loading')}</p>
   }
 
   return (
     <div className="flex flex-col gap-6">
       <div className="rounded-md border bg-card p-4 flex flex-col gap-2">
         <h2 className="text-sm font-semibold text-muted-foreground">
-          Složky projektů
+          {t('arch.folders')}
         </h2>
-        <p className="text-xs text-muted-foreground">
-          Každá připojená složka = jeden projekt: indexují se všechny PDF uvnitř
-          včetně podsložek (TZ, statické výpočty, výkresy). Můžete připojit více
-          projektů. Soubory se pouze čtou. Zpracování výkresů využívá vision
-          model (viz „Knihovna“).
-        </p>
+        <p className="text-xs text-muted-foreground">{t('arch.foldersText')}</p>
         {paths.length > 0 && (
           <ul className="flex flex-col gap-1">
             {paths.map((p) => (
@@ -411,14 +406,14 @@ export default function ArchivePage() {
                       onClick={savePathEdit}
                       disabled={saving || !editValue.trim()}
                       className="text-muted-foreground hover:text-foreground shrink-0"
-                      title="Uložit"
+                      title={t('common.saveTitle')}
                     >
                       ✓
                     </button>
                     <button
                       onClick={() => setEditingPath(null)}
                       className="text-muted-foreground hover:text-foreground shrink-0"
-                      title="Zrušit"
+                      title={t('common.cancel')}
                     >
                       ✕
                     </button>
@@ -429,14 +424,14 @@ export default function ArchivePage() {
                     <button
                       onClick={() => startEdit(p)}
                       className="text-muted-foreground hover:text-foreground shrink-0"
-                      title="Upravit cestu"
+                      title={t('lib.editPath')}
                     >
                       ✎
                     </button>
                     <button
                       onClick={() => removePath(p)}
                       className="text-muted-foreground hover:text-destructive shrink-0"
-                      title="Odpojit složku"
+                      title={t('lib.detachFolder')}
                     >
                       🗑
                     </button>
@@ -456,7 +451,7 @@ export default function ArchivePage() {
             className="flex-1 border rounded px-2 py-1 text-sm font-mono"
           />
           <Button onClick={addPath} disabled={saving || !pathInput.trim()}>
-            {saving ? 'Přidávám…' : 'Přidat složku'}
+            {saving ? t('lib.adding') : t('lib.addFolder')}
           </Button>
         </div>
       </div>
@@ -479,7 +474,7 @@ export default function ArchivePage() {
               {pinned.length > 0 && (
                 <div className="rounded-md border bg-card p-4">
                   <h2 className="text-sm font-semibold text-muted-foreground mb-2">
-                    📌 Připnuté
+                    📌 {t('lib.pinned')}
                   </h2>
                   <div className="flex flex-col gap-1">
                     {pinned.map((doc) => (
@@ -497,7 +492,7 @@ export default function ArchivePage() {
               <div className="rounded-md border bg-card p-4 flex flex-col gap-3">
                 <div className="flex items-center justify-between">
                   <h2 className="text-sm font-semibold text-muted-foreground">
-                    Moje projekty
+                    {t('arch.myProjects')}
                   </h2>
                   {paths.length > 0 && (
                     <div className="flex items-center gap-2">
@@ -507,7 +502,7 @@ export default function ArchivePage() {
                           disabled={indexing}
                           size="sm"
                         >
-                          {indexing ? 'Spouštím…' : `Indexovat (${pendingCount})`}
+                          {indexing ? t('lib.starting') : t('lib.indexN', { n: pendingCount })}
                         </Button>
                       )}
                       <Button
@@ -516,26 +511,27 @@ export default function ArchivePage() {
                         variant="outline"
                         size="sm"
                       >
-                        {scanning ? 'Skenuji…' : 'Skenovat'}
+                        {scanning ? t('lib.scanning') : t('lib.scan')}
                       </Button>
                     </div>
                   )}
                 </div>
                 {summary && (
                   <p className="text-xs text-muted-foreground">
-                    Nalezeno {summary.found}, nových {summary.new}
+                    {t('arch.summary', { found: summary.found, fresh: summary.new })}
                     {summary.changed > 0 &&
-                      `, nahrazeno ${summary.changed} (vráceno k indexaci)`}
-                    {summary.missing > 0 && `, odstraněno ${summary.missing}`}
+                      t('arch.summaryChanged', { n: summary.changed })}
+                    {summary.missing > 0 &&
+                      t('arch.summaryMissing', { n: summary.missing })}
                     {summary.duplicates.length > 0 &&
-                      `, duplicit ${summary.duplicates.length}`}
-                    {summary.errors.length > 0 && `, chyb ${summary.errors.length}`}
+                      t('arch.summaryDuplicates', { n: summary.duplicates.length })}
+                    {summary.errors.length > 0 &&
+                      t('arch.summaryErrors', { n: summary.errors.length })}
                   </p>
                 )}
                 {summary && summary.unavailable.length > 0 && (
                   <p className="text-xs text-red-600 dark:text-red-400">
-                    Nedostupné složky (úklid přeskočen):{' '}
-                    {summary.unavailable.join(', ')}
+                    {t('arch.unavailable', { list: summary.unavailable.join(', ') })}
                   </p>
                 )}
                 {archive.projects.length > 0 ? (
@@ -556,9 +552,9 @@ export default function ArchivePage() {
                           <summary className="cursor-pointer text-sm font-semibold flex items-center gap-2">
                             <span>📁 {project.name}</span>
                             <span className="text-xs font-normal text-muted-foreground">
-                              {project.documents.length} dokumentů
-                              {active > 0 && ` · zpracovává se ${active}`}
-                              {errors > 0 && ` · chyb ${errors}`}
+                              {t('arch.docCount', { n: project.documents.length })}
+                              {active > 0 && t('arch.processingCount', { n: active })}
+                              {errors > 0 && t('arch.errorCount', { n: errors })}
                             </span>
                           </summary>
                           <div className="flex flex-col gap-1 mt-2 ml-1">
@@ -578,7 +574,7 @@ export default function ArchivePage() {
                 ) : (
                   paths.length > 0 && (
                     <p className="text-sm text-muted-foreground">
-                      Zatím žádné dokumenty — klikněte na „Skenovat“.
+                      {t('arch.noDocs')}
                     </p>
                   )
                 )}

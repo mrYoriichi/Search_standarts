@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { IndexingSettingsButton } from './IndexingSettings'
+import { t, useI18n } from './i18n'
 
 
 type LibraryFile = {
@@ -41,10 +42,10 @@ async function openFile(path: string): Promise<void> {
     })
     if (!res.ok) {
       const data = await res.json().catch(() => ({}))
-      alert(data.detail ?? 'Nepodařilo se otevřít soubor')
+      alert(data.detail ?? t('lib.openFailed'))
     }
   } catch {
-    alert('Nepodařilo se otevřít soubor')
+    alert(t('lib.openFailed'))
   }
 }
 
@@ -53,10 +54,10 @@ async function togglePin(slug: string): Promise<void> {
   try {
     const res = await fetch(`/api/documents/${slug}/pin`, { method: 'POST' })
     if (!res.ok) {
-      alert(`Nepodařilo se přepnout připnutí: ${res.status}`)
+      alert(t('lib.pinFailed', { status: res.status }))
     }
   } catch {
-    alert('Chyba sítě')
+    alert(t('common.networkError'))
   }
 }
 
@@ -64,22 +65,18 @@ async function togglePin(slug: string): Promise<void> {
 async function reindexDocument(slug: string, title: string): Promise<boolean> {
   // Полная переобработка PDF: удаляет старые чанки/эмбеддинги и запускает pipeline заново.
   // Стоит как обычная обработка ($), занимает несколько минут.
-  const ok = confirm(
-    `Přeindexovat „${title}“?\n\n` +
-      `Staré úryvky a embeddingy budou smazány a dokument se zpracuje znovu. ` +
-      `Trvá to 5–10 minut a stojí přibližně $0.50–$1.50.`
-  )
+  const ok = confirm(t('lib.reindexConfirm', { title }))
   if (!ok) return false
   try {
     const res = await fetch(`/api/documents/${slug}/reindex`, { method: 'POST' })
     if (!res.ok) {
       const data = await res.json().catch(() => ({}))
-      alert(data.detail ?? `Chyba ${res.status}`)
+      alert(data.detail ?? t('common.errorStatus', { status: res.status }))
       return false
     }
     return true
   } catch {
-    alert('Chyba sítě')
+    alert(t('common.networkError'))
     return false
   }
 }
@@ -88,21 +85,18 @@ async function reindexDocument(slug: string, title: string): Promise<boolean> {
 async function deleteDocument(slug: string, title: string): Promise<boolean> {
   // Удаляем запись из БД + папку data/raw_data/{slug}/.
   // Сам PDF в библиотеке остаётся — программа файлы юзера не трогает.
-  const ok = confirm(
-    `Odebrat „${title}“ z indexu?\n\nSamotné PDF ve složce knihovny zůstane. ` +
-      `Úryvky a embeddingy budou smazány.`
-  )
+  const ok = confirm(t('lib.deleteConfirm', { title }))
   if (!ok) return false
   try {
     const res = await fetch(`/api/documents/${slug}`, { method: 'DELETE' })
     if (!res.ok) {
       const data = await res.json().catch(() => ({}))
-      alert(data.detail ?? `Chyba ${res.status}`)
+      alert(data.detail ?? t('common.errorStatus', { status: res.status }))
       return false
     }
     return true
   } catch {
-    alert('Chyba sítě')
+    alert(t('common.networkError'))
     return false
   }
 }
@@ -147,6 +141,7 @@ function countPending(folder: LibraryFolder): number {
 }
 
 
+// eslint предупредил бы про хук в map — OrphanRow компонент, useI18n тут законен.
 function OrphanRow({
   orphan,
   unindexed,
@@ -168,12 +163,12 @@ function OrphanRow({
       })
       if (!res.ok) {
         const data = await res.json().catch(() => ({}))
-        alert(data.detail ?? `Chyba ${res.status}`)
+        alert(data.detail ?? t('common.errorStatus', { status: res.status }))
         return
       }
       onChange()
     } catch {
-      alert('Chyba sítě')
+      alert(t('common.networkError'))
     }
   }
 
@@ -181,30 +176,30 @@ function OrphanRow({
     <div className="flex flex-col gap-1 text-sm border-l-2 border-red-500/60 pl-3 py-1">
       <div className="flex items-center gap-2">
         <span>📄 {orphan.title}</span>
-        <span className="text-xs text-red-600 dark:text-red-400">soubor odstraněn ze složky</span>
+        <span className="text-xs text-red-600 dark:text-red-400">
+          {t('lib.orphanGone')}
+        </span>
         <button
           onClick={async () => {
             if (await deleteDocument(orphan.slug, orphan.title)) onChange()
           }}
-          title="Odebrat z indexu"
+          title={t('lib.removeFromIndex')}
           className="text-base leading-none opacity-40 hover:opacity-100 ml-auto"
         >
           🗑
         </button>
       </div>
       {unindexed.length === 0 ? (
-        <p className="text-xs text-muted-foreground">
-          Pro přejmenování vložte nový soubor do složky knihovny.
-        </p>
+        <p className="text-xs text-muted-foreground">{t('lib.orphanHint')}</p>
       ) : (
         <div className="flex items-center gap-2 text-xs">
-          <span className="text-muted-foreground">Je to přejmenování?</span>
+          <span className="text-muted-foreground">{t('lib.isRename')}</span>
           <select
             value={selectedSlug}
             onChange={(e) => setSelectedSlug(e.target.value)}
             className="border rounded px-1 py-0.5 text-xs flex-1"
           >
-            <option value="">— vyberte nový název —</option>
+            <option value="">{t('lib.chooseNewName')}</option>
             {unindexed.map((f) => (
               <option key={f.slug} value={f.slug}>{f.name}</option>
             ))}
@@ -214,7 +209,7 @@ function OrphanRow({
             disabled={!selectedSlug}
             className="border rounded px-2 py-0.5 text-xs disabled:opacity-40"
           >
-            Propojit
+            {t('lib.relink')}
           </button>
         </div>
       )}
@@ -240,7 +235,7 @@ function FileRow({
           await togglePin(file.slug)
           onChange()
         }}
-        title={file.pinned ? 'Odepnout' : 'Připnout'}
+        title={file.pinned ? t('lib.unpin') : t('lib.pin')}
         className={
           file.pinned
             ? 'text-base leading-none'
@@ -252,7 +247,7 @@ function FileRow({
       <button
         onClick={() => openFile(file.path)}
         className="text-foreground hover:underline text-left flex-1"
-        title="Otevřít v systémovém prohlížeči"
+        title={t('lib.openInViewer')}
       >
         📄 {file.name}
       </button>
@@ -266,7 +261,7 @@ function FileRow({
           onClick={async () => {
             if (await reindexDocument(file.slug, file.name)) onChange()
           }}
-          title="Přeindexovat"
+          title={t('lib.reindexTitle')}
           className="text-base leading-none opacity-25 hover:opacity-100"
         >
           🔄
@@ -277,7 +272,7 @@ function FileRow({
           onClick={async () => {
             if (await deleteDocument(file.slug, file.name)) onChange()
           }}
-          title="Odebrat z indexu"
+          title={t('lib.removeFromIndex')}
           className="text-base leading-none opacity-25 hover:opacity-100"
         >
           🗑
@@ -302,23 +297,29 @@ function StatusLabel({
   freshlyReady: boolean
 }) {
   if (status === null) {
-    return <span className="text-xs text-muted-foreground">neindexováno</span>
+    return <span className="text-xs text-muted-foreground">{t('status.notIndexed')}</span>
   }
   if (status === 'pending') {
-    return <span className="text-xs text-amber-600 dark:text-amber-400">čeká na indexaci</span>
+    return (
+      <span className="text-xs text-amber-600 dark:text-amber-400">
+        {t('status.pending')}
+      </span>
+    )
   }
   if (status === 'processing') {
     return (
-      <span className="text-xs text-blue-600 dark:text-blue-400">{progress ?? 'zpracovává se…'}</span>
+      <span className="text-xs text-blue-600 dark:text-blue-400">
+        {progress ?? t('status.processing')}
+      </span>
     )
   }
   if (status === 'failed') {
-    return <span className="text-xs text-red-600 dark:text-red-400">chyba</span>
+    return <span className="text-xs text-red-600 dark:text-red-400">{t('status.failed')}</span>
   }
   // ready: показываем зелёную плашку только если документ только что
   // перешёл в этот статус в текущей сессии. После F5 плашка исчезает.
   if (freshlyReady) {
-    return <span className="text-xs text-green-600 dark:text-green-400">hotovo</span>
+    return <span className="text-xs text-green-600 dark:text-green-400">{t('status.ready')}</span>
   }
   return null
 }
@@ -337,7 +338,7 @@ function FolderView({
   return (
     <div className="flex flex-col gap-1">
       {isEmpty && (
-        <p className="text-xs text-muted-foreground italic">prázdné</p>
+        <p className="text-xs text-muted-foreground italic">{t('lib.empty')}</p>
       )}
       {folder.folders.map((f) => (
         <details key={f.path} className="rounded-md border bg-muted/20 p-3">
@@ -363,6 +364,7 @@ function FolderView({
 
 
 function LibraryPage() {
+  useI18n() // подписка: смена языка перерисовывает страницу
   const [paths, setPaths] = useState<string[]>([])
   const [pathInput, setPathInput] = useState('')
   // Какую папку сейчас правим (её путь) и текущий текст правки. null — не правим.
@@ -400,7 +402,7 @@ function LibraryPage() {
         setLibrary(null)
       }
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Nepodařilo se načíst knihovnu')
+      setError(e instanceof Error ? e.message : t('lib.loadFailed'))
     } finally {
       setLoading(false)
     }
@@ -469,7 +471,7 @@ function LibraryPage() {
       const res = await fetch('/api/library/scan', { method: 'POST' })
       if (!res.ok) {
         const data = await res.json().catch(() => ({}))
-        alert(data.detail ?? `Chyba ${res.status}`)
+        alert(data.detail ?? t('common.errorStatus', { status: res.status }))
         return
       }
       const data: {
@@ -481,24 +483,21 @@ function LibraryPage() {
       } = await res.json()
       let msg =
         data.created === 0
-          ? `Žádné nové PDF nenalezeny (již v indexu: ${data.already_indexed}).`
-          : `Nalezeno ${data.created} nových PDF — zkontrolujte seznam a spusťte tlačítkem „Indexovat“.`
+          ? t('lib.scanNoNew', { n: data.already_indexed })
+          : t('lib.scanFound', { n: data.created })
       if (data.adopted && data.adopted > 0) {
-        msg += `\n\nPřevzato ${data.adopted} hotových indexů ze složky (bez indexace, zdarma).`
+        msg += '\n\n' + t('lib.scanAdopted', { n: data.adopted })
       }
       if (data.limit_skipped && data.limit_skipped > 0) {
-        msg += `\n\n⚠️ ${data.limit_skipped} dokumentů se nevešlo do limitu veřejné verze (3000 stran) — nebyly převzaty.`
+        msg += '\n\n' + t('lib.scanLimit', { n: data.limit_skipped })
       }
       if (data.duplicates && data.duplicates.length > 0) {
-        msg +=
-          '\n\n⚠️ Přeskočeny soubory se stejnými názvy — přejmenujte je, ' +
-          'aby je bylo možné rozlišit:\n' +
-          data.duplicates.join('\n')
+        msg += '\n\n' + t('lib.scanDuplicates') + '\n' + data.duplicates.join('\n')
       }
       alert(msg)
       await loadAll()
     } catch {
-      alert('Chyba sítě')
+      alert(t('common.networkError'))
     } finally {
       setScanning(false)
     }
@@ -510,28 +509,20 @@ function LibraryPage() {
       const res = await fetch('/api/library/index', { method: 'POST' })
       if (!res.ok) {
         const data = await res.json().catch(() => ({}))
-        alert(data.detail ?? `Chyba ${res.status}`)
+        alert(data.detail ?? t('common.errorStatus', { status: res.status }))
         return
       }
       const data: { started: number; locked?: string[]; over_limit?: number } =
         await res.json()
       if (data.locked && data.locked.length > 0) {
-        alert(
-          'Indexaci právě provádí jiný počítač — tyto složky se přeskočily:\n\n' +
-            data.locked.join('\n') +
-            '\n\nZkuste to znovu později.',
-        )
+        alert(t('lib.lockedMsg', { list: data.locked.join('\n') }))
       }
       if (data.over_limit && data.over_limit > 0) {
-        alert(
-          `${data.over_limit} dokumentů se nevešlo do limitu veřejné verze ` +
-            '(3000 stran) — nebyly indexovány. Uvolněte místo smazáním ' +
-            'nepotřebných dokumentů.',
-        )
+        alert(t('lib.overLimitMsg', { n: data.over_limit }))
       }
       await loadAll()
     } catch {
-      alert('Chyba sítě')
+      alert(t('common.networkError'))
     } finally {
       setIndexing(false)
     }
@@ -549,7 +540,7 @@ function LibraryPage() {
       })
       if (!res.ok) {
         const data = await res.json().catch(() => ({}))
-        alert(data.detail ?? `Chyba ${res.status}`)
+        alert(data.detail ?? t('common.errorStatus', { status: res.status }))
         return
       }
       setPathInput('')
@@ -560,8 +551,7 @@ function LibraryPage() {
   }
 
   async function removePath(target: string) {
-    if (!confirm(`Odpojit složku od knihovny?\n${target}\n\nIndexy na disku zůstanou.`))
-      return
+    if (!confirm(t('lib.removePathConfirm', { path: target }))) return
     const res = await fetch('/api/settings/libraries', {
       method: 'DELETE',
       headers: { 'Content-Type': 'application/json' },
@@ -569,7 +559,7 @@ function LibraryPage() {
     })
     if (!res.ok) {
       const data = await res.json().catch(() => ({}))
-      alert(data.detail ?? `Chyba ${res.status}`)
+      alert(data.detail ?? t('common.errorStatus', { status: res.status }))
       return
     }
     await loadAll()
@@ -596,7 +586,7 @@ function LibraryPage() {
       })
       if (!res.ok) {
         const data = await res.json().catch(() => ({}))
-        alert(data.detail ?? `Chyba ${res.status}`)
+        alert(data.detail ?? t('common.errorStatus', { status: res.status }))
         return
       }
       setEditingPath(null)
@@ -607,19 +597,16 @@ function LibraryPage() {
   }
 
   if (loading) {
-    return <p className="text-sm text-muted-foreground">Načítání…</p>
+    return <p className="text-sm text-muted-foreground">{t('common.loading')}</p>
   }
 
   return (
     <div className="flex flex-col gap-6">
       <div className="rounded-md border bg-card p-4 flex flex-col gap-2">
         <h2 className="text-sm font-semibold text-muted-foreground">
-          Složky knihovny
+          {t('lib.folders')}
         </h2>
-        <p className="text-xs text-muted-foreground">
-          Všechna PDF z těchto složek (a podsložek) se objeví v knihovně.
-          Můžete připojit více složek (např. vlastní normy + složku firmy).
-        </p>
+        <p className="text-xs text-muted-foreground">{t('lib.foldersText')}</p>
         {paths.length > 0 && (
           <ul className="flex flex-col gap-1">
             {paths.map((p) => (
@@ -644,14 +631,14 @@ function LibraryPage() {
                       onClick={savePathEdit}
                       disabled={saving || !editValue.trim()}
                       className="text-muted-foreground hover:text-foreground shrink-0"
-                      title="Uložit"
+                      title={t('common.saveTitle')}
                     >
                       ✓
                     </button>
                     <button
                       onClick={() => setEditingPath(null)}
                       className="text-muted-foreground hover:text-foreground shrink-0"
-                      title="Zrušit"
+                      title={t('common.cancel')}
                     >
                       ✕
                     </button>
@@ -662,14 +649,14 @@ function LibraryPage() {
                     <button
                       onClick={() => startEdit(p)}
                       className="text-muted-foreground hover:text-foreground shrink-0"
-                      title="Upravit cestu"
+                      title={t('lib.editPath')}
                     >
                       ✎
                     </button>
                     <button
                       onClick={() => removePath(p)}
                       className="text-muted-foreground hover:text-destructive shrink-0"
-                      title="Odpojit složku"
+                      title={t('lib.detachFolder')}
                     >
                       🗑
                     </button>
@@ -689,7 +676,7 @@ function LibraryPage() {
             className="flex-1 border rounded px-2 py-1 text-sm font-mono"
           />
           <Button onClick={addPath} disabled={saving || !pathInput.trim()}>
-            {saving ? 'Přidávám…' : 'Přidat složku'}
+            {saving ? t('lib.adding') : t('lib.addFolder')}
           </Button>
         </div>
       </div>
@@ -713,10 +700,10 @@ function LibraryPage() {
             {library.orphans.length > 0 && (
               <div className="rounded-md border border-red-500/30 bg-red-500/5 p-4">
                 <h2 className="text-sm font-semibold text-red-600 dark:text-red-400 mb-2">
-                  Osiřelé dokumenty
+                  {t('lib.orphans')}
                 </h2>
                 <p className="text-xs text-muted-foreground mb-3">
-                  Tyto dokumenty jsou v indexu, ale soubory ve složce nebyly nalezeny. Možná jste je přejmenovali nebo smazali.
+                  {t('lib.orphansText')}
                 </p>
                 <div className="flex flex-col gap-2">
                   {library.orphans.map((orphan) => (
@@ -734,7 +721,7 @@ function LibraryPage() {
             {pinned.length > 0 && (
               <div className="rounded-md border bg-card p-4">
                 <h2 className="text-sm font-semibold text-muted-foreground mb-2">
-                  📌 Připnuté
+                  📌 {t('lib.pinned')}
                 </h2>
                 <div className="flex flex-col gap-1">
                   {pinned.map((file) => (
@@ -752,7 +739,7 @@ function LibraryPage() {
             <div className="rounded-md border bg-card p-4">
               <div className="flex items-center justify-between mb-2">
                 <h2 className="text-sm font-semibold text-muted-foreground">
-                  Obsah
+                  {t('lib.contents')}
                 </h2>
                 <div className="flex items-center gap-2">
                   {pendingCount > 0 && (
@@ -762,8 +749,8 @@ function LibraryPage() {
                       size="sm"
                     >
                       {indexing
-                        ? 'Spouštím…'
-                        : `Indexovat (${pendingCount})`}
+                        ? t('lib.starting')
+                        : t('lib.indexN', { n: pendingCount })}
                     </Button>
                   )}
                   <Button
@@ -772,7 +759,7 @@ function LibraryPage() {
                     variant="outline"
                     size="sm"
                   >
-                    {scanning ? 'Skenuji…' : 'Skenovat'}
+                    {scanning ? t('lib.scanning') : t('lib.scan')}
                   </Button>
                 </div>
               </div>

@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Logo } from './Logo'
+import { LangSwitcher, useI18n } from './i18n'
 
 type Props = {
   onLoggedIn: (username: string) => void
@@ -28,11 +29,12 @@ function Field({
   hint,
   optional,
 }: FieldProps) {
+  const { t } = useI18n()
   return (
     <label className="flex flex-col gap-1 text-sm">
       <span className="text-muted-foreground">
         {label}
-        {optional && ' (nepovinné)'}
+        {optional && t('login.optionalSuffix')}
       </span>
       <input
         type={type}
@@ -48,6 +50,7 @@ function Field({
 }
 
 export default function LoginPage({ onLoggedIn }: Props) {
+  const { t } = useI18n()
   const [mode, setMode] = useState<'login' | 'register'>('login')
   // username держит логин-строку: при входе — přihlašovací jméno, при регистрации — e-mail.
   const [username, setUsername] = useState('')
@@ -97,36 +100,34 @@ export default function LoginPage({ onLoggedIn }: Props) {
         return
       }
       if (res.status === 401) {
-        setError('Nesprávné přihlašovací jméno nebo heslo')
+        setError(t('login.badCredentials'))
         return
       }
       if (res.status === 403) {
-        setError('Přístup byl odebrán. Obraťte se na administrátora.')
+        setError(t('login.revoked'))
         return
       }
       // Только регистрация: e-mail занят / невалидные или неполные данные.
       if (res.status === 409) {
-        setError('Tento e-mail je již zaregistrovaný.')
+        setError(t('login.emailTaken'))
         return
       }
       if (res.status === 400) {
-        setError(
-          'Zkontrolujte údaje: platný e-mail, heslo alespoň 8 znaků, vyplněné jméno, firma a pozice.',
-        )
+        setError(t('login.badData'))
         return
       }
       if (res.status === 503) {
-        setError('Licenční server není dostupný. Zkuste to později.')
+        setError(t('login.serverDown'))
         return
       }
       if (!res.ok) {
-        setError(`Chyba: ${res.status}`)
+        setError(t('login.errorStatus', { status: res.status }))
         return
       }
       const data = await res.json()
       onLoggedIn(data.username)
     } catch {
-      setError('Nepodařilo se spojit s aplikací.')
+      setError(t('login.appUnreachable'))
     } finally {
       setLoading(false)
     }
@@ -145,10 +146,8 @@ export default function LoginPage({ onLoggedIn }: Props) {
     return (
       <div className="min-h-screen bg-background text-foreground flex items-center justify-center px-6">
         <div className="w-full max-w-md flex flex-col gap-4 rounded-md border bg-card p-6">
-          <h1 className="text-2xl font-bold">Nainstalujte novou verzi</h1>
-          <p className="text-sm text-muted-foreground">
-            Je dostupná povinná verze aplikace. Přihlásit se lze až po aktualizaci.
-          </p>
+          <h1 className="text-2xl font-bold">{t('login.updateTitle')}</h1>
+          <p className="text-sm text-muted-foreground">{t('login.updateText')}</p>
           {updateRequired.downloadUrl ? (
             <a
               href={updateRequired.downloadUrl}
@@ -156,11 +155,11 @@ export default function LoginPage({ onLoggedIn }: Props) {
               rel="noopener noreferrer"
               className="text-sm text-foreground underline self-start"
             >
-              Stáhnout aktualizaci →
+              {t('blocked.download')}
             </a>
           ) : (
             <p className="text-sm text-muted-foreground">
-              Odkaz zatím není dostupný. Obraťte se na administrátora.
+              {t('login.updateNoLink')}
             </p>
           )}
         </div>
@@ -174,16 +173,19 @@ export default function LoginPage({ onLoggedIn }: Props) {
         onSubmit={handleSubmit}
         className="w-full max-w-sm flex flex-col gap-4 rounded-md border bg-card p-6"
       >
-        <h1 className="text-2xl">
-          <Logo />
-        </h1>
+        <div className="flex items-center justify-between">
+          <h1 className="text-2xl">
+            <Logo />
+          </h1>
+          <LangSwitcher />
+        </div>
         <p className="text-sm text-muted-foreground">
-          {isRegister ? 'Registrace nového účtu' : 'Přihlášení do aplikace'}
+          {isRegister ? t('login.registerTitle') : t('login.title')}
         </p>
 
         {isRegister && (
           <Field
-            label="Jméno a příjmení"
+            label={t('login.fullName')}
             value={fullName}
             onChange={setFullName}
             disabled={loading}
@@ -192,7 +194,7 @@ export default function LoginPage({ onLoggedIn }: Props) {
         )}
 
         <Field
-          label={isRegister ? 'E-mail' : 'Přihlašovací jméno'}
+          label={isRegister ? t('login.email') : t('login.username')}
           type={isRegister ? 'email' : 'text'}
           value={username}
           onChange={setUsername}
@@ -201,30 +203,30 @@ export default function LoginPage({ onLoggedIn }: Props) {
         />
 
         <Field
-          label="Heslo"
+          label={t('login.password')}
           type="password"
           value={password}
           onChange={setPassword}
           disabled={loading}
-          hint={isRegister ? 'Alespoň 8 znaků.' : undefined}
+          hint={isRegister ? t('login.passwordHint') : undefined}
         />
 
         {isRegister && (
           <>
             <Field
-              label="Společnost"
+              label={t('login.company')}
               value={company}
               onChange={setCompany}
               disabled={loading}
             />
             <Field
-              label="Pozice"
+              label={t('login.position')}
               value={position}
               onChange={setPosition}
               disabled={loading}
             />
             <Field
-              label="LinkedIn"
+              label={t('login.linkedin')}
               value={linkedin}
               onChange={setLinkedin}
               disabled={loading}
@@ -242,11 +244,11 @@ export default function LoginPage({ onLoggedIn }: Props) {
         <Button type="submit" disabled={!canSubmit}>
           {loading
             ? isRegister
-              ? 'Registruji...'
-              : 'Přihlašuji...'
+              ? t('login.registering')
+              : t('login.submitting')
             : isRegister
-              ? 'Zaregistrovat se'
-              : 'Přihlásit se'}
+              ? t('login.register')
+              : t('login.submit')}
         </Button>
 
         <button
@@ -255,9 +257,7 @@ export default function LoginPage({ onLoggedIn }: Props) {
           disabled={loading}
           className="text-sm text-muted-foreground underline self-center"
         >
-          {isRegister
-            ? 'Máte účet? Přihlaste se'
-            : 'Nemáte účet? Zaregistrujte se'}
+          {isRegister ? t('login.haveAccount') : t('login.noAccount')}
         </button>
       </form>
     </div>
