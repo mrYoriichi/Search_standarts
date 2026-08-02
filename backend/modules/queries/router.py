@@ -1,7 +1,7 @@
-"""HTTP-эндпоинт «Вопрос → Ответ».
+"""The Question → Answer HTTP endpoint.
 
-Тонкая прокладка: парсит входной JSON в AskRequest, дергает service.ask,
-возвращает AskResponse. Никакой логики здесь нет.
+A thin layer: parse the input JSON into AskRequest, call service.ask,
+return AskResponse. No logic lives here.
 """
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -23,7 +23,7 @@ def create_query(
     payload: AskRequest,
     db: Session = Depends(get_session),
 ) -> AskResponse:
-    """Задать вопрос → получить ответ со ссылками на источники."""
+    """Ask a question → get an answer with source references."""
     try:
         return service.ask(
             question=payload.question,
@@ -36,15 +36,15 @@ def create_query(
             answer_language=payload.answer_language,
         )
     except service.NoSearchableDocumentsError as exc:
-        # Устаревший выбор документов — юзеру нужно обновить «Kde hledat».
+        # Stale document selection — the user must refresh the filter.
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except RuntimeError as exc:
-        # Пустая библиотека / несовместимые модели эмбеддингов — понятный
-        # текст из library_cache вместо HTTP 500.
+        # Empty library / incompatible embedding models — a readable
+        # text from library_cache instead of HTTP 500.
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except OpenAIError as exc:
-        # Ключ / сеть / лимит OpenAI: тот же классификатор, что у индексации, —
-        # понятное чешское сообщение вместо безликого HTTP 500.
+        # OpenAI key / network / limits: the same classifier as
+        # indexing — a readable message instead of a faceless HTTP 500.
         raise HTTPException(
             status_code=502, detail=classify_pipeline_error(exc)
         ) from exc
@@ -52,10 +52,10 @@ def create_query(
 
 @router.post("/queries/flag")
 def flag_query(payload: FlagRequest) -> dict:
-    """Пометить ответ как неверный/ненайденный → положить отчёт в очередь (F7).
+    """Flag an answer as wrong/not-found → queue a report (F7).
 
-    Sender отправит владельцу на сервер лицензий. Кладём в очередь, а не шлём
-    сразу, — чтобы работало офлайн и переживало недоступность сервера.
+    The sender forwards it to the license server. Queued rather than sent
+    directly so it works offline and survives server downtime.
     """
     track_report(
         payload.question,

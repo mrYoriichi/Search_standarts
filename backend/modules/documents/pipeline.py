@@ -1,8 +1,8 @@
-"""Pipeline обработки одного PDF: main -> describe -> chunk -> index.
+"""Processing pipeline for one PDF: parse -> describe -> chunk -> embed.
 
-Вызывается из ThreadPoolExecutor (фоновый поток), не из HTTP-запроса.
-Поэтому сессию БД открываем сами через SessionLocal() и закрываем в finally —
-FastAPI-зависимости здесь не работают.
+Called from a ThreadPoolExecutor thread, not from an HTTP request — so
+the DB session is opened via SessionLocal() and closed in finally;
+FastAPI dependencies do not work here.
 """
 
 import json
@@ -26,12 +26,13 @@ logger = logging.getLogger(__name__)
 def run_pipeline_locked(
     library_path: Path, slug: str, pdf_path: str | None, doc_dir: Path
 ) -> None:
-    """Пайплайн под межмашинным локом папки (см. backend/core/index_lock.py).
+    """The pipeline under the inter-machine folder lock (core/index_lock).
 
-    Освежает лок в начале, отмечает документ завершённым в конце (последний
-    документ папки снимает лок). ВСЕ пути, пишущие в .search_index — запуск
-    кнопкой, переиндексация, возобновление после падения, — обязаны идти
-    через эту обёртку, иначе лок не живёт и другая машина зайдёт параллельно.
+    Refreshes the lock at the start and marks the document finished at
+    the end (the folder's last document releases the lock). EVERY path
+    that writes into .search_index — button start, reindex, crash
+    resume — must go through this wrapper, or the lock goes stale and
+    another machine walks in.
     """
     try:
         index_lock.refresh(library_path)
@@ -41,45 +42,46 @@ def run_pipeline_locked(
 
 
 def run_pipeline(slug: str, pdf_path: str | None, doc_dir: Path) -> None:
-    """Прогоняет полный пайплайн для одного документа.
+    """Run the full pipeline for one document.
 
-    slug — id документа, совпадает с именем папки артефактов.
-    pdf_path — полный путь к PDF в папке юзера.
-    doc_dir — папка артефактов: `<папка библиотеки>/.search_index/{slug}`.
-    Оба задаёт вызывающий код — дефолтов нет намеренно: молчаливый фолбэк на
-    локальный пул уводил документы мимо папки библиотеки.
+    slug — the document id, same as the artifact folder name.
+    pdf_path — full path to the PDF in the user's folder.
+    doc_dir — artifact folder: `<library folder>/.search_index/{slug}`.
+    Both come from the caller — no defaults on purpose: a silent fallback
+    to a local pool used to route documents away from the library folder.
 
-    Скриншоты страниц живут во ВРЕМЕННОЙ локальной папке: нужны только
-    vision-шагу, в артефактах не хранятся (и не ездят на сетевой диск).
+    Page screenshots live in a TEMPORARY local folder: only the vision
+    step needs them; they are not stored (and never travel to a network
+    drive).
 
-    На любой ошибке: status='failed' + текст ошибки в Document.error_message.
-    На успехе: status='ready', error_message=None.
+    On any error: status='failed' + the cause in Document.error_message.
+    On success: status='ready', error_message=None.
     """
-    # Lazy import — Docling и transformers весят и грузятся секунд 20-30.
-    # Если импортировать наверху, всё это тянется при старте сервера
-    # и при каждом --reload, что превращает разработку в пытку.
-    # Здесь же грузится только при первом реальном вызове pipeline.
+    # Lazy imports — Docling and transformers are heavy (20-30 s to
+    # load). Importing at the top would drag them in on every server
+    # start and --reload; here they load on the first real pipeline run.
     from pipeline import chunk as chunk_step
     from pipeline import describe as describe_step
     from pipeline import embed as index_step
     from pipeline import parse as parser_step
 
-    # Импорт здесь (не наверху) — избегаем цикла с модулем settings.
+    # Imported here (not at the top) to avoid a cycle with settings.
     from backend.modules.settings import service as settings_service
 
     db = SessionLocal()
     try:
-        # Vision-модель — рычаг стоимости, юзер выбирает в «Knihovna». Читаем на
-        # старте обработки документа, чтобы применить актуальный выбор.
+        # The vision model is the cost lever, chosen in the UI. Read at
+        # document start so the current choice applies.
         vision_model = settings_service.get_vision_model(db)
         describe_images = settings_service.get_describe_images(db)
         try:
             with tempfile.TemporaryDirectory(prefix=f"ss_pages_{slug}_") as tmp:
                 pages_dir = Path(tmp)
                 progress.set_progress(slug, msg("progress.reading"))
-                # document_id=slug: в артефакты должен попасть scoped-slug
-                # ({folder_id}__{файл}) из БД, а не id из имени файла — иначе
-                # фильтр «Kde hledat» не совпадёт ни с одним чанком.
+                # document_id=slug: artifacts must carry the scoped slug
+                # ({folder_id}__{file}) from the DB, not the id derived
+                # from the file name — otherwise the "Where to search"
+                # filter would match no chunk.
                 parser_step.process(
                     slug,
                     pdf_path=pdf_path,
@@ -107,7 +109,7 @@ def run_pipeline(slug: str, pdf_path: str | None, doc_dir: Path) -> None:
             progress.set_progress(slug, msg("progress.embedding"))
             index_step.process(slug, doc_dir=doc_dir)
         except Exception as exc:
-            logger.exception("Pipeline для %s упал", slug)
+            logger.exception("Pipeline for %s failed", slug)
             doc = db.scalar(select(Document).where(Document.slug == slug))
             if doc is not None:
                 doc.status = "failed"
@@ -116,18 +118,19 @@ def run_pipeline(slug: str, pdf_path: str | None, doc_dir: Path) -> None:
             track_event("pdf_failed", error_type=type(exc).__name__)
             return
 
-        # Берём настоящий заголовок документа из descriptions.json
-        # (его проставил describe_step). При загрузке у нас был только
-        # filename — теперь подменим на нормальное название. Ошибка чтения
-        # НЕ должна ронять пост-обработку: этот код вне try выше, необработанное
-        # исключение молча съел бы executor и документ завис бы в processing.
+        # Take the real document title from descriptions.json (set by
+        # the describe step) — at registration only the filename was
+        # known. A read error must NOT break post-processing: this code
+        # is outside the try above, and an unhandled exception would be
+        # silently eaten by the executor, leaving the document stuck in
+        # processing.
         descriptions_path = doc_dir / "descriptions.json"
         real_title = None
         try:
             with open(descriptions_path, encoding="utf-8") as f:
                 real_title = json.load(f).get("document_title")
         except (OSError, json.JSONDecodeError):
-            logger.warning("Не смог прочитать заголовок из %s", descriptions_path)
+            logger.warning("Could not read the title from %s", descriptions_path)
 
         doc = db.scalar(select(Document).where(Document.slug == slug))
         if doc is not None:
@@ -137,12 +140,12 @@ def run_pipeline(slug: str, pdf_path: str | None, doc_dir: Path) -> None:
             doc.error_message = None
             db.commit()
 
-        # Появились новые чанки/эмбеддинги на диске — сбрасываем кеш библиотеки,
-        # чтобы следующий вопрос увидел свежий документ.
+        # New chunks/embeddings landed on disk — drop the library cache
+        # so the next question sees the fresh document.
         library_cache.invalidate()
 
-        # Считаем число чанков как косвенный размер документа — слать имя файла
-        # нельзя (это уже Уровень 2 / персональные данные).
+        # The chunk count is a proxy for document size — sending the
+        # file name is off-limits (personal data).
         chunks_path = doc_dir / "chunks.json"
         chunks_count: int | None = None
         try:

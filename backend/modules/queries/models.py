@@ -1,7 +1,7 @@
-"""Модель QueryLog — история запросов пользователя.
+"""QueryLog — the user's question history.
 
-Локально на ПК юзера: что спросил, что ответили, когда, сколько мс и $.
-Те же поля потом будем слать на сервер телеметрии (блок F).
+Local to the user's machine: what was asked, what was answered, when,
+how many ms and $. The same fields feed telemetry.
 """
 
 from datetime import datetime
@@ -20,6 +20,6 @@ class QueryLog(Base):
     answer: Mapped[str] = mapped_column(Text)
     duration_ms: Mapped[int] = mapped_column(Integer)
     cost_usd: Mapped[float] = mapped_column(Float)
-    # rating: 1 = 👍, -1 = 👎. None пока юзер не оценил.
+    # rating: 1 = thumbs up, -1 = thumbs down. None until rated.
     rating: Mapped[int | None] = mapped_column(Integer, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())

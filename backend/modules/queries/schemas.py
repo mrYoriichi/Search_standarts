@@ -1,7 +1,7 @@
-"""Pydantic-схемы для эндпоинта «Вопрос → Ответ».
+"""Pydantic schemas for the Question → Answer endpoint.
 
-Описывают форму JSON на входе (что фронт шлёт) и на выходе (что вернём).
-FastAPI сам валидирует входящие данные по этим схемам и строит /docs.
+The JSON shapes in (what the frontend sends) and out (what we return).
+FastAPI validates against them and builds /docs.
 """
 
 from typing import Literal
@@ -10,41 +10,41 @@ from pydantic import BaseModel, Field
 
 
 class AskRequest(BaseModel):
-    """Запрос от фронта: вопрос + опциональный фильтр по документам + режим поиска."""
+    """Frontend request: question + optional document filter + search mode."""
 
-    question: str = Field(..., min_length=1, description="Текст вопроса пользователя")
+    question: str = Field(..., min_length=1, description="The question text")
     document_ids: list[str] | None = Field(
         default=None,
-        description="Slug'и документов для фильтра. None = искать по всей библиотеке.",
+        description="Document slugs to filter by. None = search the whole library.",
     )
     mode: Literal["hybrid", "vector", "keyword"] = Field(
         default="hybrid",
-        description="Режим поиска: hybrid (7 вектор + 7 BM25), vector (топ-20 вектор), keyword (топ-10 BM25).",
+        description="Search mode: hybrid (7 vector + 7 BM25), vector (top-20), keyword (top-10 BM25).",
     )
     answer_model: Literal["gpt-5.4-mini", "gpt-5.5"] = Field(
         default="gpt-5.4-mini",
-        description="Модель генерации ответа.",
+        description="Answer-generation model.",
     )
     expand: bool = Field(
         default=True,
-        description="Расширять ли запрос через LLM (диакритика/синонимы) перед поиском.",
+        description="Expand the query via LLM (diacritics/synonyms) before searching.",
     )
     strong: bool = Field(
         default=False,
-        description="Сильный поиск: приложить снимки страниц топ-источников "
-        "к отвечающей LLM (дороже и медленнее, для тяжёлых вопросов).",
+        description="Strong search: attach page snapshots of the top sources "
+        "to the answering LLM (pricier and slower, for hard questions).",
     )
     answer_language: Literal["cs", "en", "de"] | None = Field(
         default=None,
-        description="Язык ответа LLM. None — взять сохранённую настройку "
+        description="LLM answer language. None — use the stored setting "
         "(/api/settings/answer-language).",
     )
 
 
 class UsedChunk(BaseModel):
-    """Фрагмент, на который модель реально опиралась — с полным текстом.
+    """A fragment the model actually relied on — with full text.
 
-    Нужен для отчётов «Nahlásit» (F7): по жалобе видно, что читала модель."""
+    Needed for "Report" complaints (F7): shows what the model read."""
 
     chunk_id: str
     document: str
@@ -54,11 +54,11 @@ class UsedChunk(BaseModel):
 
 
 class FlagRequest(BaseModel):
-    """Пометка «Nahlásit»: юзер сообщает, что ответ неверный/не нашёлся.
+    """The "Report" flag: the user says the answer is wrong or missing.
 
-    Текст шлём прямо с фронта (он уже показан юзеру) — так не нужно лезть в
-    QueryLog и менять его схему. note — необязательная заметка «почему не так».
-    used_chunks — фрагменты, которые модель использовала (с текстом)."""
+    The text comes straight from the frontend (already shown to the
+    user) — no need to touch QueryLog. note — the optional remark;
+    used_chunks — the fragments the model used (with text)."""
 
     question: str = Field(..., min_length=1)
     answer: str
@@ -68,23 +68,23 @@ class FlagRequest(BaseModel):
 
 
 class Source(BaseModel):
-    """Один источник: на какой документ/раздел/страницы опирался ответ."""
+    """One source: which document/section/pages the answer relied on."""
 
     document: str
-    slug: str  # id документа — нужно фронту, чтобы построить ссылку на PDF
+    slug: str  # document id — the frontend builds the PDF link from it
     section: str
     pages: list[int]
 
 
 class AskResponse(BaseModel):
-    """Ответ эндпоинта: текст + источники + id записи в QueryLog."""
+    """Endpoint response: text + sources + the QueryLog row id."""
 
     answer: str
     sources: list[Source]
-    related_sources: list[Source]  # релевантные, но не использованные напрямую
-    # Использованные фрагменты с текстом — фронт хранит и возвращает при «Nahlásit».
+    related_sources: list[Source]  # relevant but not directly used
+    # Used fragments with text — the frontend returns them on "Report".
     used_chunks: list[UsedChunk]
     query_log_id: int
-    search_query: str  # расширенный запрос, которым реально искали (показываем юзеру)
-    answer_model: str  # модель, сгенерировавшая ответ
-    answer_ms: int  # время генерации ответа, мс (для сравнения моделей)
+    search_query: str  # the expanded query actually searched (shown to the user)
+    answer_model: str  # the model that generated the answer
+    answer_ms: int  # answer-generation time, ms (for model comparison)
