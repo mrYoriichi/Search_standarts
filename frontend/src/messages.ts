@@ -16,7 +16,6 @@ const cs = {
   'common.logout': 'Odhlásit se',
 
   // Шапка и вкладки
-  'logo.word': 'Asistent',
   'nav.search': 'Vyhledávání',
   'nav.library': 'Knihovna',
   'nav.archive': 'Archiv projektů',
@@ -242,7 +241,6 @@ const en: Record<MsgKey, string> = {
   'common.saveTitle': 'Save',
   'common.logout': 'Log out',
 
-  'logo.word': 'Assistant',
   'nav.search': 'Search',
   'nav.library': 'Library',
   'nav.archive': 'Project archive',
@@ -455,7 +453,6 @@ const de: Record<MsgKey, string> = {
   'common.saveTitle': 'Speichern',
   'common.logout': 'Abmelden',
 
-  'logo.word': 'Assistent',
   'nav.search': 'Suche',
   'nav.library': 'Bibliothek',
   'nav.archive': 'Projektarchiv',
