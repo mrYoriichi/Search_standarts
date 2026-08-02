@@ -7,6 +7,7 @@
 
 import base64
 import json
+import time
 import re
 from pathlib import Path
 
@@ -243,6 +244,11 @@ def parse_vision_response(raw_text: str) -> list[dict]:
     return result
 
 
+# Паузы между повторами vision-вызова (сек). Разовые сбои OpenAI живут
+# секунды — два мгновенных вызова ловят один и тот же сбой, пауза лечит.
+RETRY_DELAYS = (2.0, 5.0)
+
+
 class VisionEmptyResponseError(Exception):
     """Vision вернул пустой/битый ответ для страницы, где блоки есть.
 
@@ -276,12 +282,13 @@ def describe_page_visuals(
     # 2. Строим промпт
     prompt = build_vision_prompt(page_context)
 
-    # 3-5. Запрос и разбор. Пустой/битый ответ — одна повторная попытка,
-    # как у describe_drawing. Блоки на странице ЕСТЬ (проверка выше),
-    # поэтому пусто и после повтора — сбой, а не «нечего описывать»:
+    # 3-5. Запрос и разбор. Пустой/битый ответ повторяем с паузами
+    # (RETRY_DELAYS): два мгновенных вызова попадали в одно окно сбоя OpenAI
+    # (живой случай 2026-08-02). Блоки на странице ЕСТЬ (проверка выше),
+    # поэтому пусто после всех попыток — сбой, а не «нечего описывать»:
     # молча помечать такую страницу обработанной нельзя (№9 аудита).
     prompt_tokens = completion_tokens = 0
-    for _ in range(2):
+    for attempt in range(len(RETRY_DELAYS) + 1):
         raw_answer, in_tok, out_tok = ask_vision(image_path, prompt, model=model)
         prompt_tokens += in_tok
         completion_tokens += out_tok
@@ -292,6 +299,8 @@ def describe_page_visuals(
         }
         if desc_by_id:
             return desc_by_id, prompt_tokens, completion_tokens
+        if attempt < len(RETRY_DELAYS):
+            time.sleep(RETRY_DELAYS[attempt])
     raise VisionEmptyResponseError(
         f"Vision nevrátil použitelný popis stránky {page_number}"
     )
@@ -393,7 +402,7 @@ def describe_drawing(
     """
     meta: dict = {}
     prompt_tokens = completion_tokens = 0
-    for _ in range(2):
+    for attempt in range(len(RETRY_DELAYS) + 1):
         raw, p_tok, c_tok = ask_vision(image_path, DRAWING_PROMPT, model=model)
         prompt_tokens += p_tok
         completion_tokens += c_tok
@@ -405,6 +414,8 @@ def describe_drawing(
             meta = parsed
         if meta.get("druh") or meta.get("objekt") or meta.get("popis"):
             break
+        if attempt < len(RETRY_DELAYS):
+            time.sleep(RETRY_DELAYS[attempt])
 
     return _assemble_drawing_description(meta), prompt_tokens, completion_tokens
 

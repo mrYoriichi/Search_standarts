@@ -47,10 +47,16 @@ async function togglePin(slug: string): Promise<void> {
   }
 }
 
-async function reindexDocument(slug: string, name: string): Promise<boolean> {
-  // Полная переобработка: старые артефакты удаляются, pipeline запускается
-  // заново. Vision оплачивается повторно — поэтому подтверждение.
-  const ok = confirm(t('arch.reindexConfirm', { title: name }))
+async function reindexDocument(
+  slug: string,
+  name: string,
+  resume: boolean,
+): Promise<boolean> {
+  // ready → полная пересборка (vision платится заново); error → продолжение
+  // с чекпоинта (оплачиваются только новые страницы).
+  const ok = confirm(
+    t(resume ? 'lib.retryConfirm' : 'arch.reindexConfirm', { title: name }),
+  )
   if (!ok) return false
   try {
     const res = await fetch(`/api/projects/${slug}/reindex`, { method: 'POST' })
@@ -159,7 +165,14 @@ function DocumentRow({
         {(doc.status === 'ready' || doc.status === 'error') && (
           <button
             onClick={async () => {
-              if (await reindexDocument(doc.slug, insideProject)) onChange()
+              if (
+                await reindexDocument(
+                  doc.slug,
+                  insideProject,
+                  doc.status === 'error',
+                )
+              )
+                onChange()
             }}
             title={t('lib.reindexTitle')}
             className="text-base leading-none opacity-25 hover:opacity-100"

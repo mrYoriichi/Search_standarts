@@ -143,6 +143,8 @@ const cs = {
   'lib.pinFailed': 'Nepodařilo se přepnout připnutí: {status}',
   'lib.reindexConfirm':
     'Přeindexovat „{title}“?\n\nStaré úryvky a embeddingy budou smazány a dokument se zpracuje znovu. Trvá to 5–10 minut a stojí přibližně $0.50–$1.50.',
+  'lib.retryConfirm':
+    'Pokračovat v indexaci „{title}“?\n\nHotové stránky jsou uložené — zaplatí se jen ty nezpracované.',
   'lib.deleteConfirm':
     'Odebrat „{title}“ z indexu?\n\nSamotné PDF ve složce knihovny zůstane. Úryvky a embeddingy budou smazány.',
   'lib.orphanGone': 'soubor odstraněn ze složky',
@@ -359,6 +361,8 @@ const en: Record<MsgKey, string> = {
   'lib.pinFailed': 'Failed to toggle pin: {status}',
   'lib.reindexConfirm':
     'Re-index “{title}”?\n\nOld excerpts and embeddings will be deleted and the document will be processed again. It takes 5–10 minutes and costs roughly $0.50–$1.50.',
+  'lib.retryConfirm':
+    'Continue indexing “{title}”?\n\nFinished pages are saved — only the unprocessed ones are paid.',
   'lib.deleteConfirm':
     'Remove “{title}” from the index?\n\nThe PDF itself stays in the library folder. Excerpts and embeddings will be deleted.',
   'lib.orphanGone': 'file removed from the folder',
@@ -571,6 +575,8 @@ const de: Record<MsgKey, string> = {
   'lib.pinFailed': 'Anheften konnte nicht umgeschaltet werden: {status}',
   'lib.reindexConfirm':
     '„{title}“ neu indexieren?\n\nAlte Auszüge und Embeddings werden gelöscht und das Dokument wird neu verarbeitet. Dauert 5–10 Minuten und kostet etwa $0.50–$1.50.',
+  'lib.retryConfirm':
+    'Indexierung von „{title}“ fortsetzen?\n\nFertige Seiten sind gespeichert — bezahlt werden nur die unverarbeiteten.',
   'lib.deleteConfirm':
     '„{title}“ aus dem Index entfernen?\n\nDie PDF-Datei selbst bleibt im Bibliotheksordner. Auszüge und Embeddings werden gelöscht.',
   'lib.orphanGone': 'Datei aus dem Ordner entfernt',

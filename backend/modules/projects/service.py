@@ -15,6 +15,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from backend.core import limits, progress
+from backend.core.paths import PROJECTS_DATA_DIR
 from backend.modules.projects.models import ProjectDocument
 from backend.modules.projects.schemas import (
     ArchiveResponse,
@@ -139,7 +140,6 @@ def sync_archive(db: Session, roots: list[Path]) -> ArchiveScanSummary:
     папками-проектами с одинаковым именем — коллизия, уходят в duplicates.
     """
     from backend.core import library_cache
-    from backend.core.paths import PROJECTS_DATA_DIR
 
     # Общий обход всех папок с единым набором занятых slug'ов.
     documents: list[FoundDocument] = []
@@ -337,7 +337,6 @@ def reindex_document(
     PROJECTS_DATA_DIR, а не в общей сетевой папке.
     """
     from backend.core import library_cache
-    from backend.core.paths import PROJECTS_DATA_DIR
     from backend.modules.projects.pipeline import run_project_pipeline
 
     doc = db.scalar(select(ProjectDocument).where(ProjectDocument.slug == slug))
@@ -352,7 +351,12 @@ def reindex_document(
     if root is None:
         raise ValueError(f"PDF не найден ни в одной папке архива: {doc.relative_path}")
 
-    shutil.rmtree(PROJECTS_DATA_DIR / slug, ignore_errors=True)
+    # Готовый документ пересобираем с нуля. Упавший (error) — ПРОДОЛЖАЕМ с
+    # чекпоинта: описания оплаченных страниц лежат в descriptions.json, resume
+    # в describe их пропустит. Живой случай 2026-08-02: vision упал на стр.
+    # 166 из ~189 — rmtree выбрасывал ~165 оплаченных страниц.
+    if doc.status == "ready":
+        shutil.rmtree(PROJECTS_DATA_DIR / slug, ignore_errors=True)
 
     doc.status = "processing"
     doc.error = None

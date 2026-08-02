@@ -105,10 +105,13 @@ def reindex_document(
     if busy is not None:
         raise DocumentBusyError(msg("lib.folder_busy", owner=busy))
 
-    # Сносим старые артефакты — новые лягут в .search_index папки библиотеки.
-    for artifacts_dir in _artifact_dirs(slug, library_path):
-        if artifacts_dir.exists():
-            shutil.rmtree(artifacts_dir)
+    # Готовый документ пересобираем с нуля. Упавший (failed) — ПРОДОЛЖАЕМ с
+    # чекпоинта descriptions.json: resume в describe пропустит оплаченные
+    # страницы (живой случай 2026-08-02 — сбой vision на одной странице).
+    if doc.status == "ready":
+        for artifacts_dir in _artifact_dirs(slug, library_path):
+            if artifacts_dir.exists():
+                shutil.rmtree(artifacts_dir)
 
     doc.status = "processing"
     doc.error_message = None

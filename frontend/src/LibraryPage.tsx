@@ -62,10 +62,16 @@ async function togglePin(slug: string): Promise<void> {
 }
 
 
-async function reindexDocument(slug: string, title: string): Promise<boolean> {
-  // Полная переобработка PDF: удаляет старые чанки/эмбеддинги и запускает pipeline заново.
-  // Стоит как обычная обработка ($), занимает несколько минут.
-  const ok = confirm(t('lib.reindexConfirm', { title }))
+async function reindexDocument(
+  slug: string,
+  title: string,
+  resume: boolean,
+): Promise<boolean> {
+  // ready → полная пересборка (артефакты сносятся, vision платится заново);
+  // failed → продолжение с чекпоинта (оплачиваются только новые страницы).
+  const ok = confirm(
+    t(resume ? 'lib.retryConfirm' : 'lib.reindexConfirm', { title }),
+  )
   if (!ok) return false
   try {
     const res = await fetch(`/api/documents/${slug}/reindex`, { method: 'POST' })
@@ -259,7 +265,14 @@ function FileRow({
       {(file.status === 'ready' || file.status === 'failed') && (
         <button
           onClick={async () => {
-            if (await reindexDocument(file.slug, file.name)) onChange()
+            if (
+              await reindexDocument(
+                file.slug,
+                file.name,
+                file.status === 'failed',
+              )
+            )
+              onChange()
           }}
           title={t('lib.reindexTitle')}
           className="text-base leading-none opacity-25 hover:opacity-100"

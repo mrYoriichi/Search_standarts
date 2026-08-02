@@ -36,9 +36,12 @@ def test_retry_then_error_on_garbage(monkeypatch, tmp_path):
         return "toto není JSON", 1, 1
 
     monkeypatch.setattr(image_description, "ask_vision", garbage)
+    monkeypatch.setattr(image_description, "RETRY_DELAYS", (0, 0))
     with pytest.raises(VisionEmptyResponseError):
         describe_page_visuals(_DOC, 1, png, model="gpt-test")
-    assert len(calls) == 2  # одна повторная попытка, потом ошибка
+    # Живой случай 2026-08-02 (SDS_PK_2025, стр. 166): два быстрых вызова
+    # попали в одно окно сбоя OpenAI. Теперь попыток три, с паузами.
+    assert len(calls) == 3
 
 
 def test_second_attempt_succeeds(monkeypatch, tmp_path):

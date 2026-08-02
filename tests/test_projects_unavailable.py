@@ -11,8 +11,8 @@ import pytest
 from sqlalchemy import create_engine, select
 from sqlalchemy.orm import sessionmaker
 
-from backend.core import paths
 from backend.core.database import Base
+from backend.modules.projects import service
 from backend.modules.projects.models import ProjectDocument
 from backend.modules.projects.service import sync_archive
 
@@ -32,7 +32,7 @@ def artifacts_dir(tmp_path, monkeypatch):
     """Пул артефактов архива — во временной папке, не в data/."""
     pool = tmp_path / "projects_data"
     pool.mkdir()
-    monkeypatch.setattr(paths, "PROJECTS_DATA_DIR", pool)
+    monkeypatch.setattr(service, "PROJECTS_DATA_DIR", pool)
     return pool
 
 

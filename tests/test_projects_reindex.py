@@ -64,10 +64,8 @@ def test_reindex_missing_file_refused(db, tmp_path):
         service.reindex_document(db, "most__tz", paths=[tmp_path], executor=None)
 
 
-def test_reindex_wipes_artifacts_and_resubmits(db, tmp_path, monkeypatch):
-    monkeypatch.setattr(
-        "backend.core.paths.PROJECTS_DATA_DIR", tmp_path / "projects_data"
-    )
+def test_reindex_error_doc_resubmits_with_fresh_stat(db, tmp_path, monkeypatch):
+    monkeypatch.setattr(service, "PROJECTS_DATA_DIR", tmp_path / "projects_data")
     # Подключённая папка = сам проект «Most», PDF прямо в ней.
     project_dir = tmp_path / "Most"
     project_dir.mkdir(parents=True)
@@ -86,10 +84,51 @@ def test_reindex_wipes_artifacts_and_resubmits(db, tmp_path, monkeypatch):
 
     assert result.status == "processing"
     assert result.error is None
-    assert not old_artifacts.exists()  # старые артефакты снесены
+    # Контракт 2026-08-02: артефакты упавшего документа НЕ сносятся —
+    # resume в describe продолжит с чекпоинта без повторной оплаты.
+    assert old_artifacts.exists()
     # Свежий stat записан — следующий скан не сбросит документ в pending.
     assert result.file_mtime == pytest.approx(pdf_path.stat().st_mtime)
     assert result.file_size == pdf_path.stat().st_size
     (fn, args) = executor.calls[0]
     assert fn is run_project_pipeline
     assert args == ("most__tz", str(pdf_path))
+
+
+def test_reindex_error_doc_keeps_artifacts(db, tmp_path, monkeypatch):
+    """🔄 на упавшем документе продолжает с чекпоинта, а не платит заново.
+
+    Живой случай 2026-08-02: vision дважды упал на стр. 166 из ~189 —
+    rmtree выбрасывал оплаченные описания 165 страниц.
+    """
+    monkeypatch.setattr(service, "PROJECTS_DATA_DIR", tmp_path / "pool")
+    artifacts = tmp_path / "pool" / "most__tz"
+    artifacts.mkdir(parents=True)
+    (artifacts / "descriptions.json").write_text("{}", encoding="utf-8")
+    root = tmp_path / "Most"
+    root.mkdir()
+    (root / "TZ.pdf").write_bytes(b"%PDF-1.4 fake")
+    _add_doc(db, "most__tz", "error")
+
+    executor = _FakeExecutor()
+    service.reindex_document(db, "most__tz", [root], executor)
+
+    assert (artifacts / "descriptions.json").exists()  # чекпоинт жив
+    assert len(executor.calls) == 1
+
+
+def test_reindex_ready_doc_wipes_artifacts(db, tmp_path, monkeypatch):
+    """Для готового документа 🔄 — честная пересборка: артефакты сносятся."""
+    monkeypatch.setattr(service, "PROJECTS_DATA_DIR", tmp_path / "pool")
+    artifacts = tmp_path / "pool" / "most__tz"
+    artifacts.mkdir(parents=True)
+    (artifacts / "descriptions.json").write_text("{}", encoding="utf-8")
+    root = tmp_path / "Most"
+    root.mkdir()
+    (root / "TZ.pdf").write_bytes(b"%PDF-1.4 fake")
+    _add_doc(db, "most__tz", "ready")
+
+    executor = _FakeExecutor()
+    service.reindex_document(db, "most__tz", [root], executor)
+
+    assert not artifacts.exists()
