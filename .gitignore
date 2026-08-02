@@ -31,9 +31,6 @@ app.db
 *.db-wal
 *.db-shm
 
-# Сгенерированные тестовые артефакты VL-пайплайна (PNG, описания, JSON)
-vl_pipeline/test_output/
-
 # Артефакты сборки PyInstaller (блок E)
 /build/
 /dist/

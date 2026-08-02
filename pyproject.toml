@@ -7,7 +7,6 @@ target-version = "py312"
 "describe.py" = ["E402"]
 "index.py" = ["E402"]
 "backend/app.py" = ["E402"]
-"vl_pipeline/process.py" = ["E402"]
 
 [tool.pytest.ini_options]
 pythonpath = ["."]
