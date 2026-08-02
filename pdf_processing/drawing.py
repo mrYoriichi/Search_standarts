@@ -12,7 +12,7 @@ import pypdfium2 as pdfium
 
 from pdf_processing.pdfium_lock import PDFIUM_LOCK
 
-# Длинная сторона рендера для OCR. 2200 px хватило на большом листе gama
+# Длинная сторона рендера для OCR. 2200 px хватило на большом CAD-листе
 # (проверено живьём); тот же размер, что в sheet-пайплайне архива.
 RENDER_MAX_SIDE_PX = 2200
 

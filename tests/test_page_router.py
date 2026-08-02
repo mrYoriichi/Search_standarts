@@ -1,6 +1,6 @@
 """Тесты по-страничного классификатора (чертёж vs проза).
 
-Цифры порогов — из живых замеров 2026-07-18 (MVL 720, VL4, gama).
+Цифры порогов — из живых замеров 2026-07-18 (MVL 720, VL4, живой CAD-проект).
 """
 
 from pdf_processing.page_router import classify_page
@@ -22,7 +22,7 @@ def test_vector_drawing_is_drawing():
 
 
 def test_cad_drawing_with_text_layer_is_drawing():
-    # CAD-чертёж gama с настоящим текстовым слоем: путей тысячи → всё равно чертёж
+    # CAD-чертёж с настоящим текстовым слоем: путей тысячи → всё равно чертёж
     assert classify_page(path_count=116920, text_len=1499) == "drawing"
 
 
