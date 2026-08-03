@@ -1,4 +1,4 @@
-"""Тесты обхода папок проектов: каждая подключённая папка = один проект."""
+"""Tests of walking project folders: each connected folder = one project."""
 
 from pathlib import Path
 
@@ -20,7 +20,7 @@ def _make_pdf(path: Path, width: float = 595, height: float = 842) -> None:
 
 
 def test_scan_whole_folder_is_one_project(tmp_path):
-    # PDF в корне и в подпапках — всё один проект с именем самой папки.
+    # PDFs in the root and in subfolders — all one project named after the folder.
     root = tmp_path / "Beta_most"
     _make_pdf(root / "tz.pdf")
     _make_pdf(root / "vykresy" / "202_404.pdf")
@@ -31,8 +31,8 @@ def test_scan_whole_folder_is_one_project(tmp_path):
 
 
 def test_scan_same_filename_in_subfolders_both_indexed(tmp_path):
-    # Одноимённые PDF в разных подпапках проекта — разные документы,
-    # потому что slug включает путь, а не только имя файла.
+    # Same-named PDFs in different project subfolders are different
+    # documents, because the slug includes the path, not just the file name.
     root = tmp_path / "Beta_most"
     _make_pdf(root / "TZ" / "plan.pdf")
     _make_pdf(root / "vykresy" / "plan.pdf")
@@ -43,7 +43,7 @@ def test_scan_same_filename_in_subfolders_both_indexed(tmp_path):
 
 
 def test_scan_shared_seen_dedups_across_roots(tmp_path):
-    # Две подключённые папки-тёзки с одинаковым файлом → второй в duplicates.
+    # Two same-named connected folders with the same file -> the second goes to duplicates.
     a = tmp_path / "A" / "Beta_most"
     b = tmp_path / "B" / "Beta_most"
     _make_pdf(a / "tz.pdf")
@@ -73,8 +73,8 @@ def test_scan_distinct_projects_in_two_roots(tmp_path):
 
 
 def test_resolve_project_root_by_name_and_file(tmp_path):
-    # Оба проекта содержат TZ/tz.pdf — вернуть надо папку СВОЕГО проекта,
-    # иначе pipeline обработает чужой файл.
+    # Both projects contain TZ/tz.pdf — the folder of the RIGHT project must
+    # be returned, or the pipeline processes someone else's file.
     a = tmp_path / "Beta_most"
     b = tmp_path / "Alfa_most"
     _make_pdf(a / "TZ" / "tz.pdf")

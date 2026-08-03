@@ -1,4 +1,4 @@
-"""Тесты атомарной записи JSON (jsonio.save_json_atomic)."""
+"""Tests of atomic JSON writing (jsonio.save_json_atomic)."""
 
 import json
 
@@ -9,16 +9,16 @@ def test_writes_valid_json_with_czech_chars(tmp_path):
     path = tmp_path / "data.json"
     save_json_atomic(path, {"název": "výztuž"})
     assert json.loads(path.read_text(encoding="utf-8")) == {"název": "výztuž"}
-    # Временный файл после успешной записи не остаётся.
+    # No temp file is left after a successful write.
     assert list(tmp_path.iterdir()) == [path]
 
 
 def test_failed_write_keeps_old_file(tmp_path):
-    # Смысл атомарности: упавшая запись не должна портить старый файл.
+    # The point of atomicity: a failed write must not corrupt the old file.
     path = tmp_path / "data.json"
     save_json_atomic(path, {"a": 1})
     try:
-        save_json_atomic(path, {"b": {1, 2}})  # set не сериализуется в JSON
+        save_json_atomic(path, {"b": {1, 2}})  # a set is not JSON-serializable
     except TypeError:
         pass
     assert json.loads(path.read_text(encoding="utf-8")) == {"a": 1}

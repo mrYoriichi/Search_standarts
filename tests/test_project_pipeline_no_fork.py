@@ -1,7 +1,8 @@
-"""Шаг 3 универсального пайплайна: развилки sheet/text в архиве больше нет.
+"""Universal pipeline step 3: no more sheet/text fork in the archive.
 
-Документ даже со старым doc_type='sheet' в БД идёт через общий пайплайн
-(main→describe→chunk→index) с document_id=slug, как текстовые.
+Even a document with the old doc_type='sheet' in the DB goes through the
+shared pipeline (main->describe->chunk->index) with document_id=slug,
+like text documents.
 """
 
 import json
@@ -13,7 +14,7 @@ from pipeline import chunk, describe, embed, parse
 from backend.core.database import Base
 from backend.modules.projects import pipeline
 from backend.modules.projects.models import ProjectDocument
-from backend.modules.settings import models as settings_models  # noqa: F401 — таблица settings для create_all
+from backend.modules.settings import models as settings_models  # noqa: F401 — settings table for create_all
 from common.jsonio import save_json_atomic
 
 
@@ -52,7 +53,7 @@ def test_sheet_goes_through_common_pipeline(monkeypatch, tmp_path):
     def fake_chunk(pdf_name: str, doc_dir=None) -> None:
         doc_dir.mkdir(
             parents=True, exist_ok=True
-        )  # в реальном потоке папку создаёт parser-шаг
+        )  # in the real flow the parser step creates the folder
         save_json_atomic(
             doc_dir / "chunks.json",
             [{"chunk_id": f"{slug}_c000", "document_title": "vykres_202"}],
@@ -65,9 +66,9 @@ def test_sheet_goes_through_common_pipeline(monkeypatch, tmp_path):
 
     pipeline.run_project_pipeline(slug, pdf_path=str(tmp_path / "vykres_202.pdf"))
 
-    # Лист прошёл через общий пайплайн со scoped-slug
+    # The sheet went through the shared pipeline with the scoped slug
     assert recorded.get("document_id") == slug
-    # _prefix_project_context добавил проект в document_title
+    # _prefix_project_context added the project to document_title
     chunks = json.loads((tmp_path / slug / "chunks.json").read_text(encoding="utf-8"))
     assert chunks[0]["document_title"].startswith("Beta_most")
     with session_factory() as db:

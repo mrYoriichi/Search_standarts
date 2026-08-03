@@ -1,4 +1,4 @@
-"""Тесты make_document_id — идентичность документа (решение №15 в PROJECT_STATE)."""
+"""Tests for make_document_id — document identity (decision #15 in PROJECT_STATE)."""
 
 from pdf_processing.parser import make_block, make_document_id
 
@@ -20,13 +20,14 @@ def test_parentheses_and_dots():
 
 
 def test_cyrillic_transliterated():
-    # ё → е даёт NFD ещё до таблицы, поэтому «чертёж» → chertezh, не chertyozh.
+    # NFD decomposes Cyrillic yo into e + diaeresis before the table
+    # applies, so the name yields chertezh, not chertyozh.
     assert make_document_id("Чертёж моста.pdf") == "chertezh_mosta"
 
 
 def test_cyrillic_names_do_not_collide():
-    # Раньше кириллица выбрасывалась целиком — два русских имени давали
-    # одинаковый пустой slug и затирали друг друга.
+    # Cyrillic used to be dropped entirely — two Russian names produced
+    # the same empty slug and overwrote each other.
     a = make_document_id("Чертёж.pdf")
     b = make_document_id("Расчёт.pdf")
     assert a and b and a != b
@@ -37,7 +38,7 @@ def test_mixed_cyrillic_latin():
 
 
 class _FakeTableItem:
-    """Минимальный двойник Docling TableItem: только то, что читает make_block."""
+    """Minimal stand-in for Docling TableItem: only what make_block reads."""
 
     label = "table"
     prov: list = []
@@ -47,8 +48,8 @@ class _FakeTableItem:
 
 
 def test_make_block_saves_table_markdown():
-    # ШАГ 3 (аудит 2026-07-19): точные значения ячеек должны попадать в
-    # document.json — vision-пересказ чисел не сохраняет.
+    # STEP 3 (audit 2026-07-19): exact cell values must end up in
+    # document.json — the vision retelling does not preserve numbers.
     block = make_block(_FakeTableItem(), 1, 1, doc=None)
     assert block["type"] == "table"
     assert "1,5 kN/m2" in block["text"]

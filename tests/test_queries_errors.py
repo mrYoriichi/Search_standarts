@@ -1,8 +1,8 @@
-"""Ошибки OpenAI в /api/queries должны доходить читаемым текстом, не HTTP 500.
+"""OpenAI errors in /api/queries must arrive as readable text, not HTTP 500.
 
-Роутер ловил только RuntimeError, а все ошибки OpenAI SDK наследуются от
-Exception: неверный ключ, обрыв сети или исчерпанный лимит превращались
-в безликое «Server vrátil 500» на фронте.
+The router caught only RuntimeError, while all OpenAI SDK errors inherit
+from Exception: a bad key, a network drop or an exhausted quota turned into
+a faceless "Server vrátil 500" on the frontend.
 """
 
 import httpx
@@ -18,7 +18,7 @@ from backend.modules.queries.schemas import AskRequest
 
 @pytest.fixture(autouse=True)
 def czech_messages():
-    """Тексты в тестах — чешские эталоны; дефолт приложения теперь английский."""
+    """Test texts are the Czech references; the app default is English now."""
     ui_messages.set_language("cs")
     yield
     ui_messages.set_language("en")
@@ -53,7 +53,7 @@ def test_bad_api_key_becomes_readable_502(monkeypatch):
 
 
 def test_missing_api_key_becomes_readable_502(monkeypatch):
-    # Свежая установка: ключ ещё не введён, клиент OpenAI падает при создании.
+    # A fresh install: no key entered yet, the OpenAI client fails on creation.
     _raise_from_ask(
         monkeypatch, openai.OpenAIError("The api_key client option must be set")
     )

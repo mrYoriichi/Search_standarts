@@ -1,8 +1,8 @@
-"""Тесты защиты операций над документом во время индексации.
+"""Tests guarding document operations during indexing.
 
-Удаление/переиндексация/relink работающего документа раньше давали гонку:
-фоновый pipeline дописывал артефакты уже после rmtree, и следующий скан
-«усыновлял» удалённый документ обратно (двойная оплата vision).
+Delete/reindex/relink of a working document used to race: the background
+pipeline finished writing artifacts after the rmtree, and the next scan
+"adopted" the deleted document back (vision paid twice).
 """
 
 import json
@@ -20,7 +20,7 @@ from backend.modules.documents.models import Document
 
 @pytest.fixture
 def db():
-    """Чистая in-memory SQLite на каждый тест."""
+    """A clean in-memory SQLite per test."""
     engine = create_engine("sqlite://")
     Base.metadata.create_all(engine)
     session = sessionmaker(bind=engine)()
@@ -39,7 +39,7 @@ def test_delete_processing_refused(db):
     _add_doc(db, "norma", "processing")
     with pytest.raises(service.DocumentBusyError):
         service.delete_document(db, "norma")
-    # Документ остался в БД — ничего не удалено.
+    # The document is still in the DB — nothing was deleted.
     assert db.scalar(select(Document).where(Document.slug == "norma")) is not None
 
 
@@ -62,10 +62,10 @@ def test_relink_processing_refused(db):
 
 
 def _make_locked_library(tmp_path, filename_slug: str, lock_age: float = 0.0):
-    """Папка библиотеки с meta, артефактами документа и ЧУЖИМ локом.
+    """A library folder with meta, document artifacts and a FOREIGN lock.
 
-    Возвращает (папка, scoped-slug документа). lock_age — возраст лока в
-    секундах (0 = свежий, индексация другой машины идёт прямо сейчас).
+    Returns (folder, the document's scoped slug). lock_age — lock age in
+    seconds (0 = fresh, another machine is indexing right now).
     """
     library = tmp_path / "lib"
     library.mkdir()
@@ -84,8 +84,8 @@ def _make_locked_library(tmp_path, filename_slug: str, lock_age: float = 0.0):
 
 
 def test_delete_refused_when_foreign_lock(db, tmp_path):
-    # №4 из аудита: чужая машина индексирует папку — rmtree у неё из-под ног
-    # уронил бы её пайплайн (оплаченный vision пропал бы).
+    # Audit #4: another machine is indexing the folder — an rmtree from
+    # under it would crash its pipeline (paid vision lost).
     library, slug = _make_locked_library(tmp_path, "norma")
     _add_doc(db, slug, "ready")
 
@@ -105,13 +105,13 @@ def test_relink_refused_when_foreign_lock(db, tmp_path):
     with pytest.raises(service.DocumentBusyError):
         service.relink_document(db, old_slug, new_slug, paths=[library])
 
-    # Ничего не переименовано, slug в БД прежний.
+    # Nothing renamed, the slug in the DB is unchanged.
     assert index_store.doc_dir(library, old_slug).exists()
     assert db.scalar(select(Document).where(Document.slug == old_slug)) is not None
 
 
 def test_delete_works_when_lock_stale(db, tmp_path):
-    # Протухший лок (машина упала) — не повод блокировать удаление.
+    # A stale lock (the machine crashed) is no reason to block deletion.
     library, slug = _make_locked_library(
         tmp_path, "norma", lock_age=index_lock.TTL_SECONDS + 1
     )

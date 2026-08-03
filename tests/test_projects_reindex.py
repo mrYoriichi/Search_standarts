@@ -1,7 +1,8 @@
-"""Тесты переиндексации документа архива (POST /projects/{slug}/reindex).
+"""Tests of archive document reindexing (POST /projects/{slug}/reindex).
 
-Кнопка 🔄 в архиве нужна для живого прогона шага 3: бывшие sheet-документы
-переобрабатываются новым общим пайплайном. Зеркало test_documents_guards.
+The 🔄 button in the archive serves the live run of step 3: former sheet
+documents are reprocessed by the new shared pipeline. Mirrors
+test_documents_guards.
 """
 
 import pytest
@@ -16,7 +17,7 @@ from backend.modules.projects.pipeline import run_project_pipeline
 
 @pytest.fixture
 def db():
-    """Чистая in-memory SQLite на каждый тест."""
+    """A clean in-memory SQLite per test."""
     engine = create_engine("sqlite://")
     Base.metadata.create_all(engine)
     session = sessionmaker(bind=engine)()
@@ -58,7 +59,7 @@ def test_reindex_unknown_slug_refused(db):
 
 
 def test_reindex_missing_file_refused(db, tmp_path):
-    # Файла нет ни в одной папке архива (сетевой диск отвалился / файл удалён).
+    # The file is in no archive folder (network drive dropped / file deleted).
     _add_doc(db, "most__tz", "ready")
     with pytest.raises(ValueError):
         service.reindex_document(db, "most__tz", paths=[tmp_path], executor=None)
@@ -66,7 +67,7 @@ def test_reindex_missing_file_refused(db, tmp_path):
 
 def test_reindex_error_doc_resubmits_with_fresh_stat(db, tmp_path, monkeypatch):
     monkeypatch.setattr(service, "PROJECTS_DATA_DIR", tmp_path / "projects_data")
-    # Подключённая папка = сам проект «Most», PDF прямо в ней.
+    # The connected folder = the "Most" project itself, the PDF right in it.
     project_dir = tmp_path / "Most"
     project_dir.mkdir(parents=True)
     pdf_path = project_dir / "TZ.pdf"
@@ -84,10 +85,10 @@ def test_reindex_error_doc_resubmits_with_fresh_stat(db, tmp_path, monkeypatch):
 
     assert result.status == "processing"
     assert result.error is None
-    # Контракт 2026-08-02: артефакты упавшего документа НЕ сносятся —
-    # resume в describe продолжит с чекпоинта без повторной оплаты.
+    # Contract 2026-08-02: artifacts of a failed document are NOT wiped —
+    # the describe resume continues from the checkpoint without paying again.
     assert old_artifacts.exists()
-    # Свежий stat записан — следующий скан не сбросит документ в pending.
+    # A fresh stat is recorded — the next scan won't reset the document to pending.
     assert result.file_mtime == pytest.approx(pdf_path.stat().st_mtime)
     assert result.file_size == pdf_path.stat().st_size
     (fn, args) = executor.calls[0]
@@ -96,10 +97,10 @@ def test_reindex_error_doc_resubmits_with_fresh_stat(db, tmp_path, monkeypatch):
 
 
 def test_reindex_error_doc_keeps_artifacts(db, tmp_path, monkeypatch):
-    """🔄 на упавшем документе продолжает с чекпоинта, а не платит заново.
+    """🔄 on a failed document continues from the checkpoint, not paying anew.
 
-    Живой случай 2026-08-02: vision дважды упал на стр. 166 из ~189 —
-    rmtree выбрасывал оплаченные описания 165 страниц.
+    Live case 2026-08-02: vision failed twice on page 166 of ~189 —
+    rmtree was throwing away the paid descriptions of 165 pages.
     """
     monkeypatch.setattr(service, "PROJECTS_DATA_DIR", tmp_path / "pool")
     artifacts = tmp_path / "pool" / "most__tz"
@@ -113,12 +114,12 @@ def test_reindex_error_doc_keeps_artifacts(db, tmp_path, monkeypatch):
     executor = _FakeExecutor()
     service.reindex_document(db, "most__tz", [root], executor)
 
-    assert (artifacts / "descriptions.json").exists()  # чекпоинт жив
+    assert (artifacts / "descriptions.json").exists()  # the checkpoint survives
     assert len(executor.calls) == 1
 
 
 def test_reindex_ready_doc_wipes_artifacts(db, tmp_path, monkeypatch):
-    """Для готового документа 🔄 — честная пересборка: артефакты сносятся."""
+    """For a ready document 🔄 is an honest rebuild: artifacts are wiped."""
     monkeypatch.setattr(service, "PROJECTS_DATA_DIR", tmp_path / "pool")
     artifacts = tmp_path / "pool" / "most__tz"
     artifacts.mkdir(parents=True)

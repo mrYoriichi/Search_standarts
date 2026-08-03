@@ -1,4 +1,4 @@
-"""Тесты нарезки на чанки (решение №6 и №19 в PROJECT_STATE)."""
+"""Chunking tests (decisions #6 and #19 in PROJECT_STATE)."""
 
 from pdf_processing.chunker import build_chunks
 
@@ -121,8 +121,8 @@ def test_figure_and_table_markers():
 
 
 def test_table_text_survives_without_description():
-    # Режим «Без LLM»: у таблицы нет vision-описания, но есть текст ячеек
-    # (markdown из Docling) — таблица НЕ должна выпадать из поиска.
+    # No-LLM mode: the table has no vision description but has cell text
+    # (markdown from Docling) — the table must NOT drop out of search.
     doc = _doc(
         [
             {
@@ -146,8 +146,8 @@ def test_table_text_survives_without_description():
 
 
 def test_table_description_and_text_combined():
-    # Режим «Стандарт»: пересказ vision + точные значения ячеек — оба в чанке
-    # (vision описывает тему, но точные числа знает только сам текст таблицы).
+    # Standard mode: the vision summary + exact cell values — both in the
+    # chunk (vision describes the topic, only the table text has exact numbers).
     doc = _doc(
         [
             {
@@ -170,8 +170,8 @@ def test_table_description_and_text_combined():
 
 
 def test_fallback_page_per_chunk_when_no_headings():
-    # Документ без заголовков ур.1/2 (seznam příloh) не должен потеряться:
-    # каждая страница с контентом становится чанком, пустая — пропускается.
+    # A document without level 1/2 headings (seznam příloh) must not be
+    # lost: every page with content becomes a chunk, empty ones are skipped.
     doc = _doc(
         [
             {"page_number": 1, "blocks": [_para("p1_b01", "Obsah přílohy 1.")]},
@@ -186,8 +186,8 @@ def test_fallback_page_per_chunk_when_no_headings():
 
 
 def test_preamble_before_first_numbered_heading_is_kept():
-    # №8 из аудита: титул и předmluva до первого нумерованного заголовка
-    # молча выпадали из индекса, если дальше нумерованные разделы есть.
+    # Audit #8: the title page and předmluva before the first numbered
+    # heading silently dropped out of the index when numbered sections followed.
     doc = _doc(
         [
             {
@@ -209,17 +209,17 @@ def test_preamble_before_first_numbered_heading_is_kept():
     )
     chunks = build_chunks(doc)
     all_text = "\n".join(c["text"] for c in chunks)
-    assert "nahrazuje vydání" in all_text  # предисловие не потеряно
-    assert "betonových mostů" in all_text  # титульный текст не потерян
-    # Преамбула — отдельный первый чанк без номера раздела.
+    assert "nahrazuje vydání" in all_text  # the preface is not lost
+    assert "betonových mostů" in all_text  # the title page text is not lost
+    # The preamble is a separate first chunk without a section number.
     preamble = chunks[0]
     assert preamble["section_number"] == ""
     assert preamble["pages"] == [1]
 
 
 def test_giant_section_split_by_paragraphs():
-    # Раздел без подзаголовков ур.3 длиннее MAX_CHUNK_CHARS (2500)
-    # режется по границам абзацев, а не остаётся одним гигантом.
+    # A section without level 3 subheadings longer than MAX_CHUNK_CHARS
+    # (2500) is split on paragraph boundaries, not left as one giant.
     long_para = "x" * 1500
     doc = _doc(
         [

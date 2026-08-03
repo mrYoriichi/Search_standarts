@@ -1,7 +1,7 @@
-"""Тесты сильного поиска (Шаг 4): снимки страниц топ-источников в отвечающую LLM.
+"""Strong search tests (Step 4): top-source page snapshots for the answering LLM.
 
-Покрывают чистые куски: отбор страниц, сборку multimodal-сообщения и рендер
-страницы в base64. Сам вызов OpenAI не трогаем.
+They cover the pure pieces: page selection, multimodal message assembly
+and rendering a page to base64. The OpenAI call itself is not touched.
 """
 
 import base64
@@ -25,8 +25,8 @@ def _chunk(doc: str, pages: list[int], title: str = "Doc") -> dict:
 def test_collect_page_refs_order_dedup_cap():
     chunks = [
         _chunk("a", [5, 6]),
-        _chunk("b", [5]),  # та же страница другого документа — НЕ дубль
-        _chunk("a", [5, 7]),  # (a, 5) уже была — дубль
+        _chunk("b", [5]),  # same page of another document — NOT a duplicate
+        _chunk("a", [5, 7]),  # (a, 5) already seen — a duplicate
     ]
     assert collect_page_refs(chunks, limit=3) == [("a", 5), ("a", 6), ("b", 5)]
 
@@ -66,7 +66,7 @@ def test_render_page_b64_real_pdf(tmp_path):
 
     assert b64 is not None
     png = base64.b64decode(b64)
-    assert png[:8] == b"\x89PNG\r\n\x1a\n"  # валидный PNG-заголовок
+    assert png[:8] == b"\x89PNG\r\n\x1a\n"  # valid PNG header
 
 
 def test_render_page_b64_missing_page_returns_none(tmp_path):

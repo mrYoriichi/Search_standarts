@@ -1,4 +1,4 @@
-"""Тесты склейки текста чертёжной страницы (рендер/OCR не запускаем)."""
+"""Tests of assembling a drawing page's text (render/OCR not run)."""
 
 from pdf_processing.drawing import build_drawing_text
 
@@ -8,7 +8,7 @@ def test_combines_layer_and_ocr():
 
 
 def test_empty_layer_keeps_ocr():
-    # чертёж VL4: текстовый слой пуст → остаётся только OCR
+    # a VL4 drawing: the text layer is empty -> only OCR remains
     assert build_drawing_text("", "OCR ONLY") == "OCR ONLY"
 
 

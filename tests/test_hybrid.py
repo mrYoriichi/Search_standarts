@@ -1,15 +1,15 @@
-"""Тесты объединения поисковых выдач (search/hybrid.py).
+"""Tests of merging search results (search/hybrid.py).
 
-Сами поиски (BM25, вектор) здесь подменяются моками: векторный поиск
-зовёт OpenAI за эмбеддингом запроса, а нам нужна только логика слияния.
+The searches themselves (BM25, vector) are mocked here: vector search calls
+OpenAI for the query embedding, and only the merge logic matters.
 """
 
 from search.hybrid import reciprocal_rank_fusion, search_by_mode
 
 
 def test_rrf_chunk_in_both_lists_wins():
-    # 'b' встречается в обеих выдачах -> его суммарный RRF-score выше,
-    # чем у лидеров одиночных списков.
+    # 'b' appears in both result lists -> its total RRF score is higher
+    # than the single-list leaders'.
     bm25 = [("a", 5.0), ("b", 3.0)]
     vector = [("b", 0.9), ("c", 0.8)]
     fused = reciprocal_rank_fusion([bm25, vector])
@@ -23,8 +23,8 @@ def test_rrf_empty_input():
 
 
 def test_mode_hybrid_dedup_vector_first(monkeypatch):
-    # hybrid: вектор идёт первым, дубли из BM25 не повторяются,
-    # порядок внутри каждой выдачи сохраняется (без пересортировки).
+    # hybrid: vector goes first, BM25 duplicates are not repeated,
+    # the order within each list is preserved (no re-sorting).
     monkeypatch.setattr(
         "search.hybrid.search_embeddings",
         lambda index, query, top_k: [("v1", 0.9), ("common", 0.8), ("v2", 0.7)],
@@ -45,7 +45,7 @@ def test_mode_vector_returns_only_vector(monkeypatch):
     monkeypatch.setattr(
         "search.hybrid.search_bm25",
         lambda *args, **kwargs: (_ for _ in ()).throw(
-            AssertionError("BM25 не должен вызываться в режиме vector")
+            AssertionError("BM25 must not be called in vector mode")
         ),
     )
     assert search_by_mode((None, []), {}, "dotaz", mode="vector") == ["v1", "v2"]
@@ -59,7 +59,7 @@ def test_mode_keyword_returns_only_bm25(monkeypatch):
     monkeypatch.setattr(
         "search.hybrid.search_embeddings",
         lambda *args, **kwargs: (_ for _ in ()).throw(
-            AssertionError("вектор не должен вызываться в режиме keyword")
+            AssertionError("vector must not be called in keyword mode")
         ),
     )
     assert search_by_mode((None, []), {}, "dotaz", mode="keyword") == ["k1", "k2"]

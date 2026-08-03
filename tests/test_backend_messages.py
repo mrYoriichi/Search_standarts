@@ -1,9 +1,9 @@
-"""Серверные сообщения для UI на трёх языках (шаг 2.5 публичной версии).
+"""Backend messages for the UI in three languages (public version step 2.5).
 
-Бэкенд не знает язык каждого запроса: фронт при переключении шлёт
-PUT /api/settings/language, значение живёт в settings и module-global.
-Уже записанные в БД ошибки (error_message) остаются на языке момента
-падения — осознанно.
+The backend does not know each request's language: the frontend PUTs
+/api/settings/language on switch, the value lives in settings and a module
+global. Errors already written to the DB (error_message) keep the language
+of the moment they happened — deliberately.
 """
 
 import pytest
@@ -14,7 +14,7 @@ from backend.core.errors import classify_pipeline_error
 
 @pytest.fixture(autouse=True)
 def reset_language():
-    """Каждый тест стартует с дефолта (английский) и возвращает его."""
+    """Each test starts from the default (English) and restores it."""
     ui_messages.set_language("en")
     yield
     ui_messages.set_language("en")
@@ -39,13 +39,13 @@ def test_german_errors_after_switch():
 
 
 def test_unknown_language_is_ignored():
-    ui_messages.set_language("fr")  # мусор не должен ломать тексты
+    ui_messages.set_language("fr")  # garbage must not break the texts
     assert ui_messages.get_language() == "en"
 
 
 def test_every_key_has_all_three_languages():
     for key, entry in ui_messages.MESSAGES.items():
-        assert set(entry) == {"cs", "en", "de"}, f"неполный перевод: {key}"
+        assert set(entry) == {"cs", "en", "de"}, f"incomplete translation: {key}"
 
 
 def test_params_are_substituted():

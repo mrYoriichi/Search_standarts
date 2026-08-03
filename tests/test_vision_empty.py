@@ -1,8 +1,8 @@
-"""№9 аудита: пустой/битый ответ Vision не должен тихо терять содержимое.
+"""Audit #9: an empty/broken Vision response must not silently lose content.
 
-Раньше страница с figure/table, для которой модель вернула пустоту или
-не-JSON, помечалась «описанной» и больше никогда не повторялась — схемы
-навсегда выпадали из индекса без единой ошибки.
+Previously a page with a figure/table for which the model returned nothing
+or non-JSON was marked "described" and never retried — diagrams dropped
+out of the index forever without a single error.
 """
 
 import json
@@ -39,8 +39,8 @@ def test_retry_then_error_on_garbage(monkeypatch, tmp_path):
     monkeypatch.setattr(image_description, "RETRY_DELAYS", (0, 0))
     with pytest.raises(VisionEmptyResponseError):
         describe_page_visuals(_DOC, 1, png, model="gpt-test")
-    # Живой случай 2026-08-02 (SDS_PK_2025, стр. 166): два быстрых вызова
-    # попали в одно окно сбоя OpenAI. Теперь попыток три, с паузами.
+    # Real case 2026-08-02 (SDS_PK_2025, page 166): two quick calls hit
+    # the same OpenAI outage window. Now three attempts, with pauses.
     assert len(calls) == 3
 
 
@@ -48,7 +48,7 @@ def test_second_attempt_succeeds(monkeypatch, tmp_path):
     png = tmp_path / "p001.png"
     png.write_bytes(b"fake png")
     answers = [
-        "",  # отказ модели (content None -> "")
+        "",  # model refusal (content None -> "")
         '[{"block_id": "p1_b0", "description": "schéma"}]',
     ]
 
@@ -58,13 +58,13 @@ def test_second_attempt_succeeds(monkeypatch, tmp_path):
     monkeypatch.setattr(image_description, "ask_vision", flaky)
     desc, in_tok, out_tok = describe_page_visuals(_DOC, 1, png, model="gpt-test")
     assert desc == {"p1_b0": "schéma"}
-    assert (in_tok, out_tok) == (2, 2)  # обе попытки оплачены и учтены
+    assert (in_tok, out_tok) == (2, 2)  # both attempts paid and counted
 
 
 def test_page_without_blocks_is_not_an_error(monkeypatch):
-    # Легитимная пустота: блоков нет, vision не зовётся, ошибки нет.
+    # Legitimate emptiness: no blocks, vision is not called, no error.
     def must_not_run(*args, **kwargs):
-        raise AssertionError("страница без блоков не должна уходить в vision")
+        raise AssertionError("a page without blocks must not go to vision")
 
     monkeypatch.setattr(image_description, "ask_vision", must_not_run)
     desc, in_tok, out_tok = describe_page_visuals({"pages": []}, 1, "x.png")
@@ -73,8 +73,8 @@ def test_page_without_blocks_is_not_an_error(monkeypatch):
 
 
 def test_failed_page_not_marked_described(tmp_path, monkeypatch):
-    # Интеграция через process(): сбойная страница не попадает в
-    # described_pages — повторный запуск попробует её снова.
+    # Integration via process(): a failed page does not get into
+    # described_pages — a rerun will try it again.
     doc = {
         "document_name": "Test",
         "document_id": "test",
@@ -102,5 +102,5 @@ def test_failed_page_not_marked_described(tmp_path, monkeypatch):
         describe.process("test", doc_dir=tmp_path)
 
     saved = json.loads((tmp_path / "descriptions.json").read_text(encoding="utf-8"))
-    assert saved["described_pages"] == []  # страница НЕ помечена — повтор возможен
-    assert saved["document_title"] == "T"  # оплаченные метаданные сохранены
+    assert saved["described_pages"] == []  # page NOT marked — retry is possible
+    assert saved["document_title"] == "T"  # paid metadata is preserved

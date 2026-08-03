@@ -1,4 +1,4 @@
-"""Тесты по-страничной сборки чанков (проза + чертёжные страницы)."""
+"""Tests of per-page chunk assembly (prose + drawing pages)."""
 
 from pdf_processing.chunker import build_chunks_routed
 
@@ -33,7 +33,7 @@ def test_prose_and_drawing_both_become_chunks():
     document = {"document_id": "doc", "pages": [_prose_page(), _drawing_page()]}
     chunks = build_chunks_routed(document)
     assert len(chunks) == 2
-    # проза первой, чертёж — отдельным чанком
+    # prose first, the drawing as its own chunk
     assert chunks[0]["section_title"] == "1 Úvod"
     assert chunks[1]["text"] == "PRICNY REZ ZABRADLI"
     assert chunks[1]["pages"] == [2]
@@ -54,11 +54,11 @@ def test_empty_drawing_text_is_skipped():
         "pages": [_prose_page(), _drawing_page(2, "   ")],
     }
     chunks = build_chunks_routed(document)
-    assert len(chunks) == 1  # пустой чертёж не даёт чанк
+    assert len(chunks) == 1  # an empty drawing yields no chunk
 
 
 def test_no_page_type_behaves_as_prose():
-    # обратная совместимость: без page_type всё — проза
+    # backward compatibility: without page_type everything is prose
     page = _prose_page()
     del page["page_type"]
     document = {"document_id": "doc", "pages": [page]}

@@ -1,11 +1,11 @@
-"""Тест бага №1 аудита: библиотечный run_pipeline обязан передавать
-scoped-slug ({folder_id}__{файл}) в parser-шаг как document_id.
+"""Test of audit bug #1: the library run_pipeline must pass the scoped
+slug ({folder_id}__{file}) into the parser step as document_id.
 
-Без этого parser берёт id из имени файла, артефакты в .search_index
-получают нескоуп document_id/chunk_id, и фильтр «Kde hledat»
-(сравнение со slug из БД) не находит ни одного чанка документа.
-Архив проектов передаёт document_id правильно (projects/pipeline.py) —
-он здесь образец.
+Without it the parser takes the id from the file name, artifacts in
+.search_index get unscoped document_id/chunk_id, and the "Kde hledat"
+filter (comparison with the DB slug) finds none of the document's chunks.
+The project archive passes document_id correctly (projects/pipeline.py) —
+it is the reference here.
 """
 
 import pytest
@@ -15,12 +15,12 @@ from sqlalchemy.orm import sessionmaker
 from pipeline import chunk, describe, embed, parse
 from backend.core.database import Base
 from backend.modules.documents import pipeline
-from backend.modules.settings import models as settings_models  # noqa: F401 — таблица settings для create_all
+from backend.modules.settings import models as settings_models  # noqa: F401 — settings table for create_all
 
 
 @pytest.fixture
 def fake_db(monkeypatch):
-    """In-memory БД вместо реального app.db: run_pipeline сам открывает сессии."""
+    """In-memory DB instead of the real app.db: run_pipeline opens its own sessions."""
     engine = create_engine("sqlite://")
     Base.metadata.create_all(engine)
     monkeypatch.setattr(pipeline, "SessionLocal", sessionmaker(bind=engine))
@@ -42,7 +42,7 @@ def test_run_pipeline_passes_scoped_document_id(fake_db, monkeypatch, tmp_path):
     monkeypatch.setattr(describe, "process", lambda *args, **kwargs: None)
     monkeypatch.setattr(chunk, "process", lambda *args, **kwargs: None)
     monkeypatch.setattr(embed, "process", lambda *args, **kwargs: None)
-    # Телеметрия пишет в реальный app.db — в тесте глушим
+    # Telemetry writes to the real app.db — silenced in the test
     monkeypatch.setattr(pipeline, "track_event", lambda *args, **kwargs: None)
 
     slug = "abc123__norma"

@@ -1,8 +1,8 @@
-"""Пустая выборка документов не должна ронять вопрос 500-й ошибкой.
+"""An empty document selection must not fail the question with a 500.
 
-Фронт может прислать устаревшие document_ids (документ удалили/переименовали,
-пока вкладка была открыта). Раньше пустой корпус доходил до BM25Okapi([]) и
-падал ZeroDivisionError → HTTP 500 без объяснений.
+The frontend may send stale document_ids (a document deleted/renamed while
+the tab was open). An empty corpus used to reach BM25Okapi([]) and crash
+with ZeroDivisionError -> HTTP 500 with no explanation.
 """
 
 import numpy as np

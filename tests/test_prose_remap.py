@@ -1,10 +1,10 @@
-"""Тест переноса номеров страниц временного PDF на оригинальные."""
+"""Test of remapping temp-PDF page numbers onto the original ones."""
 
 from pdf_processing.parser import _remap_to_original
 
 
 def test_remap_page_numbers_block_ids_and_images():
-    # временный PDF: страницы 1,2 соответствуют оригинальным 3 и 7
+    # temp PDF: pages 1,2 correspond to original pages 3 and 7
     document = {
         "document_id": "temp",
         "document_name": "temp.pdf",
@@ -28,6 +28,6 @@ def test_remap_page_numbers_block_ids_and_images():
     assert document["pages"][1]["page_number"] == 7
     assert document["pages"][1]["blocks"][0]["block_id"] == "p7_b03"
     assert page_images == {3: "imgA", 7: "imgB"}
-    # id/имя восстановлены из оригинального файла
+    # id/name restored from the original file
     assert document["document_id"] == "csn_1"
     assert document["document_name"] == "ČSN 1.pdf"

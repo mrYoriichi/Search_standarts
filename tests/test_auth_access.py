@@ -1,8 +1,8 @@
-"""Fail-open публичной сборки (решение 2026-07-15, PUBLIC_BUILD).
+"""Fail-open for the public build (decision 2026-07-15, PUBLIC_BUILD).
 
-Пилотная сборка: офлайн дольше грейс-периода (1 день) блокирует UI,
-отзыв — мгновенно. Публичная: недоступность сервера лицензий НИКОГДА
-не блокирует работу; отзыв и принудительное обновление действуют как раньше.
+Pilot build: being offline longer than the grace period (1 day) blocks
+the UI, revocation is immediate. Public build: license server downtime
+NEVER blocks work; revocation and forced update still apply as before.
 """
 
 from datetime import timedelta
@@ -13,7 +13,7 @@ from backend.modules.auth.models import AuthSession
 
 
 def _session(status: str, verified_days_ago: float) -> AuthSession:
-    """Сессия без БД: compute_effective_status читает только поля."""
+    """Session without a DB: compute_effective_status reads only the fields."""
     return AuthSession(
         id=1,
         token="t",
@@ -34,13 +34,14 @@ def test_pilot_offline_within_grace_ok(monkeypatch):
 
 
 def test_public_offline_never_blocks(monkeypatch):
-    # Ядро fail-open: даже год без связи с сервером — работаем.
+    # The core of fail-open: even a year without server contact — keep working.
     monkeypatch.setattr(service, "PUBLIC_BUILD", True)
     assert service.compute_effective_status(_session("offline", 365)) == "ok"
 
 
 def test_public_revoked_still_blocks(monkeypatch):
-    # Отзыв — явное решение владельца при живом сервере, fail-open его не отменяет.
+    # Revocation is an explicit owner decision made while the server is
+    # alive; fail-open does not override it.
     monkeypatch.setattr(service, "PUBLIC_BUILD", True)
     assert service.compute_effective_status(_session("revoked", 0)) == "blocked"
 

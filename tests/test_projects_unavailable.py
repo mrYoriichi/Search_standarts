@@ -1,10 +1,12 @@
-"""Тесты бага №2 аудита: недоступная папка архива (отвалился сетевой диск)
-не должна считаться пустой — иначе «Skenovat» удаляет записи БД и индексы,
-и после возврата диска документы индексируются заново за деньги.
+"""Tests for audit bug #2: an unavailable archive folder (network drive
+went offline) must not be treated as empty — otherwise "Skenovat" deletes
+DB rows and indexes, and after the drive comes back the documents get
+re-indexed again for money.
 
-Документы архива не несут метку папки (slug = {проект}__{файл}), поэтому
-при ЛЮБОЙ недоступной папке удаление «пропавших» пропускается целиком —
-не понять, чьи они. Библиотека получила такой же гард в коммите 3e20d55.
+Archive documents carry no folder tag (slug = {project}__{file}), so with
+ANY unavailable folder the deletion of "missing" ones is skipped entirely —
+there is no way to tell whose they are. The library got the same guard in
+commit 3e20d55.
 """
 
 import pytest
@@ -19,7 +21,7 @@ from backend.modules.projects.service import sync_archive
 
 @pytest.fixture
 def db():
-    """Чистая in-memory SQLite на каждый тест."""
+    """Fresh in-memory SQLite for each test."""
     engine = create_engine("sqlite://")
     Base.metadata.create_all(engine)
     session = sessionmaker(bind=engine)()
@@ -29,7 +31,7 @@ def db():
 
 @pytest.fixture
 def artifacts_dir(tmp_path, monkeypatch):
-    """Пул артефактов архива — во временной папке, не в data/."""
+    """Archive artifacts pool — in a temp folder, not in data/."""
     pool = tmp_path / "projects_data"
     pool.mkdir()
     monkeypatch.setattr(service, "PROJECTS_DATA_DIR", pool)
@@ -37,7 +39,7 @@ def artifacts_dir(tmp_path, monkeypatch):
 
 
 def _add_ready_doc(db, artifacts_dir, slug: str = "alfa_most__tz") -> str:
-    """Готовый документ архива: строка в БД + папка артефактов на диске."""
+    """Ready archive document: a DB row + an artifacts folder on disk."""
     db.add(
         ProjectDocument(
             slug=slug,
@@ -56,7 +58,7 @@ def _add_ready_doc(db, artifacts_dir, slug: str = "alfa_most__tz") -> str:
 
 def test_unavailable_root_keeps_documents(db, artifacts_dir, tmp_path):
     slug = _add_ready_doc(db, artifacts_dir)
-    dead = tmp_path / "unplugged_disk"  # папка не существует
+    dead = tmp_path / "unplugged_disk"  # folder does not exist
 
     summary = sync_archive(db, [dead])
 
@@ -68,8 +70,8 @@ def test_unavailable_root_keeps_documents(db, artifacts_dir, tmp_path):
 
 
 def test_mixed_roots_skip_deletion(db, artifacts_dir, tmp_path):
-    # Одна папка жива (пустая), другая отвалилась → удаление пропускаем
-    # целиком: без метки папки не понять, чей пропавший документ.
+    # One folder is alive (empty), the other went offline → skip deletion
+    # entirely: without a folder tag we can't tell whose the missing doc is.
     slug = _add_ready_doc(db, artifacts_dir)
     alive = tmp_path / "alive"
     alive.mkdir()
@@ -85,8 +87,8 @@ def test_mixed_roots_skip_deletion(db, artifacts_dir, tmp_path):
 
 
 def test_missing_file_in_available_root_still_removed(db, artifacts_dir, tmp_path):
-    # Все папки доступны, файла нет → прежнее поведение: чистим БД и индексы
-    # (удаление файла из папки — осознанное действие юзера).
+    # All folders available, the file is gone → old behavior: clean the DB
+    # and indexes (removing a file from the folder is a deliberate user act).
     slug = _add_ready_doc(db, artifacts_dir)
     alive = tmp_path / "alive"
     alive.mkdir()

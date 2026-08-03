@@ -1,8 +1,8 @@
-"""Заменённый PDF архива (тот же путь, новое содержимое) должен переиндексироваться.
+"""A replaced archive PDF (same path, new content) must get reindexed.
 
-Раньше скан сверял только slug: файл с новым содержимым оставался ready
-со старыми чанками — поиск молча отдавал устаревшие данные, пока юзер
-не нажимал 🔄 вручную (и только на своей машине).
+The scan used to compare only the slug: a file with new content stayed ready
+with the old chunks — search silently served stale data until the user
+pressed 🔄 manually (and only on their own machine).
 """
 
 import os
@@ -46,14 +46,14 @@ def _make_pdf(path: Path, pages: int = 1) -> None:
 
 
 def _bump_mtime(path: Path, seconds: int = 10) -> None:
-    """Явный сдвиг mtime: грубые ФС меняют его раз в 1-2 секунды."""
+    """An explicit mtime shift: coarse file systems change it once per 1-2 s."""
     st = path.stat()
     ns = seconds * 1_000_000_000
     os.utime(path, ns=(st.st_atime_ns + ns, st.st_mtime_ns + ns))
 
 
 def _scan_ready(db, artifacts_dir, root: Path, slug: str):
-    """Первый скан + перевод документа в ready с артефактами на диске."""
+    """First scan + moving the document to ready with artifacts on disk."""
     sync_archive(db, [root])
     doc = db.scalar(select(ProjectDocument).where(ProjectDocument.slug == slug))
     doc.status = "ready"
@@ -70,7 +70,7 @@ def test_replaced_pdf_resets_to_pending(db, artifacts_dir, tmp_path):
     slug = make_project_slug("Most", "tz.pdf")
     doc = _scan_ready(db, artifacts_dir, root, slug)
 
-    _make_pdf(pdf, pages=2)  # замена: другое содержимое и размер
+    _make_pdf(pdf, pages=2)  # replacement: different content and size
     _bump_mtime(pdf)
     summary = sync_archive(db, [root])
 
@@ -78,7 +78,7 @@ def test_replaced_pdf_resets_to_pending(db, artifacts_dir, tmp_path):
     assert doc.status == "pending"
     assert doc.error is None
     assert doc.page_count == 2
-    assert not (artifacts_dir / slug).exists()  # старые чанки вычищены
+    assert not (artifacts_dir / slug).exists()  # old chunks cleaned up
     assert summary.changed == 1
 
 
@@ -97,8 +97,8 @@ def test_unchanged_pdf_stays_ready(db, artifacts_dir, tmp_path):
 
 
 def test_legacy_row_backfills_without_reset(db, artifacts_dir, tmp_path):
-    # Строки со старой версии приложения (stat-колонок не было) НЕ должны
-    # массово сбрасываться в pending — это повторная оплата vision за весь архив.
+    # Rows from an old app version (no stat columns) must NOT be mass-reset
+    # to pending — that means paying vision again for the whole archive.
     root = tmp_path / "Most"
     _make_pdf(root / "tz.pdf", pages=1)
     slug = make_project_slug("Most", "tz.pdf")
@@ -120,13 +120,13 @@ def test_legacy_row_backfills_without_reset(db, artifacts_dir, tmp_path):
     doc = db.scalar(select(ProjectDocument).where(ProjectDocument.slug == slug))
     assert doc.status == "ready"
     assert (artifacts_dir / slug).exists()
-    assert doc.file_size is not None  # stat дозаполнен для следующих сканов
+    assert doc.file_size is not None  # stat filled in for the next scans
     assert summary.changed == 0
 
 
 def test_processing_doc_not_reset(db, artifacts_dir, tmp_path):
-    # Файл заменили ПОКА пайплайн работает: не выдёргиваем из-под ног,
-    # stat не обновляем — следующий скан после конца обработки поймает замену.
+    # The file was replaced WHILE the pipeline runs: don't pull the rug,
+    # don't update the stat — the next scan after processing catches the swap.
     root = tmp_path / "Most"
     pdf = root / "tz.pdf"
     _make_pdf(pdf, pages=1)
@@ -156,9 +156,9 @@ class _FakeExecutor:
 
 
 def test_index_archive_refreshes_stat(db, artifacts_dir, tmp_path):
-    # Файл заменён между «Skenovat» и «Indexovat»: пайплайн прочитает НОВУЮ
-    # версию с диска — stat в БД должен соответствовать ей, иначе следующий
-    # скан сочтёт свежеоплаченный индекс устаревшим и зря сбросит в pending.
+    # The file was replaced between "Skenovat" and "Indexovat": the pipeline
+    # will read the NEW version from disk — the stat in the DB must match it,
+    # or the next scan deems the freshly paid index stale and resets it.
     from backend.modules.projects.service import start_archive_indexing
 
     root = tmp_path / "Most"

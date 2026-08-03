@@ -1,8 +1,8 @@
-"""Замок PDFium должен быть общим с Docling.
+"""The PDFium lock must be shared with Docling.
 
-Docling рендерит через pypdfium2 под собственным замком; если наш замок —
-другой объект, наши рендеры продолжают гоняться с его рендерами. Тест
-упадёт, когда Docling переложит внутренний модуль и сработает откат.
+Docling renders via pypdfium2 under its own lock; if our lock is a
+different object, our renders keep racing with its renders. The test will
+fail when Docling moves the internal module and the fallback kicks in.
 """
 
 

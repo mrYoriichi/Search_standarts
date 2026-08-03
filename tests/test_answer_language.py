@@ -1,8 +1,8 @@
-"""Язык ответа — выбор юзера (решение 2026-08-02, №12 снят).
+"""Answer language is the user's choice (decision 2026-08-02, issue 12 closed).
 
-Дефолт — английский (решение Максима 2026-08-02); cs/de подставляют своё
-имя языка в системный промпт. Технические обозначения (коды норм, номера
-разделов) промпт по-прежнему требует сохранять в оригинале.
+Default is English (Maxim's decision 2026-08-02); cs/de substitute their
+language name into the system prompt. Technical designations (standard
+codes, section numbers) must still stay in the original per the prompt.
 """
 
 import pytest
@@ -28,12 +28,13 @@ def test_czech_prompt_requires_czech():
 
 
 def test_unknown_language_falls_back_to_english():
-    # Защита от мусора в запросе: неизвестный код не должен ронять генерацию.
+    # Guard against garbage in the request: an unknown code must not
+    # break generation.
     assert "ALWAYS answer in English" in build_system_prompt("xx")
 
 
 def test_ask_request_default_language_is_none():
-    # None = «взять сохранённую настройку» (эндпоинт /api/settings/answer-language).
+    # None = "use the saved setting" (endpoint /api/settings/answer-language).
     req = AskRequest(question="jak se navrhuje most?")
     assert req.answer_language is None
 
@@ -43,7 +44,7 @@ def test_ask_request_rejects_unknown_language():
         AskRequest(question="q", answer_language="fr")
 
 
-# --- настройка answer_language (хранится в профиле) --------------------------
+# --- answer_language setting (stored in the profile) -------------------------
 
 
 @pytest.fixture

@@ -1,4 +1,4 @@
-"""Тесты классификатора ошибок пайплайна."""
+"""Tests of the pipeline error classifier."""
 
 import pytest
 
@@ -9,7 +9,7 @@ from backend.core.errors import classify_pipeline_error
 
 @pytest.fixture(autouse=True)
 def czech_messages():
-    """Тексты в тестах — чешские эталоны; дефолт приложения теперь английский."""
+    """Test texts are the Czech references; the app default is English now."""
     ui_messages.set_language("cs")
     yield
     ui_messages.set_language("en")
@@ -91,9 +91,9 @@ def test_vision_empty_response():
 
 
 def test_permission_error_neutral_with_path():
-    # Классификатор общий для библиотеки, архива и поиска — текст не должен
-    # сваливать всё на «папку библиотеки», а путь из исключения должен
-    # остаться виден (Windows: PDF залочен Acrobat'ом/антивирусом).
+    # The classifier is shared by the library, archive and search — the text
+    # must not blame everything on the "library folder", and the path from
+    # the exception must stay visible (Windows: PDF locked by Acrobat/AV).
     exc = PermissionError("[Errno 13] Permission denied: 'projects_data/x.json'")
     msg = classify_pipeline_error(exc)
     assert "oprávnění" in msg

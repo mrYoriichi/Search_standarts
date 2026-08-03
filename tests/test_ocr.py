@@ -1,4 +1,4 @@
-"""Тесты разбора ответа RapidOCR (сам OCR не запускаем — тянет модели)."""
+"""Tests of parsing the RapidOCR response (OCR itself not run — pulls models)."""
 
 import sys
 import time
@@ -10,7 +10,7 @@ from pdf_processing.ocr import _extract_text
 
 
 class _Result:
-    """Заглушка нового API RapidOCR: объект с полем txts."""
+    """A stub of the new RapidOCR API: an object with a txts field."""
 
     def __init__(self, txts):
         self.txts = txts
@@ -35,17 +35,17 @@ def test_old_api_tuple_joins_fragments():
 
 
 def test_engine_created_once_under_threads(monkeypatch):
-    """Гонка на Windows: параллельное создание движка ломало загрузку моделей.
+    """Windows race: parallel engine creation broke model loading.
 
-    Три потока одновременно зовут _get_engine — движок должен создаться
-    ровно один раз, остальные потоки ждут и получают тот же объект.
+    Three threads call _get_engine at once — the engine must be created
+    exactly once, the other threads wait and get the same object.
     """
     created: list[int] = []
 
     class _SlowEngine:
         def __init__(self) -> None:
             created.append(1)
-            time.sleep(0.05)  # имитация долгой загрузки .onnx моделей
+            time.sleep(0.05)  # simulates the slow .onnx model loading
 
     fake_rapidocr = types.SimpleNamespace(RapidOCR=_SlowEngine)
     monkeypatch.setitem(sys.modules, "rapidocr", fake_rapidocr)

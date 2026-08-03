@@ -1,11 +1,11 @@
-"""Гонка двух машин в общей сетевой папке (имитация двумя процессами).
+"""Race of two machines in a shared network folder (simulated by two processes).
 
-Красные тесты фиксируют два бага:
-- save_json_atomic: у всех писателей один tmp-файл (`X.tmp`) — при
-  параллельной записи одного файла соперник «уводит» tmp из-под os.replace;
-- ensure_meta: небезопасный «прочитал — нет — создал»: две машины, впервые
-  открывшие одну папку, выдают ей РАЗНЫЕ folder_id; проигравшая метка
-  осиротит документы и вызовет повторную платную индексацию.
+The red tests pin down two bugs:
+- save_json_atomic: all writers shared one tmp file (`X.tmp`) — on parallel
+  writes of the same file the rival "steals" the tmp from under os.replace;
+- ensure_meta: unsafe "read — missing — create": two machines opening a new
+  folder for the first time issue DIFFERENT folder_ids; the losing label
+  orphans documents and causes repeated paid indexing.
 """
 
 import multiprocessing as mp
@@ -16,15 +16,15 @@ from pathlib import Path
 from backend.core import index_store
 from common.jsonio import save_json_atomic
 
-# Раундов достаточно, чтобы гонка воспроизводилась стабильно,
-# и мало настолько, чтобы тест шёл секунды.
+# Enough rounds for the race to reproduce reliably,
+# and few enough for the test to take seconds.
 JSONIO_ROUNDS = 200
 META_ROUNDS = 20
-WAIT = 30  # сек; сломанный барьер вместо зависшего навсегда теста
+WAIT = 30  # seconds; a broken barrier instead of a test hung forever
 
 
 def _hammer_save(target: str, barrier: Barrier, name: str, results: Queue) -> None:
-    """Пишет один и тот же файл в такт с соперником (барьер каждый раунд)."""
+    """Writes the same file in lockstep with the rival (a barrier every round)."""
     errors: list[str] = []
     for i in range(JSONIO_ROUNDS):
         try:
@@ -36,7 +36,7 @@ def _hammer_save(target: str, barrier: Barrier, name: str, results: Queue) -> No
 
 
 def _mint_meta(base: str, barrier: Barrier, results: Queue) -> None:
-    """Вызывает ensure_meta на свежей папке в такт с соперником."""
+    """Calls ensure_meta on a fresh folder in lockstep with the rival."""
     ids: list[str] = []
     for i in range(META_ROUNDS):
         try:
@@ -49,8 +49,8 @@ def _mint_meta(base: str, barrier: Barrier, results: Queue) -> None:
 
 
 def test_parallel_writers_do_not_crash_each_other(tmp_path):
-    # Инвариант атомарной записи: параллельная запись одного файла из двух
-    # процессов не роняет ни одного из писателей.
+    # Atomic write invariant: parallel writes of one file from two
+    # processes crash neither writer.
     ctx = mp.get_context("spawn")
     barrier = ctx.Barrier(2)
     results = ctx.Queue()
@@ -68,9 +68,9 @@ def test_parallel_writers_do_not_crash_each_other(tmp_path):
 
 
 def test_two_machines_agree_on_folder_id(tmp_path):
-    # Инвариант паспорта папки: сколько бы машин ни открыло новую папку
-    # одновременно, folder_id у всех должен получиться ОДИН. Иначе документы,
-    # проиндексированные под проигравшей меткой, осиротеют.
+    # Folder passport invariant: no matter how many machines open a new
+    # folder at once, they must all end up with ONE folder_id. Otherwise
+    # documents indexed under the losing label become orphans.
     ctx = mp.get_context("spawn")
     for i in range(META_ROUNDS):
         (tmp_path / f"round_{i}").mkdir()

@@ -1,7 +1,8 @@
-"""Смешанные embedding-модели должны падать громко, а не молча ронять поиск.
+"""Mixed embedding models must fail loudly, not silently break search.
 
-Раньше широкий `except RuntimeError` в library_cache._load_merged глотал
-несовместимость моделей ВНУТРИ одного корня — папка молча выпадала из поиска.
+The broad `except RuntimeError` in library_cache._load_merged used to
+swallow model incompatibility WITHIN one root — the folder silently
+dropped out of search.
 """
 
 from pathlib import Path
@@ -16,14 +17,14 @@ from common.jsonio import save_json_atomic
 
 @pytest.fixture(autouse=True)
 def czech_messages():
-    """Тексты в тестах — чешские эталоны; дефолт приложения теперь английский."""
+    """Test texts are the Czech references; the app default is English now."""
     ui_messages.set_language("cs")
     yield
     ui_messages.set_language("en")
 
 
 def _make_doc(root: Path, slug: str, model: str, dim: int) -> None:
-    """Готовый документ в корне: chunks.json + embeddings.json заданной модели."""
+    """A ready document in the root: chunks.json + embeddings.json of a given model."""
     doc_dir = root / slug
     doc_dir.mkdir(parents=True)
     save_json_atomic(
@@ -41,7 +42,7 @@ def _make_doc(root: Path, slug: str, model: str, dim: int) -> None:
 
 @pytest.fixture
 def isolated_cache(tmp_path, monkeypatch):
-    """Отключает реальные пулы и чистит module-global кеш до/после теста."""
+    """Disables the real pools and clears the module-global cache around the test."""
     monkeypatch.setattr(library_cache, "PROJECTS_DATA_DIR", tmp_path / "no_projects")
     library_cache.invalidate()
     yield
@@ -59,7 +60,7 @@ def test_mixed_models_in_one_folder_fail_loudly(tmp_path, monkeypatch, isolated_
 
 
 def test_pools_on_different_models_fail_loudly(tmp_path, monkeypatch, isolated_cache):
-    """Два корня, каждый внутри консистентен, но модели разные — громкая ошибка."""
+    """Two roots, each internally consistent, but models differ — a loud error."""
     root_a = tmp_path / "root_a"
     root_b = tmp_path / "root_b"
     _make_doc(root_a, "doc_a", "model-a", 2)
@@ -71,7 +72,7 @@ def test_pools_on_different_models_fail_loudly(tmp_path, monkeypatch, isolated_c
 
 
 def test_empty_roots_raise_czech_message(tmp_path, monkeypatch, isolated_cache):
-    """Нет готовых документов нигде — чешская ошибка для UI (не regression)."""
+    """No ready documents anywhere — the Czech UI error (not a regression)."""
     monkeypatch.setattr(library_cache, "_library_index_roots", lambda: [])
 
     with pytest.raises(RuntimeError, match="hotový dokument"):

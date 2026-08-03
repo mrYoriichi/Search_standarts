@@ -1,8 +1,8 @@
-"""Тесты дозаписи describe: повторный запуск не платит за уже описанное.
+"""Describe resume tests: a rerun does not pay for what is already described.
 
-Vision — самый дорогой этап пайплайна. descriptions.json сохраняется после
-каждой страницы; упавший на середине документ при повторном запуске
-продолжает с места обрыва, а не покупает все описания заново.
+Vision is the most expensive pipeline stage. descriptions.json is saved after
+every page; a document that failed midway continues from the break point on
+rerun instead of buying all descriptions again.
 """
 
 import json
@@ -45,7 +45,7 @@ def test_crash_keeps_paid_pages_and_resume_skips_them(tmp_path, monkeypatch):
     _make_pages(tmp_path / "pages", 3)
     monkeypatch.setattr(describe, "extract_document_metadata", _fake_metadata)
 
-    # Первый запуск: страница 2 падает (устойчивая ошибка API).
+    # First run: page 2 fails (a persistent API error).
     def flaky(document, page_number, image_path, model):
         if page_number == 2:
             raise RuntimeError("API down")
@@ -55,13 +55,13 @@ def test_crash_keeps_paid_pages_and_resume_skips_them(tmp_path, monkeypatch):
     with pytest.raises(RuntimeError):
         describe.process("test", doc_dir=tmp_path)
 
-    # Оплаченное сохранено: метаданные + страница 1.
+    # What was paid for is saved: metadata + page 1.
     saved = json.loads((tmp_path / "descriptions.json").read_text(encoding="utf-8"))
     assert saved["document_title"] == "Titul"
     assert saved["described_pages"] == [1]
     assert saved["block_descriptions"] == {"p1_b0": "popis 1"}
 
-    # Второй запуск: API ожил. Страницу 1 и метаданные не покупаем снова.
+    # Second run: the API is back. Page 1 and metadata are not bought again.
     calls: list[int] = []
 
     def ok(document, page_number, image_path, model):
@@ -69,7 +69,7 @@ def test_crash_keeps_paid_pages_and_resume_skips_them(tmp_path, monkeypatch):
         return {f"p{page_number}_b0": f"popis {page_number}"}, 1, 1
 
     def metadata_must_not_run(image, model):
-        raise AssertionError("метаданные уже есть — повторный вызов = переплата")
+        raise AssertionError("metadata already present — a repeat call = overpaying")
 
     monkeypatch.setattr(describe, "describe_page_visuals", ok)
     monkeypatch.setattr(describe, "extract_document_metadata", metadata_must_not_run)
@@ -101,7 +101,7 @@ def test_describe_drawings_skips_already_paid(tmp_path, monkeypatch):
         return "popis", 1, 1
 
     monkeypatch.setattr(describe, "describe_drawing", fake_describe_drawing)
-    # Тестовые страницы пустые — отключаем отсев пустых, тут проверяем resume.
+    # Test pages are empty — disable the empty-page filter, resume is tested here.
     monkeypatch.setattr(describe, "_is_blank", lambda img: False)
 
     descriptions = {"1": "už zaplaceno"}
@@ -113,15 +113,15 @@ def test_describe_drawings_skips_already_paid(tmp_path, monkeypatch):
         descriptions=descriptions,
         on_page_done=lambda: saves.append(dict(descriptions)),
     )
-    assert len(calls) == 1  # страница 1 пропущена — за неё уже заплачено
+    assert len(calls) == 1  # page 1 skipped — it is already paid for
     assert descriptions == {"1": "už zaplaceno", "2": "popis"}
-    assert saves  # прогресс сохранялся после каждого листа
+    assert saves  # progress was saved after every sheet
 
 
 def test_describe_drawings_reports_progress(tmp_path, monkeypatch):
-    # UX архива (ШАГ 3): у чисто чертёжного PDF describe-этап раньше висел
-    # на статичном «popis obrázků…» — нужен прогресс по листам, как давала
-    # sheet-ветка («list N/M»), которую заменяет общий пайплайн.
+    # Archive UX (STEP 3): for a drawings-only PDF the describe stage used to
+    # hang on a static "popis obrázků…" — per-sheet progress is needed, as the
+    # sheet branch ("list N/M") replaced by the shared pipeline used to give.
     pdf_path = tmp_path / "vykres.pdf"
     pdf = pdfium.PdfDocument.new()
     pdf.new_page(2000, 1000)
@@ -151,16 +151,16 @@ def test_describe_drawings_reports_progress(tmp_path, monkeypatch):
 
 
 def test_blank_drawing_page_not_sent_to_vision(tmp_path, monkeypatch):
-    # Пустой оборот обложки раньше уходил в vision (и из-за retry — дважды).
+    # An empty cover verso used to go to vision (and twice, due to retry).
     pdf_path = tmp_path / "prazdny.pdf"
     pdf = pdfium.PdfDocument.new()
-    pdf.new_page(2000, 1000)  # страница без содержимого — однотонная
+    pdf.new_page(2000, 1000)  # a page without content — uniform color
     pdf.save(pdf_path)
 
     document = {"pages": [{"page_number": 1, "page_type": "drawing", "blocks": []}]}
 
     def must_not_run(*args, **kwargs):
-        raise AssertionError("пустая страница не должна уходить в vision")
+        raise AssertionError("an empty page must not go to vision")
 
     monkeypatch.setattr(describe, "describe_drawing", must_not_run)
 
@@ -168,18 +168,18 @@ def test_blank_drawing_page_not_sent_to_vision(tmp_path, monkeypatch):
     describe.describe_drawings(
         document, str(pdf_path), "gpt-test", descriptions=descriptions
     )
-    # Пометка «обработана» стоит — повторный запуск тоже платить не будет.
+    # The "processed" mark is set — a rerun will not pay either.
     assert descriptions == {"1": ""}
 
 
 def test_metadata_from_drawing_first_page(tmp_path, monkeypatch):
-    # Первая страница — чертёж: p001.png от Docling нет, рендерим сами из PDF.
+    # The first page is a drawing: no p001.png from Docling, we render from the PDF.
     pdf_path = tmp_path / "vykres.pdf"
     pdf = pdfium.PdfDocument.new()
     pdf.new_page(2000, 1000)
     pdf.save(pdf_path)
 
-    _write_document(tmp_path, 0)  # страниц с figure/table нет
+    _write_document(tmp_path, 0)  # no pages with figure/table
     doc = {
         "document_name": "Vykres",
         "document_id": "vykres",
@@ -197,14 +197,14 @@ def test_metadata_from_drawing_first_page(tmp_path, monkeypatch):
     describe.process("vykres", doc_dir=tmp_path, pdf_path=str(pdf_path))
 
     saved = json.loads((tmp_path / "descriptions.json").read_text(encoding="utf-8"))
-    assert saved["document_title"] == "Titul"  # метаданные добыты с рендера
+    assert saved["document_title"] == "Titul"  # metadata mined from the render
 
 
 def test_no_llm_mode_still_writes_empty_passport(tmp_path, monkeypatch):
     _write_document(tmp_path, 1)
 
     def must_not_run(*args, **kwargs):
-        raise AssertionError("режим «без LLM» не должен звать vision")
+        raise AssertionError("the No-LLM mode must not call vision")
 
     monkeypatch.setattr(describe, "extract_document_metadata", must_not_run)
     monkeypatch.setattr(describe, "describe_page_visuals", must_not_run)
@@ -216,8 +216,8 @@ def test_no_llm_mode_still_writes_empty_passport(tmp_path, monkeypatch):
 
 
 def test_no_llm_mode_keeps_paid_descriptions(tmp_path, monkeypatch):
-    # Общая папка: коллега уже оплатил vision-описания. Наш перезапуск в
-    # режиме «Без LLM» не должен затирать их пустым паспортом.
+    # Shared folder: a colleague already paid for the vision descriptions.
+    # Our rerun in No-LLM mode must not overwrite them with an empty passport.
     _write_document(tmp_path, 1)
     paid = {
         "document_title": "Paid",
@@ -230,7 +230,7 @@ def test_no_llm_mode_keeps_paid_descriptions(tmp_path, monkeypatch):
     )
 
     def must_not_run(*args, **kwargs):
-        raise AssertionError("режим «без LLM» не должен звать vision")
+        raise AssertionError("the No-LLM mode must not call vision")
 
     monkeypatch.setattr(describe, "extract_document_metadata", must_not_run)
     monkeypatch.setattr(describe, "describe_page_visuals", must_not_run)

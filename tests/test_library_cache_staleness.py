@@ -1,8 +1,8 @@
-"""Кеш поиска должен замечать переиндексацию общей папки ДРУГОЙ машиной.
+"""The search cache must notice a shared folder reindexed by ANOTHER machine.
 
-invalidate() локален для процесса. Чужая машина переписывает embeddings.json
-в общей .search_index — без проверки отпечатка mtime этот процесс отдавал бы
-старые чанки до рестарта.
+invalidate() is process-local. The other machine rewrites embeddings.json in
+the shared .search_index — without the mtime fingerprint check this process
+would serve stale chunks until a restart.
 """
 
 import os
@@ -33,12 +33,12 @@ def _write_doc(root: Path, slug: str, text: str) -> None:
 
 @pytest.fixture
 def shared_root(tmp_path, monkeypatch):
-    """Общая папка с одним готовым документом; реальные пулы отключены."""
+    """A shared folder with one ready document; real pools disabled."""
     root = tmp_path / "lib" / ".search_index"
     _write_doc(root, "doc", "OLD")
     monkeypatch.setattr(library_cache, "PROJECTS_DATA_DIR", tmp_path / "no_projects")
     monkeypatch.setattr(library_cache, "_library_index_roots", lambda: [root])
-    # TTL=0: тесты выше проверяют сам механизм отпечатка, без троттлинга.
+    # TTL=0: the tests above check the fingerprint mechanism itself, no throttling.
     monkeypatch.setattr(library_cache, "_FINGERPRINT_TTL_S", 0.0)
     library_cache.invalidate()
     yield root
@@ -49,11 +49,11 @@ def test_remote_reindex_picked_up_without_local_invalidate(shared_root):
     chunks, _ = library_cache.get_library()
     assert chunks[0]["text"] == "OLD"
 
-    # «Другая машина»: переписывает файлы и НЕ зовёт наш invalidate().
+    # "The other machine": rewrites files and does NOT call our invalidate().
     _write_doc(shared_root, "doc", "NEW")
     emb = shared_root / "doc" / "embeddings.json"
     st = emb.stat()
-    # Явный utime: на грубых файловых системах mtime меняется раз в 1-2 с.
+    # Explicit utime: on coarse file systems mtime changes once per 1-2 s.
     os.utime(emb, ns=(st.st_atime_ns + 2_000_000_000, st.st_mtime_ns + 2_000_000_000))
 
     chunks, _ = library_cache.get_library()
@@ -61,7 +61,7 @@ def test_remote_reindex_picked_up_without_local_invalidate(shared_root):
 
 
 def test_unchanged_library_reuses_cache(shared_root):
-    # Без изменений на диске кеш не перечитывается (защита от чтения на каждый вопрос).
+    # Without disk changes the cache is not re-read (guards against per-question reads).
     assert library_cache.get_library() is library_cache.get_library()
 
 
@@ -76,21 +76,21 @@ def test_remote_delete_drops_doc(shared_root):
 
 
 def test_unreachable_root_keeps_serving_cache(shared_root, tmp_path):
-    # Отвал сетевого диска ≠ «документы удалили»: тёплый кеш продолжает
-    # отвечать полным корпусом, а не молча теряет всю общую библиотеку.
+    # A dropped network drive != "documents deleted": the warm cache keeps
+    # answering with the full corpus instead of silently losing the library.
     chunks, _ = library_cache.get_library()
     assert chunks[0]["text"] == "OLD"
 
     hidden = tmp_path / "hidden"
-    shared_root.rename(hidden)  # «диск отвалился»
+    shared_root.rename(hidden)  # "the drive dropped"
     chunks, _ = library_cache.get_library()
-    assert chunks[0]["text"] == "OLD"  # кеш жив, без исключений
+    assert chunks[0]["text"] == "OLD"  # cache alive, no exceptions
 
-    hidden.rename(shared_root)  # диск вернулся, файлы те же — кеш ещё жив
+    hidden.rename(shared_root)  # drive back, same files — cache still alive
     chunks, _ = library_cache.get_library()
     assert chunks[0]["text"] == "OLD"
 
-    # А реальная переиндексация после возврата — ловится.
+    # And a real reindex after the return is caught.
     _write_doc(shared_root, "doc", "NEW")
     emb = shared_root / "doc" / "embeddings.json"
     st = emb.stat()
@@ -100,9 +100,9 @@ def test_unreachable_root_keeps_serving_cache(shared_root, tmp_path):
 
 
 def test_fingerprint_throttled_between_questions(shared_root, monkeypatch):
-    # На сетевой папке свип stat'ов стоит 0.2-10 с — внутри TTL отпечаток
-    # не пересчитывается (минутная задержка чужих изменений допустима).
-    # Локальные изменения идут через invalidate() и троттлинг обходят.
+    # On a network folder the stat sweep costs 0.2-10 s — within the TTL the
+    # fingerprint is not recomputed (a minute's delay for foreign changes is
+    # fine). Local changes go through invalidate() and bypass the throttle.
     monkeypatch.setattr(library_cache, "_FINGERPRINT_TTL_S", 3600.0)
     chunks, _ = library_cache.get_library()
     assert chunks[0]["text"] == "OLD"
@@ -113,8 +113,8 @@ def test_fingerprint_throttled_between_questions(shared_root, monkeypatch):
     os.utime(emb, ns=(st.st_atime_ns + 2_000_000_000, st.st_mtime_ns + 2_000_000_000))
 
     chunks, _ = library_cache.get_library()
-    assert chunks[0]["text"] == "OLD"  # внутри TTL — без свипа, кеш как есть
+    assert chunks[0]["text"] == "OLD"  # within TTL — no sweep, cache as is
 
-    library_cache.invalidate()  # локальная мутация сбрасывает и TTL
+    library_cache.invalidate()  # a local mutation resets the TTL too
     chunks, _ = library_cache.get_library()
     assert chunks[0]["text"] == "NEW"

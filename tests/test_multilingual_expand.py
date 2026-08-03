@@ -1,9 +1,9 @@
-"""Многоязычный корпус: расширение ищет на всех языках библиотеки.
+"""Multilingual corpus: expansion searches in all library languages.
 
-Вектор многоязычен «из коробки», но BM25 находит документ только словами
-его языка. Поэтому язык каждого документа определяется эвристикой по
-тексту чанков, а расширение выдаёт термины на всех языках корпуса
-(решение Максима 2026-08-02: делаем до eval).
+Vectors are multilingual out of the box, but BM25 finds a document only
+via words in its own language. So each document's language is detected
+heuristically from the chunk text, and expansion emits terms in all
+corpus languages (Maxim's decision 2026-08-02: do this before eval).
 """
 
 from search.expand import build_expand_prompt
@@ -15,7 +15,7 @@ DE = "Die Windlast auf die Lärmschutzwand ist gemäß der Norm zu berechnen. Gr
 RU = "Ветровая нагрузка на шумозащитный экран определяется по нормам проекта."
 
 
-# --- Определение языка документа ---------------------------------------------
+# --- Document language detection ----------------------------------------------
 
 
 def test_detect_czech_by_diacritics():
@@ -52,14 +52,14 @@ def test_corpus_languages_collects_per_document():
 
 
 def test_corpus_languages_samples_first_chunks_only():
-    # Язык решает начало документа: заголовки/преамбула, а не хвост,
-    # куда могла попасть иноязычная цитата.
+    # The start of the document decides the language: headings/preamble,
+    # not the tail, where a foreign-language quote could have landed.
     chunks = [_chunk("doc", CS * 50)]
     chunks.append({"document_id": "doc", "chunk_id": "doc_c999", "text": EN})
     assert corpus_languages(chunks) == {"cs"}
 
 
-# --- Промпт расширения --------------------------------------------------------
+# --- Expansion prompt ---------------------------------------------------------
 
 
 def test_prompt_lists_all_corpus_languages():
@@ -70,8 +70,8 @@ def test_prompt_lists_all_corpus_languages():
 
 
 def test_prompt_defaults_to_czech():
-    # Нет данных о корпусе (пустая библиотека, старый вызов) — прежнее
-    # поведение: чешский.
+    # No corpus data (empty library, legacy call) — previous behavior:
+    # Czech.
     assert "Czech" in build_expand_prompt(None)
     assert "Czech" in build_expand_prompt(set())
 

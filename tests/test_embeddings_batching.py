@@ -1,4 +1,4 @@
-"""Тесты батчинга эмбеддингов: большой документ шлётся партиями, не одним запросом."""
+"""Embedding batching tests: a large document is sent in batches, not one request."""
 
 import numpy as np
 import pytest
@@ -7,7 +7,7 @@ from indexing import embeddings_index
 
 
 def _install_fake(monkeypatch, calls: list[list[str]]):
-    """Подменяет get_embeddings: записывает партии, возвращает фиктивные векторы."""
+    """Replaces get_embeddings: records the batches, returns fake vectors."""
 
     def fake(texts: list[str]) -> tuple[list[list[float]], int]:
         calls.append(list(texts))
@@ -21,7 +21,7 @@ def _chunks(n: int) -> list[dict]:
 
 
 def test_empty_chunks_raise_clear_error():
-    # Раньше пустой список уезжал в OpenAI и падал криптоошибкой 400.
+    # An empty list used to go to OpenAI and fail with a cryptic 400.
     with pytest.raises(ValueError):
         embeddings_index.build_embeddings_index([])
 
@@ -40,12 +40,12 @@ def test_batches_respect_count_limit(monkeypatch):
     monkeypatch.setattr(embeddings_index, "MAX_TEXTS_PER_REQUEST", 2)
     index, _ = embeddings_index.build_embeddings_index(_chunks(5))
     assert [len(c) for c in calls] == [2, 2, 1]
-    # Порядок chunk_id не пострадал от разбиения.
+    # The chunk_id order is unharmed by the split.
     assert [it["chunk_id"] for it in index["items"]] == [f"c{i:03d}" for i in range(5)]
 
 
 def test_search_rejects_foreign_model_index():
-    # Смена EMBEDDING_MODEL без переиндексации — понятная ошибка, не мусор.
+    # Changing EMBEDDING_MODEL without reindexing — a clear error, not garbage.
     index = {
         "model": "stary-model",
         "chunk_ids": [],
@@ -58,7 +58,7 @@ def test_search_rejects_foreign_model_index():
 def test_batches_respect_token_limit(monkeypatch):
     calls: list[list[str]] = []
     _install_fake(monkeypatch, calls)
-    # Каждый текст — несколько токенов; лимит 10 заставит разбить на партии.
+    # Each text is a few tokens; a limit of 10 forces splitting into batches.
     monkeypatch.setattr(embeddings_index, "MAX_TOKENS_PER_REQUEST", 10)
     index, _ = embeddings_index.build_embeddings_index(_chunks(6))
     assert len(calls) > 1

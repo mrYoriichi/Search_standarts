@@ -1,9 +1,9 @@
-"""Лимит страниц публичной сборки (решение 2026-08-02, 3000 страниц).
+"""Page limit of the public build (decision 2026-08-02, 3000 pages).
 
-Кеш поиска грузит ВСЕ ready-индексы в RAM целиком, поэтому лимит обязан
-резать оба пути появления документов: платную индексацию И бесплатное
-усыновление — иначе большая общая папка кладёт приложение по памяти,
-не запустив пайплайн ни разу. В пилотной сборке лимита нет.
+The search cache loads ALL ready indexes fully into RAM, so the limit must
+cut both ways documents can appear: paid indexing AND free adoption —
+otherwise a big shared folder kills the app by memory before the pipeline
+ever runs. The pilot build has no limit.
 """
 
 import json
@@ -22,7 +22,7 @@ from backend.modules.projects.models import ProjectDocument
 
 @pytest.fixture
 def db():
-    """Чистая in-memory SQLite на каждый тест."""
+    """Fresh in-memory SQLite for each test."""
     engine = create_engine("sqlite://")
     Base.metadata.create_all(engine)
     session = sessionmaker(bind=engine)()
@@ -73,7 +73,7 @@ def _arc_doc(
 
 
 def _make_indexed_library(tmp_path, pdf_name: str):
-    """Папка библиотеки с PDF и ГОТОВЫМ индексом (кандидат на усыновление)."""
+    """Library folder with a PDF and a READY index (adoption candidate)."""
     from indexing.embeddings_index import EMBEDDING_MODEL
 
     library = tmp_path / "lib"
@@ -99,14 +99,14 @@ def _make_indexed_library(tmp_path, pdf_name: str):
     return library, slug
 
 
-# --- Подсчёт занятых страниц -------------------------------------------------
+# --- Counting pages in use ---------------------------------------------------
 
 
 def test_pages_in_use_counts_ready_and_processing_in_both_pools(db):
     _lib_doc(db, "a", "ready", 100)
-    _lib_doc(db, "b", "processing", 50)  # уже в работе — займёт память
-    _lib_doc(db, "c", "pending", 999)  # ещё не занял
-    _lib_doc(db, "d", "ready", None)  # легаси-строка без счётчика
+    _lib_doc(db, "b", "processing", 50)  # already in progress — takes memory
+    _lib_doc(db, "c", "pending", 999)  # not occupying yet
+    _lib_doc(db, "d", "ready", None)  # legacy row without a counter
     _arc_doc(db, "p__tz", "ready", 30)
     assert limits.pages_in_use(db) == 180
 
@@ -123,7 +123,7 @@ def test_pages_remaining_never_negative(db, monkeypatch):
     assert limits.pages_remaining(db) == 0
 
 
-# --- Усыновление при скане ---------------------------------------------------
+# --- Adoption during scan ----------------------------------------------------
 
 
 def test_scan_does_not_adopt_beyond_limit(db, tmp_path, monkeypatch):
@@ -135,7 +135,7 @@ def test_scan_does_not_adopt_beyond_limit(db, tmp_path, monkeypatch):
     summary = library_service.scan_library([library], db)
 
     doc = db.scalar(select(Document).where(Document.slug == slug))
-    assert doc.status == "pending"  # виден в списке, но НЕ ready
+    assert doc.status == "pending"  # visible in the list, but NOT ready
     assert summary.adopted == 0
     assert summary.limit_skipped == 1
 
@@ -155,7 +155,7 @@ def test_scan_adopts_under_limit_and_stores_pages(db, tmp_path, monkeypatch):
     assert summary.limit_skipped == 0
 
 
-# --- Индексация библиотеки ---------------------------------------------------
+# --- Library indexing --------------------------------------------------------
 
 
 def test_start_indexing_stops_at_limit(db, tmp_path, monkeypatch):
@@ -191,7 +191,7 @@ def test_start_indexing_stops_at_limit(db, tmp_path, monkeypatch):
     assert len(executor.calls) == 1
 
 
-# --- Индексация архива -------------------------------------------------------
+# --- Archive indexing --------------------------------------------------------
 
 
 def test_archive_indexing_stops_at_limit(db, tmp_path, monkeypatch):
