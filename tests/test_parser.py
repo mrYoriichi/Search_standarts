@@ -22,19 +22,28 @@ def test_parentheses_and_dots():
 def test_cyrillic_transliterated():
     # NFD decomposes Cyrillic yo into e + diaeresis before the table
     # applies, so the name yields chertezh, not chertyozh.
-    assert make_document_id("Чертёж моста.pdf") == "chertezh_mosta"
+    # The escapes spell "bridge drawing" in Cyrillic.
+    name = "\u0427\u0435\u0440\u0442\u0451\u0436 \u043c\u043e\u0441\u0442\u0430.pdf"
+    assert make_document_id(name) == "chertezh_mosta"
 
 
 def test_cyrillic_names_do_not_collide():
     # Cyrillic used to be dropped entirely — two Russian names produced
     # the same empty slug and overwrote each other.
-    a = make_document_id("Чертёж.pdf")
-    b = make_document_id("Расчёт.pdf")
+    a = make_document_id(
+        "\u0427\u0435\u0440\u0442\u0451\u0436.pdf"
+    )  # "drawing" in Cyrillic
+    b = make_document_id(
+        "\u0420\u0430\u0441\u0447\u0451\u0442.pdf"
+    )  # "calculation" in Cyrillic
     assert a and b and a != b
 
 
 def test_mixed_cyrillic_latin():
-    assert make_document_id("Отчёт TP107.pdf") == "otchet_tp107"
+    # The escapes spell "report" in Cyrillic, followed by a Latin code.
+    assert (
+        make_document_id("\u041e\u0442\u0447\u0451\u0442 TP107.pdf") == "otchet_tp107"
+    )
 
 
 class _FakeTableItem:

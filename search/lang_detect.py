@@ -19,7 +19,11 @@ SAMPLE_CHARS = 2000
 def detect_language(text: str) -> str:
     """Language of the text: 'cs' | 'de' | 'ru' | 'en' (en = plain latin)."""
     sample = text[:SAMPLE_CHARS]
-    if any("а" <= ch.lower() <= "я" or ch.lower() == "ё" for ch in sample):
+    # U+0430..U+044F = Cyrillic a..ya, U+0451 = yo (escapes keep the source
+    # free of Cyrillic characters).
+    if any(
+        "\u0430" <= ch.lower() <= "\u044f" or ch.lower() == "\u0451" for ch in sample
+    ):
         return "ru"
     if any(ch in _CZECH_CHARS for ch in sample):
         return "cs"

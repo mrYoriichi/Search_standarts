@@ -54,15 +54,19 @@ TEXT_BLOCK_TYPES = {
 VISUAL_BLOCK_TYPES = {"figure", "table"}
 
 
-# Cyrillic → latin. Lowercase only: applied after lower(). ё and й are
-# not needed — NFD already decomposed them into е/и + combining marks
-# (so "чертёж" → chertezh; switching to "yo" would change existing slugs).
+# Cyrillic -> Latin, lowercase only (applied after lower()). Keys are \u
+# escapes (U+0430..U+044F = a..ya) so the source contains no Cyrillic.
+# Yo (U+0451) and short i (U+0439) are not needed — NFD already decomposed
+# them into U+0435/U+0438 + combining marks (a name with "yo" slugs with a
+# plain "e"; switching to "yo" would change existing slugs).
 _CYR_TO_LAT = {
-    "а": "a", "б": "b", "в": "v", "г": "g", "д": "d", "е": "e", "ж": "zh",
-    "з": "z", "и": "i", "к": "k", "л": "l", "м": "m", "н": "n", "о": "o",
-    "п": "p", "р": "r", "с": "s", "т": "t", "у": "u", "ф": "f", "х": "kh",
-    "ц": "ts", "ч": "ch", "ш": "sh", "щ": "shch", "ъ": "", "ы": "y",
-    "ь": "", "э": "e", "ю": "yu", "я": "ya",
+    "\u0430": "a", "\u0431": "b", "\u0432": "v", "\u0433": "g", "\u0434": "d",
+    "\u0435": "e", "\u0436": "zh", "\u0437": "z", "\u0438": "i", "\u043a": "k",
+    "\u043b": "l", "\u043c": "m", "\u043d": "n", "\u043e": "o", "\u043f": "p",
+    "\u0440": "r", "\u0441": "s", "\u0442": "t", "\u0443": "u", "\u0444": "f",
+    "\u0445": "kh", "\u0446": "ts", "\u0447": "ch", "\u0448": "sh", "\u0449": "shch",
+    "\u044a": "", "\u044b": "y", "\u044c": "", "\u044d": "e", "\u044e": "yu",
+    "\u044f": "ya",
 }  # fmt: skip
 _CYR_TABLE = str.maketrans(_CYR_TO_LAT)
 
@@ -70,7 +74,8 @@ _CYR_TABLE = str.maketrans(_CYR_TO_LAT)
 def make_document_id(filename: str) -> str:
     """Turn a file name into an id safe for paths and the DB.
 
-    'ČSN EN 1991-2.pdf' -> 'csn_en_1991_2', 'Чертёж моста.pdf' -> 'chertezh_mosta'
+    'ČSN EN 1991-2.pdf' -> 'csn_en_1991_2'; a Cyrillic file name is
+    transliterated (e.g. -> 'chertezh_mosta').
     """
     stem = Path(filename).stem
     # Decompose diacritics: Č -> C + combining caron.

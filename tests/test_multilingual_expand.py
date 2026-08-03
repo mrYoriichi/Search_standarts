@@ -12,7 +12,16 @@ from search.lang_detect import corpus_languages, detect_language
 CS = "Odláždění čela propustku se navrhuje podle přílohy. Šířka říčního koryta."
 EN = "The wind load on the noise barrier shall be calculated according to the code."
 DE = "Die Windlast auf die Lärmschutzwand ist gemäß der Norm zu berechnen. Größe."
-RU = "Ветровая нагрузка на шумозащитный экран определяется по нормам проекта."
+# Russian sample ("wind load on the noise barrier..."), written as \u
+# escapes to keep the source free of Cyrillic characters.
+RU = (
+    "\u0412\u0435\u0442\u0440\u043e\u0432\u0430\u044f \u043d\u0430\u0433"
+    "\u0440\u0443\u0437\u043a\u0430 \u043d\u0430 \u0448\u0443\u043c\u043e"
+    "\u0437\u0430\u0449\u0438\u0442\u043d\u044b\u0439 \u044d\u043a\u0440"
+    "\u0430\u043d \u043e\u043f\u0440\u0435\u0434\u0435\u043b\u044f\u0435"
+    "\u0442\u0441\u044f \u043f\u043e \u043d\u043e\u0440\u043c\u0430\u043c "
+    "\u043f\u0440\u043e\u0435\u043a\u0442\u0430."
+)
 
 
 # --- Document language detection ----------------------------------------------
