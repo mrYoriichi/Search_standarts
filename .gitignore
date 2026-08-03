@@ -43,3 +43,10 @@ frontend/dist/
 
 # Docling models — downloaded by `download_models.py`, large, not for git
 docling_models/
+# Internal docs — live in the private Search_standarts_docs repo;
+# locally they are symlinks into that repo (cloned next to this one)
+PROJECT_STATE.md
+ROADMAP.md
+VISION.md
+CLAUDE.md
+AGENTS.md
