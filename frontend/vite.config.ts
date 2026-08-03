@@ -13,8 +13,8 @@ export default defineConfig({
   },
   server: {
     proxy: {
-      // В dev: запросы /api/* фронтенда → uvicorn на 127.0.0.1:8000.
-      // В prod FastAPI сам отдаст статику фронта, CORS не нужен.
+      // In dev: the frontend's /api/* requests go to uvicorn on 127.0.0.1:8000.
+      // In prod FastAPI serves the frontend statics itself, no CORS needed.
       '/api': 'http://127.0.0.1:8000',
     },
   },
