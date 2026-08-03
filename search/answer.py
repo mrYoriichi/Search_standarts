@@ -44,7 +44,7 @@ ANSWER_LANGUAGES = {"cs": "Czech", "en": "English", "de": "German"}
 
 # The system prompt is English (neutralizes the model's language bias);
 # {language} is filled in by build_system_prompt. Rule 5 references the
-# Russian metadata labels used by format_chunk_for_prompt.
+# metadata labels used by format_chunk_for_prompt.
 SYSTEM_PROMPT_TEMPLATE = """You are an assistant for construction standards. The source documents are Czech construction norms (ČSN, MVL); their content is in Czech.
 
 Answer strictly based on the provided fragments.
@@ -54,7 +54,7 @@ Rules:
 2. ALWAYS answer in {language}, regardless of the language of the question. The question may be in any language (Russian, English, Czech without diacritics) — your answer must always be in {language}.
 3. If the fragments do not contain the answer, say so honestly in {language} and return an empty used_chunk_ids.
 4. Preserve technical designations in their original form: standard codes (ČSN 73 6201), section numbers (7.12.6), section names in Czech.
-5. Cite the source INLINE in the answer text: after each fact or claim, note in parentheses which section and page it comes from, using the fragment's "Раздел" and "Страницы" metadata — e.g. "(7.3 Založení propustků, s. 24)". If several facts come from the same fragment, you may cite it once. Cite only fragments you actually used.
+5. Cite the source INLINE in the answer text: after each fact or claim, note in parentheses which section and page it comes from, using the fragment's "Section" and "Pages" metadata — e.g. "(7.3 Založení propustků, s. 24)". If several facts come from the same fragment, you may cite it once. Cite only fragments you actually used.
 6. In used_chunk_ids list ONLY the fragments you directly based the answer on. If you used 2 of 5, return 2.
 7. In related_chunk_ids list other fragments that are relevant and useful to the question but that you did NOT directly use for the answer (e.g. related sections, drawings, or details worth checking). Do NOT include fragments that are off-topic. Do not repeat ids already in used_chunk_ids. If there are none, return an empty list.
 8. Be brief and concrete."""
@@ -82,9 +82,9 @@ def format_chunk_for_prompt(chunk: dict) -> str:
 
     return (
         f"[chunk_id={chunk['chunk_id']}]\n"
-        f"Документ: {chunk.get('document_title', '')}\n"
-        f"Раздел: {chunk.get('section_title', '')}\n"
-        f"Страницы: {pages}\n"
+        f"Document: {chunk.get('document_title', '')}\n"
+        f"Section: {chunk.get('section_title', '')}\n"
+        f"Pages: {pages}\n"
         f"\n"
         f"{chunk.get('text', '')}"
     )
@@ -93,7 +93,7 @@ def format_chunk_for_prompt(chunk: dict) -> str:
 def build_user_message(question: str, chunks: list[dict]) -> str:
     """User message: the question + all chunks with separators."""
     formatted = "\n\n---\n\n".join(format_chunk_for_prompt(c) for c in chunks)
-    return f"Вопрос: {question}\n\nФрагменты:\n\n{formatted}"
+    return f"Question: {question}\n\nFragments:\n\n{formatted}"
 
 
 def build_user_content(
