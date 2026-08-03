@@ -8,8 +8,8 @@
   </head>
   <body>
     <script>
-      // До загрузки React: включаем тёмный класс сразу, чтобы страница не
-      // мигала белым при старте/F5. Та же логика, что в App.tsx (ключ theme).
+      // Before React loads: apply the dark class right away so the page
+      // does not flash white on start/F5. Same logic as App.tsx (theme key).
       ;(function () {
         try {
           var saved = localStorage.getItem('theme')
@@ -19,7 +19,7 @@
               window.matchMedia('(prefers-color-scheme: dark)').matches)
           if (dark) document.documentElement.classList.add('dark')
         } catch (e) {
-          /* localStorage недоступен — останется светлая, не страшно */
+          /* localStorage unavailable — stays light, no harm */
         }
       })()
     </script>

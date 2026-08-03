@@ -1,6 +1,6 @@
-# Dev-инструменты (НЕ попадают в дистрибутив). Версии приколоты, чтобы CI
-# совпадал с локальным окружением: неприколотый ruff 0.16.0 молча включил
-# новые правила и уронил CI 96 «ошибками» в нетронутых файлах (2026-07-29).
-# Обновлять — осознанным отдельным коммитом вместе с фиксом новых находок.
+# Dev tools (NOT shipped in the distribution). Versions are pinned so CI
+# matches the local environment: unpinned ruff 0.16.0 silently enabled new
+# rules and broke CI with 96 "errors" in untouched files (2026-07-29).
+# Upgrade in a deliberate separate commit together with fixing new findings.
 ruff==0.15.21
 pytest==9.1.1

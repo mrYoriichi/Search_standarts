@@ -1,29 +1,29 @@
-# Прямые зависимости проекта Search_standarts.
-# Развёртывание окружения с нуля:
+# Direct dependencies of Search_standarts.
+# Setting up the environment from scratch:
 #   python -m venv .venv
 #   source .venv/bin/activate
 #   pip install -r requirements.txt
 
-# Пайплайн обработки PDF
-docling==2.93.0          # парсинг PDF в структурированный JSON
-onnxruntime==1.27.0      # движок RapidOCR (OCR чертёжных страниц); rapidocr
-                         # приходит с docling, но БЕЗ движка — без этой строки
-                         # чистая установка падает на первом чертеже
+# PDF processing pipeline
+docling==2.93.0          # PDF parsing into structured JSON
+onnxruntime==1.27.0      # RapidOCR engine (OCR of drawing pages); rapidocr
+                         # ships with docling but WITHOUT the engine — without
+                         # this line a clean install fails on the first drawing
 
-# LLM и токены
+# LLM and tokens
 openai==2.37.0           # OpenAI API (vision + embeddings + generate_answer)
-tiktoken==0.13.0         # подсчёт токенов для лимитов и стоимости
-python-dotenv==1.2.2     # загрузка OPENAI_API_KEY из .env
+tiktoken==0.13.0         # token counting for limits and cost
+python-dotenv==1.2.2     # loading OPENAI_API_KEY from .env
 
 # Web backend
-fastapi==0.136.1         # web-фреймворк (API)
-uvicorn[standard]==0.47.0  # ASGI-сервер для запуска FastAPI
-httpx==0.28.1            # HTTP-клиент для запросов на сервер лицензий (F4+)
+fastapi==0.136.1         # web framework (API)
+uvicorn[standard]==0.47.0  # ASGI server running FastAPI
+httpx==0.28.1            # HTTP client for license server requests (F4+)
 
-# База данных
-sqlalchemy==2.0.49       # ORM: Python-классы ↔ таблицы БД (SQLite сейчас, Postgres потом)
+# Database
+sqlalchemy==2.0.49       # ORM: Python classes <-> DB tables (SQLite now, Postgres later)
 python-multipart==0.0.29
 
-# Поиск
-rank_bm25==0.2.2         # BM25-индекс для лексического поиска по чанкам
-numpy==2.4.6             # матрица эмбеддингов + векторный поиск (cosine = одно умножение)
+# Search
+rank_bm25==0.2.2         # BM25 index for lexical search over chunks
+numpy==2.4.6             # embedding matrix + vector search (cosine = one multiply)

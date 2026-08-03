@@ -2,7 +2,7 @@
 target-version = "py312"
 
 [tool.ruff.lint.per-file-ignores]
-# load_dotenv() должен выполниться ДО импортов, читающих окружение (ленивые OpenAI-клиенты)
+# load_dotenv() must run BEFORE imports that read the env (lazy OpenAI clients)
 "cli/ask.py" = ["E402"]
 "pipeline/describe.py" = ["E402"]
 "pipeline/embed.py" = ["E402"]

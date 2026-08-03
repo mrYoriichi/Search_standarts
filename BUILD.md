@@ -1,87 +1,96 @@
-# Сборка дистрибутива (блок E)
+# Building the distribution (block E)
 
-Как собрать запускаемое приложение для конечного пользователя. Сейчас цель —
-**тестовая сборка на Windows**, чтобы прогнать сценарий «установка с нуля».
+How to build the runnable application for the end user. The current goal is
+a **test build on Windows** to run through the "clean install" scenario.
 
-> `.exe` собирается только на Windows. На macOS PyInstaller соберёт macOS-бинарник,
-> не `.exe`. Поэтому сборку для пилота делаем на Windows-ПК.
+> The `.exe` can only be built on Windows. On macOS PyInstaller produces a
+> macOS binary, not an `.exe`. So the pilot build is done on a Windows PC.
 
-## Что уже готово в коде
+## What the code already provides
 
-- **Данные юзера отделены от бинарника.** `backend/core/paths.py` кладёт `app.db` и
-  `data/` в системный каталог: Windows — `%APPDATA%\Search_standarts\`. Обновление
-  приложения данные не трогает. На чистой машине всё создаётся с нуля → новая
-  регистрация (так и задумано).
-- **FastAPI сам отдаёт фронтенд** (`backend/app.py`), отдельный Vite-сервер не нужен.
-- **Лаунчер** `run_app.py` — поднимает сервер и открывает браузер. Точка входа сборки.
-- **Модели docling — внутри дистрибутива** (вариант 2): `download_models.py` качает их
-  в `docling_models/`, `build.spec` кладёт их в сборку, парсер берёт их оттуда. У юзера
-  ничего не докачивается.
-- **Спека** `build.spec` — one-folder, с подтянутыми тяжёлыми зависимостями.
+- **User data is separated from the binary.** `backend/core/paths.py` puts
+  `app.db` and `data/` into a system directory: on Windows —
+  `%APPDATA%\Search_standarts\`. Updating the app does not touch the data.
+  On a clean machine everything is created from scratch → a new registration
+  (by design).
+- **FastAPI serves the frontend itself** (`backend/app.py`), no separate Vite
+  server needed.
+- **The launcher** `run_app.py` — starts the server and opens the browser.
+  The build's entry point.
+- **Docling models ship inside the distribution** (option 2):
+  `download_models.py` downloads them into `docling_models/`, `build.spec`
+  packs them into the build, the parser reads them from there. Nothing is
+  downloaded on the user's machine.
+- **The spec** `build.spec` — one-folder, with the heavy dependencies pulled in.
 
-## Перед сборкой: версия и вариант
+## Before building: version and variant
 
-В `backend/version.py` проверить ДВЕ константы:
+Check TWO constants in `backend/version.py`:
 
-- `APP_VERSION` — поднять и продублировать в `installer.iss` (`MyAppVersion`).
-- `PUBLIC_BUILD` — вариант сборки: `True` = публичная (fail-open: недоступный
-  сервер лицензий не блокирует работу), `False` = пилотная (офлайн дольше
-  1 дня блокирует UI до связи с сервером).
+- `APP_VERSION` — bump it and duplicate in `installer.iss` (`MyAppVersion`).
+- `PUBLIC_BUILD` — build variant: `True` = public (fail-open: an unreachable
+  license server never blocks the app), `False` = pilot (offline for more
+  than 1 day blocks the UI until the server is reachable).
 
-## Шаги сборки на Windows
+## Build steps on Windows
 
-В корне проекта, в активированном Python-venv:
+From the project root, with the Python venv activated:
 
 ```bat
-REM 1. Зависимости проекта (один раз)
+REM 1. Project dependencies (once)
 python -m venv .venv
 .venv\Scripts\activate
 pip install -r requirements.txt
 pip install pyinstaller
 
-REM 2. Скачать модели docling в docling_models\ (один раз, ~640 МБ, нужен интернет)
+REM 2. Download docling models into docling_models\ (once, ~640 MB, internet needed)
 python download_models.py
 
-REM 3. Собрать фронтенд (нужен Node.js)
+REM 3. Build the frontend (Node.js required)
 cd frontend
 npm install
 npm run build
 cd ..
 
-REM 4. Собрать приложение
+REM 4. Build the application
 pyinstaller build.spec --noconfirm
 ```
 
-Результат: `dist\Search_standarts\` — папка с `Search_standarts.exe` внутри.
-Запуск: двойной клик по `Search_standarts.exe` (откроется окно консоли с логами +
-браузер на `http://127.0.0.1:8000`).
+Result: `dist\Search_standarts\` — a folder with `Search_standarts.exe`
+inside. Run it by double-clicking `Search_standarts.exe` (a console window
+with logs opens + the browser at `http://127.0.0.1:8000`).
 
-## Проверка «с нуля»
+## Clean-install check
 
-1. Запусти `Search_standarts.exe`.
-2. Должна открыться страница регистрации (БД пустая) → зарегистрируйся.
-3. В «Nastavení» вставь свой ключ OpenAI.
-4. В «Knihovna» укажи папку с PDF → «Skenovat» → прогон 1–2 документов.
-5. Задай вопрос → проверь ответ и кликабельный источник.
+1. Run `Search_standarts.exe`.
+2. The registration page must open (empty DB) → register.
+3. In "Nastavení" paste your OpenAI key.
+4. In "Knihovna" point to a folder with PDFs → "Skenovat" → process 1–2
+   documents.
+5. Ask a question → check the answer and the clickable source.
 
-Данные при этом лягут в `%APPDATA%\Search_standarts\`.
+The data ends up in `%APPDATA%\Search_standarts\`.
 
-## Если сборка падает или .exe не стартует
+## If the build fails or the .exe does not start
 
-Самая частая проблема — PyInstaller не дотянул динамические импорты `docling`/`torch`.
+The most common problem — PyInstaller missed dynamic imports of
+`docling`/`torch`.
 
-- **`ModuleNotFoundError: X` при запуске** → добавь `X` (имя пакета) в список
-  `HEAVY_PACKAGES` в `build.spec`, пересобери (шаг 4).
-- **`FileNotFoundError` на файл внутри пакета** → тот же приём: пакет в `HEAVY_PACKAGES`.
-- **Скопируй полный текст ошибки из окна консоли** — по нему точечно правим спеку.
+- **`ModuleNotFoundError: X` at startup** → add `X` (the package name) to
+  `HEAVY_PACKAGES` in `build.spec` and rebuild (step 4).
+- **`FileNotFoundError` for a file inside a package** → same trick: put the
+  package into `HEAVY_PACKAGES`.
+- **Copy the full error text from the console window** — it drives targeted
+  spec fixes.
 
-## Известные нюансы
+## Known caveats
 
-- **Размер.** Папка `dist\Search_standarts\` будет большой (torch + модели docling —
-  ~1 ГБ) — это норма для one-folder с ML.
-- **Консоль.** В тестовой сборке `console=True` (видно логи и ошибки). В финальной
-  поставим `False` (в `build.spec`).
-- **Установщик.** Обёртка в один `Setup.exe` (Inno Setup) — следующий шаг после
-  успешной тестовой сборки.
-- **`DOWNLOAD_URL` на сервере лицензий** — заменить плейсхолдер на ссылку GitHub
-  Release перед раздачей пилоту (см. `PROJECT_STATE.md`, блок E).
+- **Size.** The `dist\Search_standarts\` folder is large (torch + docling
+  models — ~1 GB) — normal for one-folder with ML.
+- **Console.** The test build uses `console=True` (logs and errors visible).
+  The final build sets `False` (in `build.spec`).
+- **Installer.** Wrapping into a single `Setup.exe` (Inno Setup) — the next
+  step after a successful test build.
+- **`DOWNLOAD_URL` on the license server** — replace the placeholder with
+  the GitHub Release link before handing out the pilot (see
+  `PROJECT_STATE.md`, block E).

@@ -1,16 +1,16 @@
-; Inno Setup-скрипт: оборачивает папку сборки PyInstaller в один Search_standarts_Setup.exe.
+; Inno Setup script: wraps the PyInstaller build folder into one Search_standarts_Setup.exe.
 ;
-; Что делает установщик:
-;   - копирует dist\Search_standarts\ в Program Files\Search_standarts
-;   - кладёт ярлыки в меню «Пуск» и (по выбору) на рабочий стол
-;   - добавляет запись в «Установка и удаление программ» (автоматический деинсталлятор)
+; What the installer does:
+;   - copies dist\Search_standarts\ into Program Files\Search_standarts
+;   - puts shortcuts into the Start menu and (optionally) on the desktop
+;   - adds an entry to "Programs and Features" (automatic uninstaller)
 ;
-; Данные пользователя (app.db, проиндексированные PDF) живут в %APPDATA%\Search_standarts,
-; поэтому удаление/переустановка программы их НЕ трогает.
+; User data (app.db, indexed PDFs) lives in %APPDATA%\Search_standarts,
+; so uninstalling/reinstalling the app does NOT touch it.
 ;
-; Сборка установщика (после pyinstaller build.spec):
+; Building the installer (after pyinstaller build.spec):
 ;   "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" installer.iss
-; Результат: installer\Search_standarts_Setup.exe
+; Result: installer\Search_standarts_Setup.exe
 
 #define MyAppName "Search_standarts"
 #define MyAppVersion "0.4.0"
@@ -18,17 +18,17 @@
 #define MyAppExeName "Search_standarts.exe"
 
 [Setup]
-; AppId уникально идентифицирует программу для апдейтов/удаления — НЕ менять между версиями.
+; AppId uniquely identifies the app for updates/uninstall — do NOT change between versions.
 AppId={{8F3A1C7E-2B4D-4E6A-9C1F-7A5B2D8E4F10}
 AppName={#MyAppName}
 AppVersion={#MyAppVersion}
 AppPublisher={#MyAppPublisher}
 DefaultDirName={autopf}\{#MyAppName}
 DefaultGroupName={#MyAppName}
-; Ставим для текущего пользователя (в %LOCALAPPDATA%\Programs) → права администратора НЕ нужны.
-; При lowest {autopf} автоматически = {localappdata}\Programs.
+; Per-user install (into %LOCALAPPDATA%\Programs) -> NO administrator rights needed.
+; With lowest, {autopf} automatically = {localappdata}\Programs.
 PrivilegesRequired=lowest
-; Приложение 64-битное (torch/docling) — ставим в 64-битный Program Files.
+; The app is 64-bit (torch/docling) — install into the 64-bit Program Files.
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
 Compression=lzma2
@@ -36,7 +36,7 @@ SolidCompression=yes
 WizardStyle=modern
 OutputDir=installer
 OutputBaseFilename=Search_standarts_Setup
-; Иконка деинсталлятора — из самого .exe.
+; Uninstaller icon — taken from the .exe itself.
 UninstallDisplayIcon={app}\{#MyAppExeName}
 
 [Languages]
@@ -44,11 +44,11 @@ Name: "czech"; MessagesFile: "compiler:Languages\Czech.isl"
 Name: "english"; MessagesFile: "compiler:Default.isl"
 
 [Tasks]
-; Необязательный ярлык на рабочем столе (галочка в мастере).
+; Optional desktop shortcut (a checkbox in the wizard).
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"; Flags: unchecked
 
 [Files]
-; Вся папка сборки PyInstaller (one-folder): .exe + _internal со всеми зависимостями и моделями.
+; The whole PyInstaller one-folder build: .exe + _internal with all deps and models.
 Source: "dist\{#MyAppName}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 [Icons]
@@ -57,5 +57,5 @@ Name: "{group}\{cm:UninstallProgram,{#MyAppName}}"; Filename: "{uninstallexe}"
 Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Tasks: desktopicon
 
 [Run]
-; Предложить запустить приложение сразу после установки.
+; Offer to launch the app right after installation.
 Filename: "{app}\{#MyAppExeName}"; Description: "{cm:LaunchProgram,{#MyAppName}}"; Flags: nowait postinstall skipifsilent

@@ -1,20 +1,22 @@
-# PyInstaller-спека для сборки Search_standarts в один установочный пакет.
+# PyInstaller spec for packaging Search_standarts into one install bundle.
 #
-# Режим: one-folder (НЕ one-file) — с тяжёлым docling/torch так надёжнее и быстрее
-# стартует. Результат: dist/Search_standarts/ (папка с Search_standarts.exe внутри).
+# Mode: one-folder (NOT one-file) — with heavy docling/torch it is more
+# reliable and starts faster. Result: dist/Search_standarts/ (a folder with
+# Search_standarts.exe inside).
 #
-# Сборка на Windows (из корня проекта, активированный venv):
-#   1) cd frontend && npm install && npm run build && cd ..   # фронт → frontend/dist
+# Build on Windows (from the project root, venv activated):
+#   1) cd frontend && npm install && npm run build && cd ..   # -> frontend/dist
 #   2) pip install pyinstaller
 #   3) pyinstaller build.spec --noconfirm
 #
-# Если при ЗАПУСКЕ .exe вылетает "ModuleNotFoundError: X" или "FileNotFoundError"
-# на файл пакета — добавь имя пакета в HEAVY_PACKAGES ниже и пересобери.
+# If RUNNING the .exe throws "ModuleNotFoundError: X" or "FileNotFoundError"
+# for a package file — add the package name to HEAVY_PACKAGES and rebuild.
 
 from PyInstaller.utils.hooks import collect_all
 
-# Пакеты, которые PyInstaller сам не дотягивает целиком (данные + динамические
-# импорты). collect_all берёт их код, бинарники и data-файлы (модели, конфиги).
+# Packages PyInstaller cannot pull in completely on its own (data files +
+# dynamic imports). collect_all takes their code, binaries and data files
+# (models, configs).
 HEAVY_PACKAGES = [
     "docling",
     "docling_core",
@@ -32,10 +34,11 @@ HEAVY_PACKAGES = [
 ]
 
 datas = [
-    # Собранный фронтенд — FastAPI отдаёт его как статику (см. backend/core/paths.py).
+    # The built frontend — FastAPI serves it as statics (see backend/core/paths.py).
     ("frontend/dist", "frontend/dist"),
-    # Предзагруженные модели docling — парсер берёт их отсюда, докачки нет
-    # (download_models.py → docling_models/, см. backend/core/paths.py).
+    # Pre-downloaded docling models — the parser reads them from here, no
+    # runtime download (download_models.py -> docling_models/, see
+    # backend/core/paths.py).
     ("docling_models", "docling_models"),
 ]
 binaries = []
@@ -45,7 +48,7 @@ for pkg in HEAVY_PACKAGES:
     try:
         pkg_datas, pkg_binaries, pkg_hidden = collect_all(pkg)
     except Exception:
-        # Пакета может не быть в окружении (напр. другой OCR-бэкенд) — пропускаем.
+        # The package may be absent from the env (e.g. another OCR backend) — skip.
         continue
     datas += pkg_datas
     binaries += pkg_binaries
@@ -77,8 +80,8 @@ exe = EXE(
     bootloader_ignore_signals=False,
     strip=False,
     upx=False,
-    # console=False для релиза: у пользователя нет чёрного окна консоли.
-    # Для отладки сборки временно вернуть True (видно логи uvicorn и ошибки).
+    # console=False for release: the user gets no black console window.
+    # For build debugging temporarily set True (uvicorn logs and errors visible).
     console=False,
     disable_windowed_traceback=False,
     argv_emulation=False,

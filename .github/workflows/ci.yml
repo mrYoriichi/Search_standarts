@@ -1,7 +1,7 @@
-# CI: линтер + формат + тесты на каждый push/PR в main.
-# Ставим полный requirements.txt: тесты импортируют parser.py, который тянет
-# docling/torch на уровне модуля. Кеш pip смягчает (первый прогон ~10 мин,
-# дальше быстрее). Ускорение (ленивый импорт docling) — при разборе корня.
+# CI: linter + format + tests on every push/PR to main.
+# The full requirements.txt is installed: tests import parser.py, which pulls
+# docling/torch at module level. The pip cache softens it (first run ~10 min,
+# faster after). Speedup (lazy docling import) — with the root cleanup.
 name: CI
 
 on:
@@ -32,8 +32,8 @@ jobs:
       - name: Tests
         run: pytest
 
-  # Отдельный job: фронтенд-ошибки видны сразу, не ждут 10-минутной установки
-  # python-зависимостей.
+  # A separate job: frontend errors show up right away instead of waiting
+  # for the 10-minute python dependency install.
   frontend:
     runs-on: ubuntu-latest
     defaults:
