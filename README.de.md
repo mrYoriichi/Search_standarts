@@ -80,5 +80,6 @@ Technische Details (Architektur, Start aus dem Quellcode):
 
 ## Lizenz
 
-[PolyForm Noncommercial 1.0.0](LICENSE.md) — für nichtkommerzielle
-Nutzung frei; kommerzielle Rechte verbleiben beim Autor.
+[PolyForm Internal Use 1.0.0](LICENSE.md) — frei für die Nutzung
+innerhalb Ihrer Organisation, auch in kommerziellen Unternehmen; der
+Verkauf der Software oder das Anbieten an Dritte verbleibt beim Autor.

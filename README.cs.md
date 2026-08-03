@@ -77,5 +77,6 @@ Technické detaily (architektura, spuštění ze zdrojáků):
 
 ## Licence
 
-[PolyForm Noncommercial 1.0.0](LICENSE.md) — pro nekomerční použití
-zdarma; komerční práva zůstávají autorovi.
+[PolyForm Internal Use 1.0.0](LICENSE.md) — zdarma pro použití uvnitř
+vaší organizace, včetně komerčních firem; prodej softwaru nebo jeho
+nabízení třetím stranám zůstává autorovi.

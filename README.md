@@ -164,5 +164,6 @@ of the search API — the REST API is agent-ready by design.
 
 ## License
 
-[PolyForm Noncommercial 1.0.0](LICENSE.md) — read, learn from and use it
-for any noncommercial purpose; commercial rights stay with the author.
+[PolyForm Internal Use 1.0.0](LICENSE.md) — free to use inside your
+organization, commercial companies included; selling the software or
+offering it to third parties as a product/service stays with the author.
