@@ -53,6 +53,7 @@ def db():
     from sqlalchemy.orm import sessionmaker
 
     from backend.core.database import Base
+    from backend.modules.settings import models  # noqa: F401 — register Setting
 
     engine = create_engine("sqlite://")
     Base.metadata.create_all(engine)
