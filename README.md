@@ -1,169 +1,130 @@
-# MAI Assistant
+# MAI Assistant — search your construction database
 
 [![CI](https://github.com/mrYoriichi/Search_standarts/actions/workflows/ci.yml/badge.svg)](https://github.com/mrYoriichi/Search_standarts/actions/workflows/ci.yml)
 
 **English** | [Čeština](README.cs.md) | [Deutsch](README.de.md)
 
-Ask questions about construction standards in plain language — get a short
-answer with a clickable reference to the exact document, section and page.
-No more scrolling through 300-page PDFs.
+Build a local database out of your own construction documents and search it
+from one place. Documents, projects, drawings — scanned or not, it makes no
+difference.
 
-Local-first desktop app for civil engineers working with Czech and European
-norms (ČSN, Eurocode) and their own project archives. Built by a bridge
-engineer; piloted daily by a real engineering office.
-
-**Your documents never leave your computer.** The index and the database
-live on your machine; there is no cloud storage and nobody — including the
-author — ever sees your files or questions. The only outbound traffic is
-OpenAI API calls made with your own key.
+Ask a question in plain language and get a short answer with a link to the
+exact page of the exact document. No more remembering which file it was in
+and scrolling through hundreds of pages. The search works by keywords and by
+meaning, so you can ask the way you would ask a colleague, without guessing
+the wording used in the document.
 
 ![Search page](docs/screenshots/search.png)
 
-## Features
+## How this differs from plain ChatGPT
 
-- **Ask in any language** — the answer cites the source inline and links to
-  the exact page in the original PDF.
-- **Hybrid search** — BM25 (exact codes like "ČSN 73 6201") + OpenAI
-  embeddings (meaning), merged by reciprocal rank fusion.
-- **Understands drawings** — a per-page router sends prose through
-  [Docling](https://github.com/docling-project/docling) and drawings
-  through OCR + a vision-LLM description of the sheet.
-- **Project archive** — search your finished projects (reports,
-  calculations, drawing sets) alongside the norms.
-- **Shared team libraries** — one colleague indexes a network folder,
-  everyone else adopts the ready index for free; a lock file coordinates
-  machines.
-- **Strong search** — attaches page snapshots to the answering LLM for
-  hard questions about drawings and tables.
-- **3 interface languages** (EN/CS/DE) + separate answer language.
-- **Local-first** — index, database and documents stay on your machine.
+Upload 100 documents to ChatGPT and it has to read all of them again for
+every question — slow and expensive, and a whole library of documents does
+not fit there in the first place.
 
-![Library page](docs/screenshots/library.png)
-![Project archive](docs/screenshots/archive.png)
+Here the search through your documents is done by code, and ChatGPT only
+phrases the answer from the fragments that were found. That is what makes it
+fast, cheap and precise about its source.
 
-## OpenAI API key
+## Document formats
 
-The app runs on your own OpenAI key — you pay OpenAI directly, the app
-adds nothing on top.
+The current version works with PDF. Whatever is inside — text, scans,
+schemes, tables, drawings, title blocks, handwritten notes — is read,
+remembered by the assistant and used in the search. Scanned pages that
+contain no actual text are recognised automatically. For drawings and schemes
+the AI additionally writes a description — what is drawn, which object, which
+design stage — and that description is what later helps to find the right
+sheet. Handwriting is read as far as the AI can make it out.
 
-1. Create an account at [platform.openai.com](https://platform.openai.com).
-2. **Billing → Add credits** — prepay a small amount (minimum $5 goes a
-   long way).
-3. **API keys → Create new secret key** — copy the `sk-…` key.
-4. Paste it in the app under **Settings → OpenAI key**. It is stored only
-   on your computer.
+## Privacy
 
-Measured costs with the default model:
+The assistant is installed and runs locally on your computer, working with
+the documents on your computer. The database and everything the assistant has
+remembered from your documents stay with you; there is no cloud storage.
+
+Answers are phrased by ChatGPT (the OpenAI API). Your documents are split
+into small fragments, and only the few fragments relevant to your question are
+sent — directly to OpenAI on your own key, with no server of the author's and
+no third-party service in between.
+
+Free registration is required, only so that the author can see that the app
+is actually being used. The author sees none of your documents, questions or
+file names: the app sends anonymous statistics — how often something was run,
+how much time and money it took, which errors occurred.
+
+## Cost
+
+The app itself is free and the author earns nothing from it. You pay OpenAI
+only, and you pay them directly: once for processing your documents, then
+cents for questions.
 
 | Action | Cost |
 |---|---|
-| Index a text norm | ~$0.04 per page with schemes, less for plain text |
-| Index a drawing sheet | < $0.01 |
+| Process a page of a document | ~$0.04 with schemes and tables, less for plain text |
+| Process a drawing sheet | < $0.01 |
 | One question | < $0.01 |
 | One strong-search question | ~$0.04 |
 
+A 300-page document is a one-off of a few dollars; a working day of questions
+costs cents.
+
 ## How it works
 
-```
-                    ┌─────────────────────────────────────────────┐
- PDF (norm/project) │            indexing pipeline                │
- ───────────────────▶  parse ──▶ describe ──▶ chunk ──▶ embed     │
-                    │  (Docling,  (vision LLM  (by       (OpenAI  │
-                    │   OCR,       for schemes  headings) embed-  │
-                    │   page       & drawings)           dings)   │
-                    │   router)                                   │
-                    └──────────────────────────┬──────────────────┘
-                                               ▼
-                              <folder>/.search_index/{doc}/
-                              chunks.json + embeddings.json
-                                               │
-                    ┌──────────────────────────▼──────────────────┐
- question ──────────▶  BM25 + vector search (NumPy, in-RAM cache) │
-                    │  → RRF merge → top chunks → answer LLM      │
-                    │  → answer + cited sources (doc/section/page)│
-                    └─────────────────────────────────────────────┘
-```
+**1. You point at a folder** — or several: your own documents, whole
+projects, or a company network folder. The folder is processed and a copy the
+assistant can understand is created next to it — that is what it searches.
+Your files are only read: nothing is modified and nothing is copied away.
 
-Design decisions worth noting:
+![Library page](docs/screenshots/library.png)
 
-- **Indexes live next to the documents** (hidden `.search_index/`
-  subfolder) — that is what turns a plain network folder into a shared
-  library. User files are never modified.
-- **Search is a NumPy matrix scan** over normalized embeddings in RAM
-  (~10 ms for tens of thousands of chunks) — no vector DB needed at this
-  scale. BM25 is rebuilt per query from cached tokens so IDF respects the
-  document filter.
-- **One LLM call per answer** with structured output: the model returns
-  only the ids of chunks it used; source metadata is assembled from our
-  own data.
-- **Money-safety** — scanning is free and separate from paid indexing;
-  vision progress is checkpointed per page so a crash never re-bills.
+Finished projects live on their own tab: one attached folder = one project,
+with its reports, calculations and drawing sets.
 
-## Tech stack
+![Project archive](docs/screenshots/archive.png)
 
-| Layer | Tech |
-|---|---|
-| Backend | Python 3.12, FastAPI, SQLAlchemy 2.0, SQLite (WAL) |
-| PDF processing | Docling, pypdfium2, RapidOCR (onnxruntime) |
-| Search | rank-bm25, OpenAI `text-embedding-3-large`, NumPy |
-| LLM | OpenAI API (user's own key), Structured Outputs |
-| Frontend | React, TypeScript, Vite, Tailwind, shadcn/ui |
-| Packaging | PyInstaller + Inno Setup (Windows) |
-| Quality | pytest (194 tests), ruff, ESLint, GitHub Actions CI |
+If the folder is a shared one, only the first person pays for the processing
+— everyone else attaches the same folder and picks up the finished result for
+free.
 
-## Repository layout
+**2. You choose where to search** — the whole database or specific documents.
+And how: by keywords, by meaning, or both. There is also strong search, where
+the assistant looks at the pages themselves and can tell what is drawn on a
+sheet or which dimension a table gives.
 
-```
-pipeline/        4 indexing stages: parse → describe → chunk → embed
-search/          library loading, hybrid search, query expansion, answering
-indexing/        BM25 and embedding index construction
-pdf_processing/  page router (prose vs drawing), parser, OCR, vision prompts
-backend/         FastAPI app: core (cache, locks, limits) + feature modules
-frontend/        React SPA (no router, no state library — deliberately small)
-cli/             run the pipeline and ask questions from a terminal
-tests/           pytest suite (in-memory SQLite, mocked LLM calls)
-```
+**3. You get a short answer** and a link to the source — straight to the page
+the answer came from. Ask in any language; the answer language is chosen
+separately from the interface language (English, Czech, German).
 
-## Running from source
+## Getting started
 
-Requires Python 3.12+, Node.js and an OpenAI API key.
+1. **Download the installer** for Windows — it needs no administrator rights.
+   *(The public build is in preparation and will appear on the
+   [Releases](https://github.com/mrYoriichi/Search_standarts/releases) page.)*
+2. **Register** on the first launch — email and password, free, no
+   subscription.
+3. **Get an OpenAI key:** create an account at
+   [platform.openai.com](https://platform.openai.com) → **Billing → Add
+   credits** ($5 goes a long way) → **API keys → Create new secret key** →
+   paste the key into the app under **Settings**. It is stored only on your
+   computer.
+4. **Attach a folder** with your documents, press **Scan**, then **Index**.
 
-```bash
-python -m venv .venv && source .venv/bin/activate
-pip install -r requirements.txt -r requirements-dev.txt
-cd frontend && npm install && npm run build && cd ..
-uvicorn backend.app:app        # → http://127.0.0.1:8000
-```
+The public version processes up to 3000 pages — a limit set by the memory of
+your computer.
 
-First launch: register → paste your OpenAI key (Settings) → attach a PDF
-folder → **Scan** (free) → **Index** (paid). Windows installer build:
+## About the author
+
+The app was built by a bridge engineer for design engineers, out of a daily
+working need. The public Windows version is free.
+
+## For developers
+
+Architecture, engineering decisions, measured numbers and how to run it from
+source: **[ARCHITECTURE.md](ARCHITECTURE.md)**. Windows build instructions:
 [BUILD.md](BUILD.md).
-
-```bash
-python -m pytest -q                              # tests
-ruff check . && ruff format --check .            # lint
-cd frontend && npx eslint src --max-warnings 0   # frontend lint
-```
-
-## Privacy and telemetry
-
-- Documents, index and database never leave your machine. Text fragments
-  and page images go to the **OpenAI API** only, billed to your key.
-- Free registration is required; the app sends **anonymous telemetry**
-  (event counts, timings, costs, error types — never question texts or
-  file names).
-- Fail-open: an unreachable license server never blocks the app.
-- The public build indexes up to **3000 pages** (RAM-driven safety limit).
-
-## Status
-
-Piloted in a bridge-engineering office (Czech Republic) on real
-ČSN/Eurocode norms and finished bridge projects. Public free Windows
-build in preparation. Next: retrieval-quality eval, an MCP server on top
-of the search API — the REST API is agent-ready by design.
 
 ## License
 
 [PolyForm Internal Use 1.0.0](LICENSE.md) — free to use inside your
-organization, commercial companies included; selling the software or
-offering it to third parties as a product/service stays with the author.
+organization, commercial companies included; selling the software or offering
+it to third parties as a product or service stays with the author.
