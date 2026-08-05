@@ -95,7 +95,7 @@ sheet or which dimension a table gives.
 the answer came from. Ask in any language; the answer language is chosen
 separately from the interface language (English, Czech, German).
 
-**How much fits.** The public version holds up to 3000 pages in total — your
+**How much fits.** The public version holds up to 5000 pages in total — your
 library and your project archive together. Everything the assistant has
 remembered is kept in memory so that the search stays instant, and that is
 what sets the limit. Documents above it stay in the list, marked, and are
