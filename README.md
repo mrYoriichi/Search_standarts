@@ -95,6 +95,12 @@ sheet or which dimension a table gives.
 the answer came from. Ask in any language; the answer language is chosen
 separately from the interface language (English, Czech, German).
 
+**How much fits.** The public version holds up to 3000 pages in total — your
+library and your project archive together. Everything the assistant has
+remembered is kept in memory so that the search stays instant, and that is
+what sets the limit. Documents above it stay in the list, marked, and are
+simply not searched.
+
 ## Getting started
 
 1. **Download the installer** for Windows — it needs no administrator rights.
@@ -108,9 +114,6 @@ separately from the interface language (English, Czech, German).
    paste the key into the app under **Settings**. It is stored only on your
    computer.
 4. **Attach a folder** with your documents, press **Scan**, then **Index**.
-
-The public version processes up to 3000 pages — a limit set by the memory of
-your computer.
 
 ## About the author
 
