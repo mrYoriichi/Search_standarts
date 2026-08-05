@@ -1,9 +1,10 @@
-"""Public-build volume limit: 3000 pages (decision 2026-08-02).
+"""Public-build volume limit: 5000 pages (raised from 3000 on 2026-08-05).
 
 The reason is RAM: the search cache loads ALL ready indexes at once
-(measured 2026-08-02: ~140 KB peak per chunk while loading; 3000 pages ≈
-~630 MB peak — safe even on an 8 GB laptop). It also protects the user's
-wallet from accidentally indexing hundreds of pages (vision is paid).
+(measured 2026-08-02: ~140 KB peak per chunk while loading; 5000 pages ≈
+7500 chunks ≈ ~1.05 GB peak, ~570 MB steady — comfortable on 16 GB and
+still workable on 8 GB). It also protects the user's wallet from
+accidentally indexing hundreds of pages (vision is paid).
 
 Counted are pages of both tables (library + archive) in ready and
 processing states, INCLUDING adopted indexes: RAM does not care who paid.
@@ -17,7 +18,7 @@ from backend.modules.documents.models import Document
 from backend.modules.projects.models import ProjectDocument
 from backend.version import PUBLIC_BUILD
 
-PAGE_LIMIT = 3000
+PAGE_LIMIT = 5000
 
 
 def pages_in_use(db: Session) -> int:

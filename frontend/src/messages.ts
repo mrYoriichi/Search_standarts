@@ -168,13 +168,13 @@ const cs = {
     'Nalezeno {n} nových PDF — zkontrolujte seznam a spusťte tlačítkem „Indexovat“.',
   'lib.scanAdopted': 'Převzato {n} hotových indexů ze složky (bez indexace, zdarma).',
   'lib.scanLimit':
-    '⚠️ {n} dokumentů se nevešlo do limitu veřejné verze (3000 stran) — nebyly převzaty.',
+    '⚠️ {n} dokumentů se nevešlo do limitu veřejné verze (5000 stran) — nebyly převzaty.',
   'lib.scanDuplicates':
     '⚠️ Přeskočeny soubory se stejnými názvy — přejmenujte je, aby je bylo možné rozlišit:',
   'lib.lockedMsg':
     'Indexaci právě provádí jiný počítač — tyto složky se přeskočily:\n\n{list}\n\nZkuste to znovu později.',
   'lib.overLimitMsg':
-    '{n} dokumentů se nevešlo do limitu veřejné verze (3000 stran) — nebyly indexovány. Uvolněte místo smazáním nepotřebných dokumentů.',
+    '{n} dokumentů se nevešlo do limitu veřejné verze (5000 stran) — nebyly indexovány. Uvolněte místo smazáním nepotřebných dokumentů.',
   'lib.removePathConfirm':
     'Odpojit složku od knihovny?\n{path}\n\nIndexy na disku zůstanou.',
   'lib.folders': 'Složky knihovny',
@@ -386,13 +386,13 @@ const en: Record<MsgKey, string> = {
     'Found {n} new PDFs — review the list and start with the “Index” button.',
   'lib.scanAdopted': 'Adopted {n} ready-made indexes from the folder (no indexing, free).',
   'lib.scanLimit':
-    '⚠️ {n} documents did not fit into the public version limit (3000 pages) — they were not adopted.',
+    '⚠️ {n} documents did not fit into the public version limit (5000 pages) — they were not adopted.',
   'lib.scanDuplicates':
     '⚠️ Files with identical names were skipped — rename them so they can be told apart:',
   'lib.lockedMsg':
     'Another computer is indexing right now — these folders were skipped:\n\n{list}\n\nTry again later.',
   'lib.overLimitMsg':
-    '{n} documents did not fit into the public version limit (3000 pages) — they were not indexed. Free up space by deleting documents you don’t need.',
+    '{n} documents did not fit into the public version limit (5000 pages) — they were not indexed. Free up space by deleting documents you don’t need.',
   'lib.removePathConfirm':
     'Detach the folder from the library?\n{path}\n\nIndexes stay on disk.',
   'lib.folders': 'Library folders',
@@ -600,13 +600,13 @@ const de: Record<MsgKey, string> = {
     '{n} neue PDFs gefunden — prüfen Sie die Liste und starten Sie mit „Indexieren“.',
   'lib.scanAdopted': '{n} fertige Indexe aus dem Ordner übernommen (ohne Indexierung, kostenlos).',
   'lib.scanLimit':
-    '⚠️ {n} Dokumente passten nicht in das Limit der öffentlichen Version (3000 Seiten) — sie wurden nicht übernommen.',
+    '⚠️ {n} Dokumente passten nicht in das Limit der öffentlichen Version (5000 Seiten) — sie wurden nicht übernommen.',
   'lib.scanDuplicates':
     '⚠️ Dateien mit gleichen Namen wurden übersprungen — benennen Sie sie um, damit sie unterscheidbar sind:',
   'lib.lockedMsg':
     'Ein anderer Computer indexiert gerade — diese Ordner wurden übersprungen:\n\n{list}\n\nVersuchen Sie es später erneut.',
   'lib.overLimitMsg':
-    '{n} Dokumente passten nicht in das Limit der öffentlichen Version (3000 Seiten) — sie wurden nicht indexiert. Schaffen Sie Platz, indem Sie nicht benötigte Dokumente löschen.',
+    '{n} Dokumente passten nicht in das Limit der öffentlichen Version (5000 Seiten) — sie wurden nicht indexiert. Schaffen Sie Platz, indem Sie nicht benötigte Dokumente löschen.',
   'lib.removePathConfirm':
     'Ordner von der Bibliothek trennen?\n{path}\n\nIndexe bleiben auf der Festplatte.',
   'lib.folders': 'Bibliotheksordner',

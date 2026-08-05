@@ -1,4 +1,4 @@
-"""Page limit of the public build (decision 2026-08-02, 3000 pages).
+"""Page limit of the public build (decision 2026-08-02, 5000 pages).
 
 The search cache loads ALL ready indexes fully into RAM, so the limit must
 cut both ways documents can appear: paid indexing AND free adoption —
