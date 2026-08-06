@@ -1,6 +1,7 @@
 """Business logic of the documents module."""
 
 import json
+import re
 import shutil
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
@@ -13,6 +14,11 @@ from backend.core.ui_messages import msg
 from backend.modules.documents.models import Document
 from backend.modules.documents.pipeline import run_pipeline_locked
 from common.jsonio import save_json_atomic
+
+
+# A slug is always `make_document_id` output, optionally prefixed with a
+# folder_id (uuid4 hex) — both are [a-z0-9_] only.
+_SAFE_SLUG_RE = re.compile(r"^[a-z0-9_]+$")
 
 
 class DocumentBusyError(Exception):
@@ -28,6 +34,18 @@ def _ensure_not_processing(doc: Document) -> None:
     """Raise DocumentBusyError when the pipeline is working on the document."""
     if doc.status == "processing":
         raise DocumentBusyError(msg("lib.doc_busy", slug=doc.slug))
+
+
+def _ensure_safe_slug(slug: str) -> None:
+    """Reject a slug that would work as a path when glued to a folder.
+
+    The client sends new_slug for relink and it ends up in the DB, from
+    where delete/reindex build their rmtree target. `..`, a separator or
+    an absolute path would take those operations outside .search_index —
+    decision #16 says the user's files are never touched.
+    """
+    if not _SAFE_SLUG_RE.match(slug):
+        raise ValueError(f"Invalid slug: {slug!r}")
 
 
 def _artifact_dirs(slug: str, library_path: Path | None) -> list[Path]:
@@ -181,6 +199,7 @@ def relink_document(
     """
     if old_slug == new_slug:
         raise ValueError("old_slug and new_slug are identical")
+    _ensure_safe_slug(new_slug)
 
     doc = db.scalar(select(Document).where(Document.slug == old_slug))
     if doc is None:

@@ -61,11 +61,10 @@ def test_relink_processing_refused(db):
         service.relink_document(db, "stare", "nove")
 
 
-def _make_locked_library(tmp_path, filename_slug: str, lock_age: float = 0.0):
-    """A library folder with meta, document artifacts and a FOREIGN lock.
+def _make_library(tmp_path, filename_slug: str):
+    """A library folder with meta and one document's artifacts.
 
-    Returns (folder, the document's scoped slug). lock_age — lock age in
-    seconds (0 = fresh, another machine is indexing right now).
+    Returns (folder, the document's scoped slug).
     """
     library = tmp_path / "lib"
     library.mkdir()
@@ -75,6 +74,16 @@ def _make_locked_library(tmp_path, filename_slug: str, lock_age: float = 0.0):
     artifacts = index_store.doc_dir(library, slug)
     artifacts.mkdir(parents=True)
     (artifacts / "chunks.json").write_text("[]", encoding="utf-8")
+    return library, slug
+
+
+def _make_locked_library(tmp_path, filename_slug: str, lock_age: float = 0.0):
+    """Same, plus a FOREIGN lock.
+
+    lock_age — lock age in seconds (0 = fresh, another machine is
+    indexing right now).
+    """
+    library, slug = _make_library(tmp_path, filename_slug)
     lock_path = index_store.index_root(library) / index_lock.LOCK_FILENAME
     lock_path.write_text(
         json.dumps({"owner": "PC-KOLEGA", "ts": time.time() - lock_age}),
@@ -108,6 +117,42 @@ def test_relink_refused_when_foreign_lock(db, tmp_path):
     # Nothing renamed, the slug in the DB is unchanged.
     assert index_store.doc_dir(library, old_slug).exists()
     assert db.scalar(select(Document).where(Document.slug == old_slug)) is not None
+
+
+@pytest.mark.parametrize(
+    "bad_slug",
+    ["../escaped", "..", "sub/child", "/tmp/abs", "back\\slash", "dot.name", ""],
+)
+def test_relink_rejects_unsafe_slug(db, tmp_path, bad_slug):
+    """new_slug comes from the client and must never work as a path.
+
+    Audit 2026-08-06 #1: `old_dir.parent / new_slug` accepted `../..` and
+    absolute paths, so the paid index left .search_index — and the
+    poisoned slug in the DB then aimed the rmtree of delete/reindex at a
+    folder outside the library (decision #16: user files are never touched).
+    """
+    library, old_slug = _make_library(tmp_path, "stare")
+    _add_doc(db, old_slug, "ready")
+
+    with pytest.raises(ValueError):
+        service.relink_document(db, old_slug, bad_slug, paths=[library])
+
+    # Nothing moved, the slug in the DB is unchanged.
+    assert index_store.doc_dir(library, old_slug).exists()
+    assert db.scalar(select(Document).where(Document.slug == old_slug)) is not None
+
+
+def test_relink_valid_slug_works(db, tmp_path):
+    """The guard must not break the normal rename flow."""
+    library, old_slug = _make_library(tmp_path, "stare")
+    _add_doc(db, old_slug, "ready")
+    new_slug = index_store.scoped_slug(index_store.folder_id_of(old_slug), "nove")
+
+    service.relink_document(db, old_slug, new_slug, paths=[library])
+
+    assert index_store.doc_dir(library, new_slug).exists()
+    assert not index_store.doc_dir(library, old_slug).exists()
+    assert db.scalar(select(Document).where(Document.slug == new_slug)) is not None
 
 
 def test_delete_works_when_lock_stale(db, tmp_path):
