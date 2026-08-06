@@ -41,6 +41,10 @@ class PendingReport(Base):
     __tablename__ = "pending_reports"
 
     id: Mapped[int] = mapped_column(primary_key=True)
+    # Who clicked "Report". The token is attached at send time, so without
+    # this an unsent report would go out under whoever logs in next.
+    # NULL — a row queued before this column existed.
+    username: Mapped[str | None] = mapped_column(String, nullable=True)
     question: Mapped[str] = mapped_column(String)
     answer: Mapped[str] = mapped_column(String)
     answer_model: Mapped[str | None] = mapped_column(String, nullable=True)

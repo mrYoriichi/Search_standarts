@@ -73,7 +73,10 @@ def ensure_columns() -> None:
     """
     # {table: {column: type}} — the target shape; whatever is missing gets added.
     wanted: dict[str, dict[str, str]] = {
-        "pending_reports": {"chunks": "JSON"},  # F7: text of the used fragments
+        "pending_reports": {
+            "chunks": "JSON",  # F7: text of the used fragments
+            "username": "VARCHAR",  # author of the report (NULL on old rows)
+        },
         "documents": {
             # public-build page limit (NULL on old rows)
             "page_count": "INTEGER",

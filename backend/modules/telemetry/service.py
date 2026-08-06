@@ -66,8 +66,10 @@ def track_report(
     try:
         db = SessionLocal()
         try:
+            session = db.get(AuthSession, 1)
             db.add(
                 PendingReport(
+                    username=session.username if session else None,
                     question=question,
                     answer=answer,
                     answer_model=answer_model,
@@ -157,8 +159,18 @@ def send_pending_report_batch() -> int:
         if session is None:
             return 0
 
+        # Only this user's reports: the token is attached here, so someone
+        # else's queued report would be filed under the current account.
+        # A foreign row waits for its author to log back in; a row with no
+        # author (queued before the column existed) goes out as before.
         rows = db.scalars(
-            select(PendingReport).order_by(PendingReport.id).limit(BATCH_LIMIT)
+            select(PendingReport)
+            .where(
+                (PendingReport.username == session.username)
+                | (PendingReport.username.is_(None))
+            )
+            .order_by(PendingReport.id)
+            .limit(BATCH_LIMIT)
         ).all()
         if not rows:
             return 0
