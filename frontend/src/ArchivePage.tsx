@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { IndexingSettingsButton } from './IndexingSettings'
 import { t, useI18n } from './i18n'
+import { fetchPagesTotal } from './lib/stats'
 
 // The user's project archive: each connected folder = one project (all PDFs
 // inside, subfolders included). "Skenovat", documents by project with statuses.
@@ -206,6 +207,8 @@ export default function ArchivePage() {
   // Documents that just turned ready — for the green "hotovo" badge.
   const [freshlyReady, setFreshlyReady] = useState<Set<string>>(new Set())
   const prevStatusesRef = useRef<Map<string, string>>(new Map())
+  // Ready pages of both pools (the whole pool loads into RAM on a question).
+  const [pagesTotal, setPagesTotal] = useState<number | null>(null)
 
   // useCallback — a stable reference so effects can honestly list loadAll
   // in dependencies without restarting on every render.
@@ -249,6 +252,8 @@ export default function ArchivePage() {
         const data = await res.json().catch(() => ({}))
         setError(data.detail ?? `Chyba ${res.status}`)
       }
+      const pages = await fetchPagesTotal()
+      if (pages !== null) setPagesTotal(pages)
     } catch (e) {
       setError(e instanceof Error ? e.message : t('arch.loadFailed'))
     } finally {
@@ -373,10 +378,6 @@ export default function ArchivePage() {
         const data = await res.json().catch(() => ({}))
         alert(data.detail ?? t('common.errorStatus', { status: res.status }))
         return
-      }
-      const data: { started: number; over_limit?: number } = await res.json()
-      if (data.over_limit && data.over_limit > 0) {
-        alert(t('lib.overLimitMsg', { n: data.over_limit }))
       }
       await loadAll()
     } catch {
@@ -511,6 +512,11 @@ export default function ArchivePage() {
                   </h2>
                   {paths.length > 0 && (
                     <div className="flex items-center gap-2">
+                      {pagesTotal !== null && pagesTotal > 0 && (
+                        <span className="text-xs text-muted-foreground">
+                          {t('lib.pagesTotal', { n: pagesTotal })}
+                        </span>
+                      )}
                       {pendingCount > 0 && (
                         <Button
                           onClick={startIndexing}

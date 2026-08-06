@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { IndexingSettingsButton } from './IndexingSettings'
 import { t, useI18n } from './i18n'
+import { fetchPagesTotal } from './lib/stats'
 
 
 type LibraryFile = {
@@ -394,6 +395,8 @@ function LibraryPage() {
   // set resets -> the badges disappear.
   const [freshlyReady, setFreshlyReady] = useState<Set<string>>(new Set())
   const prevStatusesRef = useRef<Map<string, string | null>>(new Map())
+  // Ready pages of both pools (the whole pool loads into RAM on a question).
+  const [pagesTotal, setPagesTotal] = useState<number | null>(null)
 
   async function loadAll() {
     setLoading(true)
@@ -414,6 +417,8 @@ function LibraryPage() {
       } else {
         setLibrary(null)
       }
+      const pages = await fetchPagesTotal()
+      if (pages !== null) setPagesTotal(pages)
     } catch (e) {
       setError(e instanceof Error ? e.message : t('lib.loadFailed'))
     } finally {
@@ -430,6 +435,9 @@ function LibraryPage() {
     } catch {
       // Network errors in background polling are ignored — retry next tick.
     }
+    // The counter grows as documents turn ready.
+    const pages = await fetchPagesTotal()
+    if (pages !== null) setPagesTotal(pages)
   }
 
   useEffect(() => {
@@ -492,7 +500,6 @@ function LibraryPage() {
         already_indexed: number
         adopted?: number
         duplicates?: string[]
-        limit_skipped?: number
       } = await res.json()
       let msg =
         data.created === 0
@@ -500,9 +507,6 @@ function LibraryPage() {
           : t('lib.scanFound', { n: data.created })
       if (data.adopted && data.adopted > 0) {
         msg += '\n\n' + t('lib.scanAdopted', { n: data.adopted })
-      }
-      if (data.limit_skipped && data.limit_skipped > 0) {
-        msg += '\n\n' + t('lib.scanLimit', { n: data.limit_skipped })
       }
       if (data.duplicates && data.duplicates.length > 0) {
         msg += '\n\n' + t('lib.scanDuplicates') + '\n' + data.duplicates.join('\n')
@@ -525,13 +529,9 @@ function LibraryPage() {
         alert(data.detail ?? t('common.errorStatus', { status: res.status }))
         return
       }
-      const data: { started: number; locked?: string[]; over_limit?: number } =
-        await res.json()
+      const data: { started: number; locked?: string[] } = await res.json()
       if (data.locked && data.locked.length > 0) {
         alert(t('lib.lockedMsg', { list: data.locked.join('\n') }))
-      }
-      if (data.over_limit && data.over_limit > 0) {
-        alert(t('lib.overLimitMsg', { n: data.over_limit }))
       }
       await loadAll()
     } catch {
@@ -755,6 +755,11 @@ function LibraryPage() {
                   {t('lib.contents')}
                 </h2>
                 <div className="flex items-center gap-2">
+                  {pagesTotal !== null && pagesTotal > 0 && (
+                    <span className="text-xs text-muted-foreground">
+                      {t('lib.pagesTotal', { n: pagesTotal })}
+                    </span>
+                  )}
                   {pendingCount > 0 && (
                     <Button
                       onClick={startIndexing}
