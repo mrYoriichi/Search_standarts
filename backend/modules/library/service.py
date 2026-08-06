@@ -206,6 +206,26 @@ def find_pdf_by_slug(paths: list[Path], slug: str) -> Path | None:
     return None
 
 
+def _pdf_by_stored_path(db: Session, paths: list[Path], slug: str) -> Path | None:
+    """The document's PDF by the path the scan recorded for it.
+
+    find_pdf_by_slug returns the FIRST file whose name gives this slug, so
+    same-named PDFs in two subfolders make it open the wrong one. The exact
+    path is already in the DB. It goes stale after a relink (relative_path
+    is not updated until the next scan) — hence the existence check, with
+    the search as fallback.
+    """
+    doc = db.scalar(select(Document).where(Document.slug == slug))
+    if doc is None or not doc.relative_path:
+        return None
+    folder = index_store.resolve_folder(paths, slug)
+    for lib in [folder] if folder is not None else paths:
+        pdf_path = lib / doc.relative_path
+        if pdf_path.exists():
+            return pdf_path
+    return None
+
+
 def resolve_pdf_by_slug(db: Session, slug: str) -> Path | None:
     """Path to a document's PDF by slug — across ALL pools (library + archive).
 
@@ -216,9 +236,11 @@ def resolve_pdf_by_slug(db: Session, slug: str) -> Path | None:
     from backend.modules.projects.models import ProjectDocument
     from backend.modules.settings import service as settings_service
 
-    library_paths = settings_service.get_library_paths(db)
+    library_paths = [Path(p) for p in settings_service.get_library_paths(db)]
     if library_paths:
-        pdf_path = find_pdf_by_slug([Path(p) for p in library_paths], slug)
+        pdf_path = _pdf_by_stored_path(db, library_paths, slug) or find_pdf_by_slug(
+            library_paths, slug
+        )
         if pdf_path is not None:
             return pdf_path
 
