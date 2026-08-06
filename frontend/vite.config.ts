@@ -1,5 +1,6 @@
 import { fileURLToPath, URL } from 'node:url'
-import { defineConfig } from 'vite'
+// vitest/config, not vite: the same defineConfig plus the `test` section.
+import { defineConfig } from 'vitest/config'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 
@@ -17,5 +18,13 @@ export default defineConfig({
       // In prod FastAPI serves the frontend statics itself, no CORS needed.
       '/api': 'http://127.0.0.1:8000',
     },
+  },
+  test: {
+    // Components touch the DOM and localStorage — a browser-like environment
+    // is required; setup.ts adds the jest-dom matchers and resets fetch.
+    environment: 'jsdom',
+    setupFiles: './src/test/setup.ts',
+    globals: true,
+    css: false,
   },
 })

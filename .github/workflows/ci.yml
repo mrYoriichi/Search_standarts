@@ -54,5 +54,8 @@ jobs:
       - name: ESLint
         run: npx eslint . --max-warnings 0
 
+      - name: Tests
+        run: npm test
+
       - name: Build
         run: npm run build
