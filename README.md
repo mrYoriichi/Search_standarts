@@ -52,6 +52,11 @@ is actually being used. The author sees none of your documents, questions or
 file names: the app sends anonymous statistics — how often something was run,
 how much time and money it took, which errors occurred.
 
+Your OpenAI key is stored on your computer in the app's data file, without
+encryption; the only protection is your operating-system account. Anyone who
+can sign in as you, or copy that file, can read the key. If that happens,
+delete the key in your OpenAI account and create a new one.
+
 ## Cost
 
 The app itself is free and the author earns nothing from it. You pay OpenAI

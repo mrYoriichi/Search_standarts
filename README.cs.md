@@ -51,6 +51,11 @@ skutečně používá. Autor nevidí ani vaše dokumenty, ani otázky, ani názv
 souborů: aplikace odesílá anonymní statistiku — jak často se co spustilo,
 kolik to zabralo času a peněz, jaké nastaly chyby.
 
+Váš klíč OpenAI je uložený ve vašem počítači v datovém souboru aplikace, bez
+šifrování; jedinou ochranou je účet ve vašem operačním systému. Kdo se dokáže
+přihlásit jako vy nebo ten soubor zkopírovat, klíč si přečte. Pokud se to
+stane, klíč ve svém účtu OpenAI zrušte a vytvořte nový.
+
 ## Cena
 
 Samotná aplikace je zdarma a autor z ní nic nemá. Platíte pouze OpenAI, a to
