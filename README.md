@@ -115,6 +115,10 @@ simply not searched.
    computer.
 4. **Attach a folder** with your documents, press **Scan**, then **Index**.
 
+**The app opens in a browser window — that is only its interface, not a
+website.** The program is installed on your computer and runs there; the
+browser is simply the window it uses.
+
 ## About the author
 
 The app was built by a bridge engineer for design engineers, out of a daily
