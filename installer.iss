@@ -47,6 +47,12 @@ Name: "english"; MessagesFile: "compiler:Default.isl"
 ; Optional desktop shortcut (a checkbox in the wizard).
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"; Flags: unchecked
 
+[InstallDelete]
+; On upgrade the old _internal stays as installed by the previous version;
+; files removed from the new build would linger there forever (hundreds of
+; MB, and a stale-DLL risk). The new build re-copies the folder in full.
+Type: filesandordirs; Name: "{app}\_internal"
+
 [Files]
 ; The whole PyInstaller one-folder build: .exe + _internal with all deps and models.
 Source: "dist\{#MyAppName}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
