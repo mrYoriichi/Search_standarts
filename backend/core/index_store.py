@@ -182,6 +182,19 @@ def ensure_unique_folder_id(
     return fid
 
 
+def has_index_files(library_path: Path, slug: str) -> bool:
+    """Are the search files there at all? Two stats, no parsing.
+
+    For revalidating ready documents on every scan: the case to catch is
+    "artifacts deleted" (a crash between rmtree and the DB commit), and
+    parsing every embeddings.json instead would cost seconds per document
+    on a network folder. Contents are checked by has_complete_index, which
+    runs only when an index is adopted.
+    """
+    d = doc_dir(library_path, slug)
+    return (d / "chunks.json").exists() and (d / "embeddings.json").exists()
+
+
 def has_complete_index(library_path: Path, slug: str) -> bool:
     """Does the document have a complete READABLE index (search minimum)?
 

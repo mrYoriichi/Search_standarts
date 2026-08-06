@@ -326,6 +326,15 @@ def scan_library(paths: list[Path], db: Session) -> ScanSummary:
                     # Document stuck in "čeká" before the fix — rescan heals.
                     existing.status = "failed"
                     existing.error_message = ro_error
+                if existing.status == "ready" and not index_store.has_index_files(
+                    library_path, slug
+                ):
+                    # "hotovo" without an index on disk: delete/reindex/relink
+                    # write the DB after the rmtree, so a crash in between
+                    # leaves the row lying. Back to čeká — Indexovat rebuilds
+                    # it (and adopts for free if the files are actually there).
+                    existing.status = "pending"
+                    existing.error_message = None
                 summary.already_indexed += 1
                 continue
 

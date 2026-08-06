@@ -220,6 +220,12 @@ def sync_archive(db: Session, roots: list[Path]) -> ArchiveScanSummary:
         else:
             doc.relative_path = found.relative_path
             doc.page_count = found.page_count
+            if doc.status == "ready" and not (PROJECTS_DATA_DIR / found.slug).exists():
+                # "hotovo" without artifacts: reindex/delete rmtree first and
+                # write the DB after, so a crash in between leaves the row
+                # lying. Back to pending — the user clicks Indexovat.
+                doc.status = "pending"
+                doc.error = None
 
     removed = 0
     # Archive documents carry no folder label (slug = {project}__{path}), so
