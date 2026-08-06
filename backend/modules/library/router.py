@@ -7,10 +7,11 @@ from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
+from backend.core import page_stats
 from backend.core.database import get_session
 from backend.core.ui_messages import msg
 from backend.modules.library import service
-from backend.modules.library.schemas import LibraryResponse, ScanSummary
+from backend.modules.library.schemas import LibraryResponse, LibraryStats, ScanSummary
 from backend.modules.settings import service as settings_service
 
 
@@ -65,10 +66,20 @@ def index_library(
 ) -> dict:
     """Send discovered (pending) PDFs to processing — the paid step."""
     executor = request.app.state.executor
-    started, locked, over_limit = service.start_indexing(
-        _library_paths(db), db, executor
+    started, locked = service.start_indexing(_library_paths(db), db, executor)
+    return {"started": started, "locked": locked}
+
+
+@router.get("/library/stats", response_model=LibraryStats)
+def library_stats(db: Session = Depends(get_session)) -> LibraryStats:
+    """Ready-page counters shown in the library and archive headers."""
+    library = page_stats.library_pages(db)
+    archive = page_stats.archive_pages(db)
+    return LibraryStats(
+        pages_library=library,
+        pages_archive=archive,
+        pages_total=library + archive,
     )
-    return {"started": started, "locked": locked, "over_limit": over_limit}
 
 
 @router.get("/library/pdf/{slug}")

@@ -171,7 +171,7 @@ def test_index_archive_refreshes_stat(db, artifacts_dir, tmp_path):
     _bump_mtime(pdf)
 
     executor = _FakeExecutor()
-    submitted, _over = start_archive_indexing(db, [root], executor)
+    submitted = start_archive_indexing(db, [root], executor)
 
     doc = db.scalar(select(ProjectDocument).where(ProjectDocument.slug == slug))
     assert submitted == 1

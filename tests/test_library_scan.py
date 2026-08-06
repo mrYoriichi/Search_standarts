@@ -259,7 +259,7 @@ def test_pending_doc_with_ready_shared_index_is_adopted(db, tmp_path):
     _make_index(library, slug, EMBEDDING_MODEL, title="ČSN Norma 123")
 
     executor = _FakeExecutor()
-    submitted, locked, _over = start_indexing([library], db, executor)
+    submitted, locked = start_indexing([library], db, executor)
 
     assert (submitted, locked) == (0, [])
     assert executor.calls == []  # the pipeline did NOT run
@@ -276,7 +276,7 @@ def test_pending_doc_without_index_still_submitted(db, tmp_path):
     scan_library([library], db)
 
     executor = _FakeExecutor()
-    submitted, _locked, _over = start_indexing([library], db, executor)
+    submitted, _locked = start_indexing([library], db, executor)
 
     assert submitted == 1
     assert len(executor.calls) == 1

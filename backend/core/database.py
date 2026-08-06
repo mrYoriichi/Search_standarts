@@ -78,7 +78,7 @@ def ensure_columns() -> None:
             "username": "VARCHAR",  # author of the report (NULL on old rows)
         },
         "documents": {
-            # public-build page limit (NULL on old rows)
+            # page counters (NULL on old rows)
             "page_count": "INTEGER",
         },
         "project_documents": {

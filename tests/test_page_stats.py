@@ -1,9 +1,12 @@
-"""Page limit of the public build (decision 2026-08-02, 5000 pages).
+"""Page counters + removal of the hard page limit (decision 2026-08-06).
 
-The search cache loads ALL ready indexes fully into RAM, so the limit must
-cut both ways documents can appear: paid indexing AND free adoption —
-otherwise a big shared folder kills the app by memory before the pipeline
-ever runs. The pilot build has no limit.
+The public-build hard limit (5000 pages) is gone: it silently did not
+apply to the search pool anyway (the pool takes everything on disk), and
+the target scenario — connecting a big shared company folder — was the
+first thing it broke. Instead the UI shows a live ready-page counter; a
+memory estimate with a threshold comes after a measurement on a real
+library. These tests pin both halves: counters count only ready rows,
+and neither scan adoption nor indexing refuses documents by volume.
 """
 
 import json
@@ -12,7 +15,7 @@ import pytest
 from sqlalchemy import create_engine, select
 from sqlalchemy.orm import sessionmaker
 
-from backend.core import index_store, limits
+from backend.core import index_store, page_stats
 from backend.core.database import Base
 from backend.modules.documents.models import Document
 from backend.modules.library import service as library_service
@@ -99,50 +102,24 @@ def _make_indexed_library(tmp_path, pdf_name: str):
     return library, slug
 
 
-# --- Counting pages in use ---------------------------------------------------
+# --- Counters ----------------------------------------------------------------
 
 
-def test_pages_in_use_counts_ready_and_processing_in_both_pools(db):
+def test_counters_count_only_ready_rows_per_pool(db):
     _lib_doc(db, "a", "ready", 100)
-    _lib_doc(db, "b", "processing", 50)  # already in progress — takes memory
-    _lib_doc(db, "c", "pending", 999)  # not occupying yet
+    _lib_doc(db, "b", "processing", 50)  # not in the search pool yet
+    _lib_doc(db, "c", "pending", 999)
     _lib_doc(db, "d", "ready", None)  # legacy row without a counter
     _arc_doc(db, "p__tz", "ready", 30)
-    assert limits.pages_in_use(db) == 180
+    _arc_doc(db, "p__st", "failed", 70, rel="statika.pdf")
+    assert page_stats.library_pages(db) == 100
+    assert page_stats.archive_pages(db) == 30
 
 
-def test_pages_remaining_disabled_in_pilot_build(db, monkeypatch):
-    monkeypatch.setattr(limits, "PUBLIC_BUILD", False)
-    assert limits.pages_remaining(db) is None
+# --- Adoption during scan: volume never blocks -------------------------------
 
 
-def test_pages_remaining_never_negative(db, monkeypatch):
-    monkeypatch.setattr(limits, "PUBLIC_BUILD", True)
-    monkeypatch.setattr(limits, "PAGE_LIMIT", 10)
-    _lib_doc(db, "a", "ready", 100)
-    assert limits.pages_remaining(db) == 0
-
-
-# --- Adoption during scan ----------------------------------------------------
-
-
-def test_scan_does_not_adopt_beyond_limit(db, tmp_path, monkeypatch):
-    monkeypatch.setattr(limits, "PUBLIC_BUILD", True)
-    monkeypatch.setattr(limits, "PAGE_LIMIT", 3)
-    monkeypatch.setattr(library_service, "count_pages", lambda p: 5)
-    library, slug = _make_indexed_library(tmp_path, "Norma.pdf")
-
-    summary = library_service.scan_library([library], db)
-
-    doc = db.scalar(select(Document).where(Document.slug == slug))
-    assert doc.status == "pending"  # visible in the list, but NOT ready
-    assert summary.adopted == 0
-    assert summary.limit_skipped == 1
-
-
-def test_scan_adopts_under_limit_and_stores_pages(db, tmp_path, monkeypatch):
-    monkeypatch.setattr(limits, "PUBLIC_BUILD", True)
-    monkeypatch.setattr(limits, "PAGE_LIMIT", 10)
+def test_scan_adopts_and_stores_pages(db, tmp_path, monkeypatch):
     monkeypatch.setattr(library_service, "count_pages", lambda p: 5)
     library, slug = _make_indexed_library(tmp_path, "Norma.pdf")
 
@@ -152,22 +129,33 @@ def test_scan_adopts_under_limit_and_stores_pages(db, tmp_path, monkeypatch):
     assert doc.status == "ready"
     assert doc.page_count == 5
     assert summary.adopted == 1
-    assert summary.limit_skipped == 0
 
 
-# --- Library indexing --------------------------------------------------------
+def test_scan_adopts_no_matter_the_volume(db, tmp_path, monkeypatch):
+    # Before 2026-08-06 a big ready index was left pending ("over limit").
+    monkeypatch.setattr(library_service, "count_pages", lambda p: 99_999)
+    library, slug = _make_indexed_library(tmp_path, "Norma.pdf")
+
+    summary = library_service.scan_library([library], db)
+
+    doc = db.scalar(select(Document).where(Document.slug == slug))
+    assert doc.status == "ready"
+    assert doc.page_count == 99_999
+    assert summary.adopted == 1
 
 
-def test_start_indexing_stops_at_limit(db, tmp_path, monkeypatch):
+# --- Library indexing: volume never blocks -----------------------------------
+
+
+def test_start_indexing_sends_everything(db, tmp_path, monkeypatch):
     from indexing.embeddings_index import EMBEDDING_MODEL
 
-    monkeypatch.setattr(limits, "PUBLIC_BUILD", True)
-    monkeypatch.setattr(limits, "PAGE_LIMIT", 12)
+    monkeypatch.setattr(library_service, "count_pages", lambda p: 5_000)
     library = tmp_path / "lib"
     library.mkdir()
     index_store.ensure_meta(library, EMBEDDING_MODEL)
     fid = index_store.read_meta(library)["folder_id"]
-    for name, pages in [("A.pdf", 5), ("B.pdf", 10)]:
+    for name in ("A.pdf", "B.pdf"):
         (library / name).write_bytes(b"%PDF-1.4 fake")
         db.add(
             Document(
@@ -175,54 +163,37 @@ def test_start_indexing_stops_at_limit(db, tmp_path, monkeypatch):
                 title=name,
                 status="pending",
                 relative_path=name,
-                page_count=pages,
             )
         )
     db.commit()
 
     executor = _FakeExecutor()
-    started, locked, over_limit = library_service.start_indexing(
-        [library], db, executor
-    )
+    started, locked = library_service.start_indexing([library], db, executor)
 
-    assert (started, locked, over_limit) == (1, [], 1)
-    statuses = {d.slug.split("__")[1]: d.status for d in db.scalars(select(Document))}
-    assert statuses == {"a": "processing", "b": "pending"}
-    assert len(executor.calls) == 1
-
-
-# --- Archive indexing --------------------------------------------------------
+    assert (started, locked) == (2, [])
+    docs = db.scalars(select(Document)).all()
+    assert {d.status for d in docs} == {"processing"}
+    assert {d.page_count for d in docs} == {5_000}  # counter data still filled
+    assert len(executor.calls) == 2
 
 
-def test_archive_indexing_stops_at_limit(db, tmp_path, monkeypatch):
-    monkeypatch.setattr(limits, "PUBLIC_BUILD", True)
-    monkeypatch.setattr(limits, "PAGE_LIMIT", 6)
+# --- Archive indexing: volume never blocks -----------------------------------
+
+
+def test_archive_indexing_sends_everything(db, tmp_path):
     root = tmp_path / "Alfa_most"
     root.mkdir()
     (root / "tz.pdf").write_bytes(b"%PDF-1.4 fake")
     (root / "statika.pdf").write_bytes(b"%PDF-1.4 fake")
-    _arc_doc(db, "alfa_most__tz", "pending", 4, rel="tz.pdf")
-    _arc_doc(db, "alfa_most__statika", "pending", 4, rel="statika.pdf")
+    _arc_doc(db, "alfa_most__tz", "pending", 4_000, rel="tz.pdf")
+    _arc_doc(db, "alfa_most__statika", "pending", 4_000, rel="statika.pdf")
 
     executor = _FakeExecutor()
-    started, over_limit = projects_service.start_archive_indexing(db, [root], executor)
+    started = projects_service.start_archive_indexing(db, [root], executor)
 
-    assert (started, over_limit) == (1, 1)
+    assert started == 2
     statuses = {d.slug: d.status for d in db.scalars(select(ProjectDocument))}
     assert statuses == {
         "alfa_most__tz": "processing",
-        "alfa_most__statika": "pending",
+        "alfa_most__statika": "processing",
     }
-
-
-def test_pilot_build_archive_has_no_limit(db, tmp_path, monkeypatch):
-    monkeypatch.setattr(limits, "PUBLIC_BUILD", False)
-    root = tmp_path / "Alfa_most"
-    root.mkdir()
-    (root / "tz.pdf").write_bytes(b"%PDF-1.4 fake")
-    _arc_doc(db, "alfa_most__tz", "pending", 4000, rel="tz.pdf")
-
-    executor = _FakeExecutor()
-    started, over_limit = projects_service.start_archive_indexing(db, [root], executor)
-
-    assert (started, over_limit) == (1, 0)

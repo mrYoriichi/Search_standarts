@@ -66,6 +66,15 @@ class ScanSummary(BaseModel):
     # We leave them alone so one does not overwrite another — ask the user
     # to rename.
     duplicates: list[str] = []
-    # Ready indexes NOT adopted because of the public build page limit
-    # (see backend/core/limits.py) — registered as pending.
-    limit_skipped: int = 0
+
+
+class LibraryStats(BaseModel):
+    """GET /api/library/stats response: how many pages the search pool holds.
+
+    Ready pages of both pools — the whole pool loads into RAM on a question,
+    so the total is the number to watch as the library grows.
+    """
+
+    pages_library: int
+    pages_archive: int
+    pages_total: int

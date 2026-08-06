@@ -25,7 +25,7 @@ class Document(Base):
     # Source type: pdf today; docx/xlsx/dwg/... in future pipelines.
     source_type: Mapped[str] = mapped_column(default="pdf")
     status: Mapped[str] = mapped_column(default="processing")
-    # PDF page count — for the public-build limit (backend/core/limits.py).
+    # PDF page count — feeds the page counters (backend/core/page_stats.py).
     # None — legacy row from before the counter; filled on adoption or
     # pipeline submission.
     page_count: Mapped[int | None] = mapped_column(default=None)

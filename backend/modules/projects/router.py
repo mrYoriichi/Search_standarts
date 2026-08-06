@@ -77,7 +77,7 @@ def index_archive(
     db: Session = Depends(get_session),
 ) -> dict:
     """Send discovered (pending) archive documents to processing."""
-    submitted, over_limit = service.start_archive_indexing(
+    submitted = service.start_archive_indexing(
         db, _projects_paths(db), request.app.state.executor
     )
-    return {"started": submitted, "over_limit": over_limit}
+    return {"started": submitted}

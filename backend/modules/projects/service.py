@@ -14,7 +14,7 @@ from pathlib import Path
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from backend.core import limits, progress
+from backend.core import progress
 from backend.core.ui_messages import msg
 from backend.core.paths import PROJECTS_DATA_DIR
 from backend.modules.projects.models import ProjectDocument
@@ -285,17 +285,14 @@ def start_archive_indexing(
     db: Session,
     paths: list[Path],
     executor: ThreadPoolExecutor,
-) -> tuple[int, int]:
+) -> int:
     """Send pending archive documents to the pipeline.
 
     Status flips to processing right away — a repeated click will not send
     the same documents twice, and after a crash the startup resume picks
     them up. Each document's folder is found by its file's presence on disk.
 
-    The public build page limit (backend/core/limits.py) is shared with the
-    library: documents over the remainder stay pending.
-
-    Returns (submitted, over limit).
+    Returns the number of submitted documents.
     """
     from backend.modules.projects.pipeline import run_project_pipeline
 
@@ -305,18 +302,10 @@ def start_archive_indexing(
         ).all()
 
         submitted = 0
-        over_limit = 0
-        remaining = limits.pages_remaining(db)  # None — no limit (pilot)
         for doc in pending:
             root = resolve_project_root(paths, doc.project, doc.relative_path)
             if root is None:
                 continue  # file not found in any folder — skip
-            pages = doc.page_count or 0  # scan always fills it; 0 — broken PDF
-            if remaining is not None and pages > remaining:
-                over_limit += 1  # stays pending
-                continue
-            if remaining is not None:
-                remaining -= pages
             refresh_file_stat(doc, root)
             doc.status = "processing"
             db.commit()
@@ -324,7 +313,7 @@ def start_archive_indexing(
                 run_project_pipeline, doc.slug, str(root / doc.relative_path)
             )
             submitted += 1
-        return submitted, over_limit
+        return submitted
 
 
 class DocumentBusyError(Exception):

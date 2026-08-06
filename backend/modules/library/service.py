@@ -17,7 +17,7 @@ from typing import Callable
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from backend.core import index_lock, index_store, library_cache, limits, progress
+from backend.core import index_lock, index_store, library_cache, progress
 from backend.core.ui_messages import msg
 from backend.modules.documents.models import Document
 from backend.modules.documents.pipeline import run_pipeline_locked
@@ -281,9 +281,6 @@ def scan_library(paths: list[Path], db: Session) -> ScanSummary:
     summary = ScanSummary(created=0, already_indexed=0, adopted=0, duplicates=[])
     any_adopted = False
     folder_ids = _folder_ids(paths)
-    # Remaining page limit (None — no limit). Adoption is under the limit
-    # too: ready indexes load into RAM the same way as paid ones.
-    remaining = limits.pages_remaining(db)
 
     for library_path in paths:
         folder_id = folder_ids[library_path]
@@ -339,26 +336,18 @@ def scan_library(paths: list[Path], db: Session) -> ScanSummary:
                 continue
 
             if can_adopt and index_store.has_complete_index(library_path, slug):
-                pages = _safe_count_pages(pdf_path)
-                if remaining is not None and pages > remaining:
-                    # Over the limit — no adoption: register the document as
-                    # pending — visible in the list, but stays out of RAM.
-                    summary.limit_skipped += 1
-                else:
-                    if remaining is not None:
-                        remaining -= pages
-                    doc = Document(
-                        slug=slug,
-                        title=_adopted_title(library_path, slug) or pdf_path.stem,
-                        status="ready",
-                        relative_path=relative_path,
-                        page_count=pages,
-                    )
-                    db.add(doc)
-                    db.commit()
-                    summary.adopted += 1
-                    any_adopted = True
-                    continue
+                doc = Document(
+                    slug=slug,
+                    title=_adopted_title(library_path, slug) or pdf_path.stem,
+                    status="ready",
+                    relative_path=relative_path,
+                    page_count=_safe_count_pages(pdf_path),
+                )
+                db.add(doc)
+                db.commit()
+                summary.adopted += 1
+                any_adopted = True
+                continue
 
             doc = Document(
                 slug=slug,
@@ -383,7 +372,7 @@ def _safe_count_pages(pdf_path: Path) -> int:
     """PDF page count; a broken/unreadable file counts as 0 — don't fail the scan.
 
     Such a file will still fail with a clear error in the pipeline/adoption;
-    the limit is not noticeably hurt by the zero.
+    the page counter is not noticeably hurt by the zero.
     """
     try:
         return count_pages(pdf_path)
@@ -421,7 +410,7 @@ def start_indexing(
     paths: list[Path],
     db: Session,
     executor: ThreadPoolExecutor,
-) -> tuple[int, list[str], int]:
+) -> tuple[int, list[str]]:
     """Send pending documents to the pipeline, each into its own folder.
 
     Status flips to processing right away: a repeated "Indexovat" click will
@@ -433,10 +422,7 @@ def start_indexing(
     is already indexing it (shared network folder) — its documents are left
     pending and we report who is busy.
 
-    The public build page limit (backend/core/limits.py) cuts both pipeline
-    launches and adoption: documents over the limit stay pending.
-
-    Returns (submitted, list of "folder: who is indexing", over limit).
+    Returns (submitted, list of "folder: who is indexing").
     """
     from indexing.embeddings_index import EMBEDDING_MODEL
 
@@ -453,9 +439,7 @@ def start_indexing(
 
         submitted = 0
         locked: list[str] = []
-        over_limit = 0
         any_adopted = False
-        remaining = limits.pages_remaining(db)  # None — no limit (pilot)
         for library_path, docs in by_folder.items():
             # Re-check BEFORE launch: a colleague may have finished indexing a
             # document in the shared folder after our scan (the pending row
@@ -468,35 +452,19 @@ def start_indexing(
             to_run: list[Document] = []
             for doc in docs:
                 if can_adopt and index_store.has_complete_index(library_path, doc.slug):
-                    pages = _ensure_page_count(doc, library_path)
-                    if remaining is not None and pages > remaining:
-                        over_limit += 1  # stays pending, kept out of RAM
-                        continue
-                    if remaining is not None:
-                        remaining -= pages
+                    _ensure_page_count(doc, library_path)
                     doc.status = "ready"
                     doc.error_message = None
                     doc.title = _adopted_title(library_path, doc.slug) or doc.title
                     any_adopted = True
                 else:
                     to_run.append(doc)
-            if any_adopted:
-                db.commit()
-
-            # The limit applies to paid launches even more: nothing over it.
-            allowed: list[Document] = []
             for doc in to_run:
-                pages = _ensure_page_count(doc, library_path)
-                if remaining is not None and pages > remaining:
-                    over_limit += 1
-                    continue
-                if remaining is not None:
-                    remaining -= pages
-                allowed.append(doc)
-            if not allowed:
-                db.commit()  # persist the filled-in page_count values
-                continue  # all adopted/over limit — no folder lock needed
-            docs = allowed
+                _ensure_page_count(doc, library_path)  # feeds the page counter
+            db.commit()  # adopted statuses + filled-in page counts
+            if not to_run:
+                continue  # everything adopted — no folder lock needed
+            docs = to_run
 
             busy_owner = index_lock.acquire(library_path)
             if busy_owner is not None:
@@ -522,7 +490,7 @@ def start_indexing(
             # Ready documents appeared in the pool without the pipeline — the
             # next question must see them (mirrors scan_library).
             library_cache.invalidate()
-        return submitted, locked, over_limit
+        return submitted, locked
 
 
 def _is_within(target: Path, root: Path) -> bool:
