@@ -12,6 +12,7 @@ from datetime import timedelta
 import httpx
 from sqlalchemy.orm import Session
 
+from backend.core import secrets
 from backend.core.database import SessionLocal, naive_utcnow
 from backend.core.ui_messages import msg
 from backend.modules.auth.models import AuthSession
@@ -143,11 +144,12 @@ def _persist_session(db: Session, username: str, token: str) -> AuthSession:
     """Store the JWT in the AuthSession singleton (id=1); shared by
     login/register. An existing row is overwritten.
     """
+    stored = secrets.protect(token)
     session = db.get(AuthSession, 1)
     if session is None:
         session = AuthSession(
             id=1,
-            token=token,
+            token=stored,
             username=username,
             last_verified_at=naive_utcnow(),
             last_verify_status="ok",
@@ -155,7 +157,7 @@ def _persist_session(db: Session, username: str, token: str) -> AuthSession:
         )
         db.add(session)
     else:
-        session.token = token
+        session.token = stored
         session.username = username
         session.last_verified_at = naive_utcnow()
         session.last_verify_status = "ok"
@@ -165,8 +167,24 @@ def _persist_session(db: Session, username: str, token: str) -> AuthSession:
     return session
 
 
+def session_token(session: AuthSession) -> str | None:
+    """The usable JWT of a stored session, or None when it cannot be read."""
+    return secrets.unprotect(session.token)
+
+
 def get_session(db: Session) -> AuthSession | None:
-    return db.get(AuthSession, 1)
+    """The stored session, or None when there is none — or its token is
+    unreadable.
+
+    Unreadable means the DB was restored under a different Windows account
+    (the token is protected per account, backend/core/secrets.py). Showing
+    the login screen is better than an account that looks signed in but
+    cannot talk to the license server at all.
+    """
+    session = db.get(AuthSession, 1)
+    if session is None or session_token(session) is None:
+        return None
+    return session
 
 
 class NotLoggedInError(Exception):
@@ -199,7 +217,7 @@ def get_profile(db: Session) -> dict:
     try:
         response = httpx.get(
             f"{LICENSE_SERVER_URL}/auth/me",
-            headers=_auth_headers(session.token),
+            headers=_auth_headers(session_token(session)),
             timeout=HTTP_TIMEOUT,
         )
     except httpx.HTTPError as exc:
@@ -219,7 +237,7 @@ def update_profile(db: Session, fields: dict) -> dict:
         response = httpx.put(
             f"{LICENSE_SERVER_URL}/auth/me",
             json=fields,
-            headers=_auth_headers(session.token),
+            headers=_auth_headers(session_token(session)),
             timeout=HTTP_TIMEOUT,
         )
     except httpx.HTTPError as exc:
@@ -239,7 +257,7 @@ def change_password(db: Session, old_password: str, new_password: str) -> None:
         response = httpx.post(
             f"{LICENSE_SERVER_URL}/auth/change-password",
             json={"old_password": old_password, "new_password": new_password},
-            headers=_auth_headers(session.token),
+            headers=_auth_headers(session_token(session)),
             timeout=HTTP_TIMEOUT,
         )
     except httpx.HTTPError as exc:
@@ -305,7 +323,14 @@ def verify_once() -> None:
         session = db.get(AuthSession, 1)
         if session is None:
             return  # not logged in — nothing to verify
-        result = verify_with_server(session.token)
+        token = session_token(session)
+        if token is None:
+            return  # token unreadable — the UI already shows the login screen
+        if secrets.needs_upgrade(session.token):
+            # Written by a build that stored the token plain; this loop runs
+            # at startup, so it upgrades without waiting for a re-login.
+            session.token = secrets.protect(token)
+        result = verify_with_server(token)
         if result.status == "ok":
             session.last_verified_at = naive_utcnow()
             session.download_url = None

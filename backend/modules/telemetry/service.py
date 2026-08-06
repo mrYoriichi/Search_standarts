@@ -23,6 +23,7 @@ from backend.modules.auth.service import (
     HTTP_TIMEOUT,
     LICENSE_SERVER_URL,
     VERSION_HEADERS,
+    session_token,
 )
 from backend.modules.telemetry.models import PendingEvent, PendingReport
 
@@ -115,8 +116,9 @@ def send_pending_batch() -> int:
     db = SessionLocal()
     try:
         session = db.get(AuthSession, 1)
-        if session is None:
-            return 0  # nobody to send as — not logged in
+        token = session_token(session) if session else None
+        if token is None:
+            return 0  # nobody to send as — not logged in (or token unreadable)
 
         rows = db.scalars(
             select(PendingEvent).order_by(PendingEvent.id).limit(BATCH_LIMIT)
@@ -134,7 +136,7 @@ def send_pending_batch() -> int:
                 for row in rows
             ]
         }
-        if not _post_batch("/telemetry/events", body, session.token):
+        if not _post_batch("/telemetry/events", body, token):
             return 0
 
         ids = [row.id for row in rows]
@@ -156,7 +158,8 @@ def send_pending_report_batch() -> int:
     db = SessionLocal()
     try:
         session = db.get(AuthSession, 1)
-        if session is None:
+        token = session_token(session) if session else None
+        if token is None:
             return 0
 
         # Only this user's reports: the token is attached here, so someone
@@ -188,7 +191,7 @@ def send_pending_report_batch() -> int:
                 for row in rows
             ]
         }
-        if not _post_batch("/telemetry/flagged", body, session.token):
+        if not _post_batch("/telemetry/flagged", body, token):
             return 0
 
         ids = [row.id for row in rows]
