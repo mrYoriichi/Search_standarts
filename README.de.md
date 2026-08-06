@@ -56,11 +56,13 @@ Fragen oder Dateinamen: die App sendet anonyme Statistik — wie oft etwas
 ausgeführt wurde, wie viel Zeit und Geld es gekostet hat, welche Fehler
 aufgetreten sind.
 
-Ihr OpenAI-Schlüssel liegt auf Ihrem Rechner in der Datendatei der App, ohne
-Verschlüsselung; der einzige Schutz ist Ihr Konto im Betriebssystem. Wer sich
-als Sie anmelden oder diese Datei kopieren kann, kann den Schlüssel lesen.
-Sollte das passieren, löschen Sie den Schlüssel in Ihrem OpenAI-Konto und
-erstellen Sie einen neuen.
+Ihr OpenAI-Schlüssel liegt auf Ihrem Rechner verschlüsselt, von Windows an
+Ihr Benutzerkonto gebunden: die Datendatei der App auf einen anderen Rechner
+kopiert oder unter einem anderen Konto geöffnet gibt den Schlüssel nicht
+preis. Programme, die unter Ihrem eigenen Konto laufen, können ihn weiterhin
+nutzen — wie bei jedem gespeicherten Passwort — halten Sie den Rechner selbst
+also vertrauenswürdig. Sollte der Schlüssel dennoch abhandenkommen, löschen
+Sie ihn in Ihrem OpenAI-Konto und erstellen Sie einen neuen.
 
 ## Kosten
 

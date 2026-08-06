@@ -52,10 +52,12 @@ is actually being used. The author sees none of your documents, questions or
 file names: the app sends anonymous statistics — how often something was run,
 how much time and money it took, which errors occurred.
 
-Your OpenAI key is stored on your computer in the app's data file, without
-encryption; the only protection is your operating-system account. Anyone who
-can sign in as you, or copy that file, can read the key. If that happens,
-delete the key in your OpenAI account and create a new one.
+Your OpenAI key is stored on your computer encrypted by Windows and tied to
+your user account: the app's data file copied to another computer, or opened
+under another account, does not give the key away. Programs running under
+your own account can still use it — as with any saved password — so keep the
+computer itself trustworthy. If the key ever leaks, delete it in your OpenAI
+account and create a new one.
 
 ## Cost
 

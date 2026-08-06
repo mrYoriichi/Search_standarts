@@ -7,7 +7,7 @@ from pathlib import Path
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from backend.core import library_cache, ui_messages
+from backend.core import library_cache, secrets, ui_messages
 from backend.core.ui_messages import msg
 from backend.modules.settings.models import Setting
 
@@ -255,9 +255,14 @@ def set_describe_images(db: Session, enabled: bool) -> bool:
 
 
 def get_openai_key(db: Session) -> str | None:
-    """The stored OpenAI key, or None when not set."""
+    """The stored OpenAI key, or None when not set (or unreadable).
+
+    Unreadable happens when the DB was restored under a different Windows
+    account: the key is protected per account (backend/core/secrets.py),
+    and the user simply enters it again.
+    """
     setting = db.scalar(select(Setting).where(Setting.key == OPENAI_KEY_KEY))
-    return setting.value if setting else None
+    return secrets.unprotect(setting.value) if setting else None
 
 
 def set_openai_key(db: Session, raw_key: str) -> str:
@@ -271,12 +276,13 @@ def set_openai_key(db: Session, raw_key: str) -> str:
     if not key.startswith("sk-"):
         raise ValueError(msg("settings.bad_openai_key"))
 
+    stored = secrets.protect(key)
     setting = db.scalar(select(Setting).where(Setting.key == OPENAI_KEY_KEY))
     if setting is None:
-        setting = Setting(key=OPENAI_KEY_KEY, value=key)
+        setting = Setting(key=OPENAI_KEY_KEY, value=stored)
         db.add(setting)
     else:
-        setting.value = key
+        setting.value = stored
     db.commit()
     os.environ["OPENAI_API_KEY"] = key
     return key
@@ -293,10 +299,20 @@ def apply_openai_key_to_env(db: Session) -> None:
 
     The DB is the source of truth. Without a key the environment is left
     alone — the `.env` fallback stays (handy in development).
+
+    Also the migration point: a key written before this build was stored
+    plain, and the first start of the new version rewrites it protected.
     """
-    key = get_openai_key(db)
-    if key:
-        os.environ["OPENAI_API_KEY"] = key
+    setting = db.scalar(select(Setting).where(Setting.key == OPENAI_KEY_KEY))
+    if setting is None:
+        return
+    key = secrets.unprotect(setting.value)
+    if not key:
+        return
+    if secrets.needs_upgrade(setting.value):
+        setting.value = secrets.protect(key)
+        db.commit()
+    os.environ["OPENAI_API_KEY"] = key
 
 
 def get_ui_language(db: Session) -> str:

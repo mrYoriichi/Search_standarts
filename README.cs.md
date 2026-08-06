@@ -51,10 +51,12 @@ skutečně používá. Autor nevidí ani vaše dokumenty, ani otázky, ani názv
 souborů: aplikace odesílá anonymní statistiku — jak často se co spustilo,
 kolik to zabralo času a peněz, jaké nastaly chyby.
 
-Váš klíč OpenAI je uložený ve vašem počítači v datovém souboru aplikace, bez
-šifrování; jedinou ochranou je účet ve vašem operačním systému. Kdo se dokáže
-přihlásit jako vy nebo ten soubor zkopírovat, klíč si přečte. Pokud se to
-stane, klíč ve svém účtu OpenAI zrušte a vytvořte nový.
+Váš klíč OpenAI je ve vašem počítači uložený zašifrovaný Windows a svázaný
+s vaším uživatelským účtem: datový soubor aplikace zkopírovaný na jiný
+počítač nebo otevřený pod jiným účtem klíč neprozradí. Programy běžící pod
+vaším vlastním účtem ho použít mohou — stejně jako u jakéhokoli uloženého
+hesla — počítač samotný proto držte důvěryhodný. Pokud klíč přesto unikne,
+zrušte ho ve svém účtu OpenAI a vytvořte nový.
 
 ## Cena
 
