@@ -100,9 +100,8 @@ function ProfileSection() {
 
   useEffect(() => {
     fetch('/api/auth/profile')
-      .then((res) => (res.ok ? res.json() : null))
-      .then((data: Profile | null) => {
-        if (!data) return
+      .then((res) => (res.ok ? res.json() : Promise.reject(new Error('load'))))
+      .then((data: Profile) => {
         setProfile(data)
         setEmail(data.email ?? '')
         setFullName(data.full_name ?? '')
@@ -149,6 +148,11 @@ function ProfileSection() {
     }
   }
 
+  // Until the profile arrives the fields are empty, and PUT is a full
+  // replace — saving now would blank the stored data (the license server
+  // sleeps on Render, so a slow or failed load is normal).
+  const busy = loading || profile === null
+
   return (
     <div className={cardClass}>
       <h2 className="text-sm font-semibold text-muted-foreground">
@@ -171,7 +175,7 @@ function ProfileSection() {
           type="text"
           value={fullName}
           onChange={(e) => setFullName(e.target.value)}
-          disabled={loading}
+          disabled={busy}
           className={inputClass}
         />
       </label>
@@ -182,7 +186,7 @@ function ProfileSection() {
           type="email"
           value={email}
           onChange={(e) => setEmail(e.target.value)}
-          disabled={loading}
+          disabled={busy}
           className={inputClass}
         />
       </label>
@@ -193,7 +197,7 @@ function ProfileSection() {
           type="text"
           value={company}
           onChange={(e) => setCompany(e.target.value)}
-          disabled={loading}
+          disabled={busy}
           className={inputClass}
         />
       </label>
@@ -204,7 +208,7 @@ function ProfileSection() {
           type="text"
           value={position}
           onChange={(e) => setPosition(e.target.value)}
-          disabled={loading}
+          disabled={busy}
           className={inputClass}
         />
       </label>
@@ -215,12 +219,12 @@ function ProfileSection() {
           type="text"
           value={linkedin}
           onChange={(e) => setLinkedin(e.target.value)}
-          disabled={loading}
+          disabled={busy}
           className={inputClass}
         />
       </label>
 
-      <Button onClick={handleSave} disabled={loading} className="self-start">
+      <Button onClick={handleSave} disabled={busy} className="self-start">
         {loading ? t('settings.saving') : t('settings.saveProfile')}
       </Button>
 
