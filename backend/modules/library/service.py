@@ -98,9 +98,9 @@ def _slug_fn(folder_id: str | None) -> SlugOf:
 def build_library_response(paths: list[Path], db: Session) -> LibraryResponse:
     """Tree of all library folders + the list of orphan documents (no file).
 
-    One folder -> its tree as is. Several -> a synthetic common root
-    "Knihovny" with the folders inside (the frontend and the "Kde hledat"
-    filter are recursive, so both cases work unchanged).
+    Every connected folder is a node of its own under a synthetic root
+    "Knihovny" — even a single one, so its files are grouped under the
+    folder name instead of lying loose at the top level.
     """
     paths = _unique_dirs(paths)
     docs_by_slug = {doc.slug: doc for doc in db.scalars(select(Document)).all()}
@@ -127,12 +127,9 @@ def build_library_response(paths: list[Path], db: Session) -> LibraryResponse:
                     files=[],
                 )
             )
-    if len(subtrees) == 1:
-        root = subtrees[0]
-    else:
-        root = LibraryFolder(
-            name=msg("lib.tree_root"), path="", folders=subtrees, files=[]
-        )
+    root = LibraryFolder(
+        name=msg("lib.tree_root"), path="", folders=subtrees, files=[]
+    )
 
     seen_slugs: set[str] = set()
     _collect_slugs(root, seen_slugs)
