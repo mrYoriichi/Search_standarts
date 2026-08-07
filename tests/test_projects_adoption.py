@@ -144,12 +144,12 @@ def test_indexovat_adopts_pending_without_paying(db, artifacts_dir, tmp_path):
     _write_index(index_store.doc_dir(root, slug), slug)
 
     executor = _FakeExecutor()
-    submitted = start_archive_indexing(db, [root], executor)
+    submitted, locked = start_archive_indexing(db, [root], executor)
 
     doc = db.scalar(select(ProjectDocument).where(ProjectDocument.slug == slug))
     assert doc.status == "ready"
     assert executor.calls == []
-    assert submitted == 0
+    assert (submitted, locked) == (0, [])
 
 
 def test_scan_readonly_folder_marks_new_docs(db, artifacts_dir, tmp_path):

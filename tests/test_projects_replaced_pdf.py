@@ -171,10 +171,11 @@ def test_index_archive_refreshes_stat(db, artifacts_dir, tmp_path):
     _bump_mtime(pdf)
 
     executor = _FakeExecutor()
-    submitted = start_archive_indexing(db, [root], executor)
+    submitted, locked = start_archive_indexing(db, [root], executor)
 
     doc = db.scalar(select(ProjectDocument).where(ProjectDocument.slug == slug))
     assert submitted == 1
+    assert locked == []
     assert len(executor.calls) == 1
     assert doc.status == "processing"
     assert doc.file_size == pdf.stat().st_size

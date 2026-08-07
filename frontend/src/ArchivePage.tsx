@@ -380,6 +380,10 @@ export default function ArchivePage() {
         alert(data.detail ?? t('common.errorStatus', { status: res.status }))
         return
       }
+      const data: { started: number; locked?: string[] } = await res.json()
+      if (data.locked && data.locked.length > 0) {
+        alert(t('lib.lockedMsg', { list: data.locked.join('\n') }))
+      }
       await loadAll()
     } catch {
       alert(t('common.networkError'))

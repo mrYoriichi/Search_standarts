@@ -124,6 +124,13 @@ async def lifespan(app: FastAPI):
                 pdoc.status = "pending"
                 print(f"[startup] Archive {pdoc.slug}: folder unavailable — pending")
                 continue
+            busy = index_lock.acquire(root)
+            if busy is not None:
+                # Another machine is already indexing the folder — stay out.
+                pdoc.status = "pending"
+                print(f"[startup] Archive {pdoc.slug}: folder indexed by {busy}")
+                continue
+            index_lock.register(root, 1)
             # The file may have been replaced while the app was down: the stat
             # must match the version the pipeline is about to read.
             projects_service.refresh_file_stat(pdoc, root)

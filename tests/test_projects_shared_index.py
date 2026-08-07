@@ -84,7 +84,7 @@ def test_indexing_submits_project_root(db, artifacts_dir, tmp_path):
     sync_archive(db, [root])
 
     executor = _FakeExecutor()
-    submitted = start_archive_indexing(db, [root], executor)
+    submitted, _locked = start_archive_indexing(db, [root], executor)
 
     assert submitted == 1
     (fn, args) = executor.calls[0]

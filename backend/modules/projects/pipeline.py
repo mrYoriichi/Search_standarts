@@ -16,7 +16,7 @@ from pathlib import Path
 
 from sqlalchemy import select
 
-from backend.core import index_store, progress
+from backend.core import index_lock, index_store, progress
 from backend.core.database import SessionLocal
 from backend.core.ui_messages import msg
 from backend.core.errors import classify_pipeline_error
@@ -94,10 +94,23 @@ def run_project_pipeline(slug: str, pdf_path: str, root: str) -> None:
     """Full processing of one archive document (called from ThreadPoolExecutor).
 
     root — the project folder; artifacts go to <root>/.search_index/{slug}/.
+    Runs under the inter-machine folder lock (core/index_lock): the caller
+    takes the lock and registers the document, here it is refreshed at the
+    start and released by the folder's last finished document — exactly
+    like the library's run_pipeline_locked.
     Statuses: processing -> ready | error (+ error text in `error`).
     We open the DB session ourselves — FastAPI dependencies do not work
     in a background thread.
     """
+    try:
+        index_lock.refresh(Path(root))
+        _run_project_pipeline(slug, pdf_path, root)
+    finally:
+        index_lock.done(Path(root))
+
+
+def _run_project_pipeline(slug: str, pdf_path: str, root: str) -> None:
+    """The pipeline body (see run_project_pipeline for the lock contract)."""
     from backend.modules.settings import service as settings_service
 
     db = SessionLocal()

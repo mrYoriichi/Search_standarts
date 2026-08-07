@@ -393,16 +393,20 @@ def start_archive_indexing(
     db: Session,
     paths: list[Path],
     executor: ThreadPoolExecutor,
-) -> int:
+) -> tuple[int, list[str]]:
     """Send pending archive documents to the pipeline.
 
     Status flips to processing right away — a repeated click will not send
     the same documents twice, and after a crash the startup resume picks
     them up. Each document's folder is found by its file's presence on disk.
 
-    Returns the number of submitted documents.
+    Each folder is locked with the inter-machine lock file before
+    indexing (as in the library): a folder being indexed by another
+    machine is skipped, its documents stay pending.
+
+    Returns (submitted, list of "folder: who is indexing").
     """
-    from backend.core import library_cache
+    from backend.core import index_lock, library_cache
     from backend.modules.projects.pipeline import run_project_pipeline
 
     with _start_indexing_lock:
@@ -410,36 +414,56 @@ def start_archive_indexing(
             select(ProjectDocument).where(ProjectDocument.status == "pending")
         ).all()
 
-        submitted = 0
-        adopted_any = False
-        adoption: dict[Path, tuple[bool, str | None]] = {}
+        # Group pending by folder — one lock per folder.
+        by_root: dict[Path, list[ProjectDocument]] = {}
         for doc in pending:
             root = resolve_project_root(paths, doc.project, doc.relative_path)
             if root is None:
                 continue  # file not found in any folder — skip
-            if root not in adoption:
-                adoption[root] = _root_adoption(root)
+            by_root.setdefault(root, []).append(doc)
+
+        submitted = 0
+        locked: list[str] = []
+        adopted_any = False
+        for root, docs in by_root.items():
             # Re-check right before the paid run: a colleague may have
-            # indexed this file after our scan — adopt for free instead
+            # indexed a file after our scan — adopt for free instead
             # (mirrors the library's pending adoption, 785ea29).
-            if adoption[root][0] and index_store.has_complete_index(root, doc.slug):
-                doc.status = "ready"
-                doc.error = None
-                db.commit()
-                adopted_any = True
-                continue
-            refresh_file_stat(doc, root)
-            doc.status = "processing"
+            can_adopt, _ = _root_adoption(root)
+            to_run: list[ProjectDocument] = []
+            for doc in docs:
+                if can_adopt and index_store.has_complete_index(root, doc.slug):
+                    doc.status = "ready"
+                    doc.error = None
+                    adopted_any = True
+                else:
+                    to_run.append(doc)
+            db.commit()  # adopted statuses
+            if not to_run:
+                continue  # everything adopted — no folder lock needed
+
+            busy_owner = index_lock.acquire(root)
+            if busy_owner is not None:
+                locked.append(f"{root.name}: {busy_owner}")
+                continue  # held by another machine — leave documents pending
+            index_lock.register(root, len(to_run))
+            for doc in to_run:
+                refresh_file_stat(doc, root)
+                doc.status = "processing"
             db.commit()
-            executor.submit(
-                run_project_pipeline, doc.slug, str(root / doc.relative_path), str(root)
-            )
-            submitted += 1
+            for doc in to_run:
+                executor.submit(
+                    run_project_pipeline,
+                    doc.slug,
+                    str(root / doc.relative_path),
+                    str(root),
+                )
+                submitted += 1
         if adopted_any:
             # Ready documents appeared without a pipeline run — the next
             # question must see them.
             library_cache.invalidate()
-        return submitted
+        return submitted, locked
 
 
 class DocumentBusyError(Exception):
@@ -464,7 +488,7 @@ def reindex_document(
     folder is NOT touched. Artifacts live in <root>/.search_index/{slug}
     (plus the legacy local pool for old installs).
     """
-    from backend.core import library_cache
+    from backend.core import index_lock, library_cache
     from backend.modules.projects.pipeline import run_project_pipeline
 
     doc = db.scalar(select(ProjectDocument).where(ProjectDocument.slug == slug))
@@ -476,6 +500,13 @@ def reindex_document(
     root = resolve_project_root(paths, doc.project, doc.relative_path)
     if root is None:
         raise ValueError(msg("projects.pdf_not_found", path=doc.relative_path))
+
+    # The inter-machine folder lock, as in regular indexing: without it
+    # reindex would write into .search_index in parallel with another machine.
+    busy = index_lock.acquire(root)
+    if busy is not None:
+        raise DocumentBusyError(msg("lib.folder_busy", owner=busy))
+    index_lock.register(root, 1)
 
     # A ready document is rebuilt from scratch. A failed one (error) —
     # CONTINUE from the checkpoint: descriptions of the paid pages sit in

@@ -189,7 +189,7 @@ def test_archive_indexing_sends_everything(db, tmp_path):
     _arc_doc(db, "alfa_most__statika", "pending", 4_000, rel="statika.pdf")
 
     executor = _FakeExecutor()
-    started = projects_service.start_archive_indexing(db, [root], executor)
+    started, _locked = projects_service.start_archive_indexing(db, [root], executor)
 
     assert started == 2
     statuses = {d.slug: d.status for d in db.scalars(select(ProjectDocument))}
