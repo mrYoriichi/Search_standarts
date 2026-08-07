@@ -127,9 +127,7 @@ def build_library_response(paths: list[Path], db: Session) -> LibraryResponse:
                     files=[],
                 )
             )
-    root = LibraryFolder(
-        name=msg("lib.tree_root"), path="", folders=subtrees, files=[]
-    )
+    root = LibraryFolder(name=msg("lib.tree_root"), path="", folders=subtrees, files=[])
 
     seen_slugs: set[str] = set()
     _collect_slugs(root, seen_slugs)
