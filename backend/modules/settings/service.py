@@ -7,8 +7,9 @@ from pathlib import Path
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from backend.core import library_cache, secrets, ui_messages
+from backend.core import index_store, library_cache, secrets, ui_messages
 from backend.core.ui_messages import msg
+from backend.modules.documents.models import Document
 from backend.modules.settings.models import Setting
 
 
@@ -179,7 +180,30 @@ def add_library_path(db: Session, raw_path: str) -> list[str]:
     return _add_to_path_list(db, LIBRARY_PATHS_KEY, LIBRARY_PATH_KEY, raw_path)
 
 
+def _forget_folder_documents(db: Session, raw_path: str) -> None:
+    """Отвязка папки: удалить из БД записи её документов.
+
+    Без этого документы отключённой папки повисают «сиротами» (файл не
+    найден). Сам индекс в `.search_index` внутри папки не трогаем — при
+    повторном подключении скан усыновит его бесплатно. Если папка
+    недоступна и её ярлык не прочитать, не удаляем ничего: лучше сироты,
+    чем снести документы чужой папки.
+    """
+    meta = index_store.read_meta(Path(raw_path).expanduser().resolve())
+    folder_id = (meta or {}).get("folder_id")
+    if not folder_id:
+        return
+    for doc in db.scalars(select(Document)).all():
+        # processing не трогаем: пайплайн ещё пишет статус по этой записи.
+        if doc.status == "processing":
+            continue
+        if index_store.folder_id_of(doc.slug) == folder_id:
+            db.delete(doc)
+    db.commit()
+
+
 def remove_library_path(db: Session, raw_path: str) -> list[str]:
+    _forget_folder_documents(db, raw_path)
     return _remove_from_path_list(db, LIBRARY_PATHS_KEY, LIBRARY_PATH_KEY, raw_path)
 
 
