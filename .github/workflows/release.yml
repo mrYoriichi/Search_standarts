@@ -1,0 +1,76 @@
+# Release build: on a vX.Y.Z tag — frontend -> PyInstaller -> Inno Setup ->
+# installer attached to the GitHub Release. Runs on windows-latest (the .exe
+# can only be built on Windows); Inno Setup is preinstalled on the runner.
+# workflow_dispatch = smoke run: same build, installer goes to an artifact
+# instead of a release.
+name: Release
+
+on:
+  push:
+    tags: ['v*.*.*']
+  workflow_dispatch:
+
+# Needed to create the GitHub Release and upload the installer to it.
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      # BUILD.md requires the version to be duplicated in installer.iss —
+      # fail fast if the tag, version.py and installer.iss disagree.
+      - name: Check versions match the tag
+        if: github.ref_type == 'tag'
+        shell: python
+        run: |
+          import re
+          tag = "${{ github.ref_name }}".removeprefix("v")
+          py = re.search(r'APP_VERSION = "([^"]+)"', open("backend/version.py").read()).group(1)
+          iss = re.search(r'#define MyAppVersion "([^"]+)"', open("installer.iss").read()).group(1)
+          assert tag == py == iss, f"tag={tag} version.py={py} installer.iss={iss}"
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Build frontend
+        working-directory: frontend
+        run: |
+          npm ci
+          npm run build
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt pyinstaller
+
+      # ~640 MB into docling_models/ — build.spec packs them into the bundle.
+      - name: Download docling models
+        run: python download_models.py
+
+      - name: PyInstaller
+        run: pyinstaller build.spec --noconfirm
+
+      - name: Inno Setup
+        run: '& "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" installer.iss'
+
+      - name: Attach installer to the Release
+        if: github.ref_type == 'tag'
+        uses: softprops/action-gh-release@v2
+        with:
+          files: installer/Search_standarts_Setup.exe
+
+      - name: Upload installer as artifact (smoke run)
+        if: github.ref_type != 'tag'
+        uses: actions/upload-artifact@v4
+        with:
+          name: Search_standarts_Setup
+          path: installer/Search_standarts_Setup.exe
