@@ -22,6 +22,8 @@ const cs = {
   'header.settingsTitle': 'Nastavení',
   'theme.toLight': 'Světlý režim',
   'theme.toDark': 'Tmavý režim',
+  'update.available': 'Je k dispozici nová verze {version}.',
+  'update.download': 'Stáhnout →',
 
   // Blocked overlay
   'blocked.title': 'Přístup zablokován',
@@ -246,6 +248,8 @@ const en: Record<MsgKey, string> = {
   'header.settingsTitle': 'Settings',
   'theme.toLight': 'Light mode',
   'theme.toDark': 'Dark mode',
+  'update.available': 'A new version {version} is available.',
+  'update.download': 'Download →',
 
   'blocked.title': 'Access blocked',
   'blocked.revoked': 'Access has been revoked by the administrator.',
@@ -457,6 +461,8 @@ const de: Record<MsgKey, string> = {
   'header.settingsTitle': 'Einstellungen',
   'theme.toLight': 'Heller Modus',
   'theme.toDark': 'Dunkler Modus',
+  'update.available': 'Eine neue Version {version} ist verfügbar.',
+  'update.download': 'Herunterladen →',
 
   'blocked.title': 'Zugang gesperrt',
   'blocked.revoked': 'Der Zugang wurde vom Administrator entzogen.',

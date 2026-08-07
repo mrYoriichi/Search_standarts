@@ -9,6 +9,7 @@ import SearchPage from './SearchPage'
 import SettingsPage from './SettingsPage'
 import { AppHeader } from './components/AppHeader'
 import { BlockedScreen } from './components/BlockedScreen'
+import { UpdateBanner } from './components/UpdateBanner'
 import { useAuth } from './hooks/useAuth'
 import { useTheme } from './hooks/useTheme'
 import { useI18n } from './i18n'
@@ -54,6 +55,8 @@ export default function App() {
           onToggleTheme={toggleTheme}
           onLogout={logout}
         />
+
+        <UpdateBanner />
 
         {/* SearchPage hides itself instead of unmounting — see the comment
             there: a switch to another tab must not drop the answer. */}
