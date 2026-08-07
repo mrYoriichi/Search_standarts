@@ -23,7 +23,8 @@ def test_sheet_goes_through_common_pipeline(monkeypatch, tmp_path):
     Base.metadata.create_all(engine)
     session_factory = sessionmaker(bind=engine)
     monkeypatch.setattr(pipeline, "SessionLocal", session_factory)
-    monkeypatch.setattr(pipeline, "PROJECTS_DATA_DIR", tmp_path)
+    root = tmp_path / "Beta_most"
+    root.mkdir()
 
     slug = "beta_most__vykres_202"
     with session_factory() as db:
@@ -64,12 +65,17 @@ def test_sheet_goes_through_common_pipeline(monkeypatch, tmp_path):
     monkeypatch.setattr(chunk, "process", fake_chunk)
     monkeypatch.setattr(embed, "process", lambda *args, **kwargs: None)
 
-    pipeline.run_project_pipeline(slug, pdf_path=str(tmp_path / "vykres_202.pdf"))
+    pipeline.run_project_pipeline(
+        slug, pdf_path=str(root / "vykresy" / "vykres_202.pdf"), root=str(root)
+    )
 
     # The sheet went through the shared pipeline with the scoped slug
     assert recorded.get("document_id") == slug
-    # _prefix_project_context added the project to document_title
-    chunks = json.loads((tmp_path / slug / "chunks.json").read_text(encoding="utf-8"))
+    # Artifacts land in the project folder itself (<root>/.search_index),
+    # and _prefix_project_context added the project to document_title
+    chunks = json.loads(
+        (root / ".search_index" / slug / "chunks.json").read_text(encoding="utf-8")
+    )
     assert chunks[0]["document_title"].startswith("Beta_most")
     with session_factory() as db:
         doc = db.scalar(select(ProjectDocument).where(ProjectDocument.slug == slug))

@@ -53,7 +53,7 @@ def test_mixed_models_in_one_folder_fail_loudly(tmp_path, monkeypatch, isolated_
     mixed = tmp_path / "root"
     _make_doc(mixed, "doc_a", "model-a", 2)
     _make_doc(mixed, "doc_b", "model-b", 3)
-    monkeypatch.setattr(library_cache, "_library_index_roots", lambda: [mixed])
+    monkeypatch.setattr(library_cache, "_shared_index_roots", lambda: [mixed])
 
     with pytest.raises(RuntimeError, match="jiným modelem"):
         library_cache._load_merged()
@@ -65,7 +65,7 @@ def test_pools_on_different_models_fail_loudly(tmp_path, monkeypatch, isolated_c
     root_b = tmp_path / "root_b"
     _make_doc(root_a, "doc_a", "model-a", 2)
     _make_doc(root_b, "doc_b", "model-b", 2)
-    monkeypatch.setattr(library_cache, "_library_index_roots", lambda: [root_a, root_b])
+    monkeypatch.setattr(library_cache, "_shared_index_roots", lambda: [root_a, root_b])
 
     with pytest.raises(RuntimeError, match="různými modely"):
         library_cache._load_merged()
@@ -73,7 +73,7 @@ def test_pools_on_different_models_fail_loudly(tmp_path, monkeypatch, isolated_c
 
 def test_empty_roots_raise_czech_message(tmp_path, monkeypatch, isolated_cache):
     """No ready documents anywhere — the Czech UI error (not a regression)."""
-    monkeypatch.setattr(library_cache, "_library_index_roots", lambda: [])
+    monkeypatch.setattr(library_cache, "_shared_index_roots", lambda: [])
 
     with pytest.raises(RuntimeError, match="hotový dokument"):
         library_cache._load_merged()

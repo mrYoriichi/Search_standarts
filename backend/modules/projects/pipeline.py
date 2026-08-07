@@ -4,7 +4,10 @@ All documents (technical reports, statics, drawings) go through the shared
 per-page standards pipeline (main->describe->chunk->index): the router itself
 decides what is prose (Docling) and what is a drawing (OCR + vision passport).
 Archive specifics are only chunk ids derived from the `{project}__{file}`
-slug, the project in the chunk "header", and the PROJECTS_DATA_DIR storage.
+slug and the project in the chunk "header". Artifacts are written into the
+project folder itself (<root>/.search_index/{slug}/, like the library) so
+the paid index travels with the folder: copy it to another computer or
+share it over the network and everyone searches at no extra cost.
 """
 
 import json
@@ -13,11 +16,10 @@ from pathlib import Path
 
 from sqlalchemy import select
 
-from backend.core import progress
+from backend.core import index_store, progress
 from backend.core.database import SessionLocal
 from backend.core.ui_messages import msg
 from backend.core.errors import classify_pipeline_error
-from backend.core.paths import PROJECTS_DATA_DIR
 from backend.modules.projects.models import ProjectDocument
 
 from common.jsonio import save_json_atomic
@@ -47,14 +49,16 @@ def process_text_document(
     pdf_path: Path,
     project: str,
     vision_model: str,
+    doc_dir: Path,
     describe_images: bool = True,
 ) -> None:
     """Text archive document (report, statics): the existing standards pipeline.
 
     Docling -> vision descriptions of images (models/diagrams in statics too)
     -> chunking by headings -> project into the header -> embeddings.
-    Everything is written to PROJECTS_DATA_DIR/{slug}/, chunk ids come from
-    our slug. describe_images=False -> "No LLM" mode: vision is skipped.
+    Everything is written to doc_dir (<root>/.search_index/{slug}/), chunk
+    ids come from our slug. describe_images=False -> "No LLM" mode: vision
+    is skipped.
     """
     # Lazy import — Docling is heavy, load it only for actual processing
     # (same reason as in documents/pipeline.py).
@@ -63,7 +67,6 @@ def process_text_document(
     from pipeline import embed as index_step
     from pipeline import parse as parser_step
 
-    doc_dir = PROJECTS_DATA_DIR / slug
     progress.set_progress(slug, msg("progress.reading"))
     parser_step.process(slug, pdf_path=str(pdf_path), doc_dir=doc_dir, document_id=slug)
     progress.set_progress(slug, msg("progress.images"))
@@ -87,9 +90,10 @@ def process_text_document(
     index_step.process(slug, doc_dir=doc_dir)
 
 
-def run_project_pipeline(slug: str, pdf_path: str) -> None:
+def run_project_pipeline(slug: str, pdf_path: str, root: str) -> None:
     """Full processing of one archive document (called from ThreadPoolExecutor).
 
+    root — the project folder; artifacts go to <root>/.search_index/{slug}/.
     Statuses: processing -> ready | error (+ error text in `error`).
     We open the DB session ourselves — FastAPI dependencies do not work
     in a background thread.
@@ -113,6 +117,7 @@ def run_project_pipeline(slug: str, pdf_path: str) -> None:
                 pdf_path=Path(pdf_path),
                 project=doc.project,
                 vision_model=vision_model,
+                doc_dir=index_store.doc_dir(Path(root), slug),
                 describe_images=describe_images,
             )
         except Exception as exc:

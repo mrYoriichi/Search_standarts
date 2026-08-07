@@ -86,14 +86,17 @@ def test_reindex_error_doc_resubmits_with_fresh_stat(db, tmp_path, monkeypatch):
     assert result.status == "processing"
     assert result.error is None
     # Contract 2026-08-02: artifacts of a failed document are NOT wiped —
-    # the describe resume continues from the checkpoint without paying again.
-    assert old_artifacts.exists()
+    # the describe resume continues from the checkpoint without paying
+    # again. The legacy local checkpoint moves into the project folder,
+    # where the pipeline now reads and writes.
+    assert not old_artifacts.exists()
+    assert (project_dir / ".search_index" / "most__tz" / "chunks.json").exists()
     # A fresh stat is recorded — the next scan won't reset the document to pending.
     assert result.file_mtime == pytest.approx(pdf_path.stat().st_mtime)
     assert result.file_size == pdf_path.stat().st_size
     (fn, args) = executor.calls[0]
     assert fn is run_project_pipeline
-    assert args == ("most__tz", str(pdf_path))
+    assert args == ("most__tz", str(pdf_path), str(project_dir))
 
 
 def test_reindex_error_doc_keeps_artifacts(db, tmp_path, monkeypatch):
@@ -114,7 +117,9 @@ def test_reindex_error_doc_keeps_artifacts(db, tmp_path, monkeypatch):
     executor = _FakeExecutor()
     service.reindex_document(db, "most__tz", [root], executor)
 
-    assert (artifacts / "descriptions.json").exists()  # the checkpoint survives
+    # The checkpoint survives — moved into the project folder, where the
+    # describe resume will pick it up.
+    assert (root / ".search_index" / "most__tz" / "descriptions.json").exists()
     assert len(executor.calls) == 1
 
 

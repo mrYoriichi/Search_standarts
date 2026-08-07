@@ -37,7 +37,7 @@ def shared_root(tmp_path, monkeypatch):
     root = tmp_path / "lib" / ".search_index"
     _write_doc(root, "doc", "OLD")
     monkeypatch.setattr(library_cache, "PROJECTS_DATA_DIR", tmp_path / "no_projects")
-    monkeypatch.setattr(library_cache, "_library_index_roots", lambda: [root])
+    monkeypatch.setattr(library_cache, "_shared_index_roots", lambda: [root])
     # TTL=0: the tests above check the fingerprint mechanism itself, no throttling.
     monkeypatch.setattr(library_cache, "_FINGERPRINT_TTL_S", 0.0)
     library_cache.invalidate()

@@ -14,7 +14,7 @@ from pathlib import Path
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from backend.core import progress
+from backend.core import index_store, progress
 from backend.core.ui_messages import msg
 from backend.core.paths import PROJECTS_DATA_DIR
 from backend.modules.projects.models import ProjectDocument
@@ -38,6 +38,7 @@ class FoundDocument:
     page_count: int
     file_size: int
     file_mtime: float
+    root: Path  # the project folder the file was found in
 
 
 @dataclass
@@ -117,6 +118,7 @@ def scan_archive(root: Path, seen_slugs: set[str] | None = None) -> ArchiveScanR
                 page_count=page_count,
                 file_size=stat.st_size,
                 file_mtime=stat.st_mtime,
+                root=root,
             )
         )
 
@@ -125,6 +127,69 @@ def scan_archive(root: Path, seen_slugs: set[str] | None = None) -> ArchiveScanR
         duplicates=duplicates,
         errors=errors,
     )
+
+
+def _has_artifacts(root: Path, slug: str) -> bool:
+    """Does the document have artifacts in either location?
+
+    The folder (<root>/.search_index/{slug}) is the current home; the local
+    projects_data pool is the legacy one (indexed by an old app version,
+    or the project folder is read-only and migration failed).
+    """
+    return (
+        index_store.has_index_files(root, slug) or (PROJECTS_DATA_DIR / slug).exists()
+    )
+
+
+def _wipe_artifacts(slug: str, root: Path | None) -> None:
+    """Remove the document's artifacts from both locations (folder + legacy)."""
+    if root is not None:
+        shutil.rmtree(index_store.doc_dir(root, slug), ignore_errors=True)
+    shutil.rmtree(PROJECTS_DATA_DIR / slug, ignore_errors=True)
+
+
+def _dir_listing(base: Path) -> set[tuple[str, int]]:
+    """Relative paths + sizes of all files under base (copy verification)."""
+    return {
+        (p.relative_to(base).as_posix(), p.stat().st_size)
+        for p in base.rglob("*")
+        if p.is_file()
+    }
+
+
+def _migrate_artifacts(slug: str, root: Path) -> bool:
+    """Move legacy local artifacts into the project folder.
+
+    Copy -> verify (same file list and sizes) -> remove the local copy.
+    Any failure (read-only folder, network hiccup) rolls the copy back and
+    keeps the local artifacts working — migration retries on a later scan.
+    """
+    local = PROJECTS_DATA_DIR / slug
+    target = index_store.doc_dir(root, slug)
+    if target.exists() or not local.is_dir():
+        return False
+    try:
+        index_store.index_root(root).mkdir(exist_ok=True)
+        shutil.copytree(local, target)
+        if _dir_listing(local) != _dir_listing(target):
+            raise OSError(f"incomplete copy of {slug}")
+    except OSError:
+        shutil.rmtree(target, ignore_errors=True)
+        return False
+    shutil.rmtree(local, ignore_errors=True)
+    return True
+
+
+def _maybe_migrate(root: Path, slug: str) -> bool:
+    """Migrate at scan time only COMPLETE legacy artifacts.
+
+    Partial folders (an error document's descriptions.json checkpoint) are
+    migrated by reindex_document right before the pipeline resumes.
+    """
+    local = PROJECTS_DATA_DIR / slug
+    if not ((local / "chunks.json").exists() and (local / "embeddings.json").exists()):
+        return False
+    return _migrate_artifacts(slug, root)
 
 
 def sync_archive(db: Session, roots: list[Path]) -> ArchiveScanSummary:
@@ -171,6 +236,7 @@ def sync_archive(db: Session, roots: list[Path]) -> ArchiveScanSummary:
     found_slugs: set[str] = set()
     new_count = 0
     changed = 0
+    migrated = False
 
     for found in documents:
         found_slugs.add(found.slug)
@@ -205,11 +271,12 @@ def sync_archive(db: Session, roots: list[Path]) -> ArchiveScanSummary:
             doc.page_count = found.page_count
             doc.file_size = found.file_size
             doc.file_mtime = found.file_mtime
+            migrated |= _maybe_migrate(found.root, found.slug)
         elif (doc.file_size, doc.file_mtime) != (found.file_size, found.file_mtime):
             # The file was replaced (same path, new content): old chunks are
             # stale — clean up and return to pending. Indexing is paid, so
             # NO auto-start: the user clicks "Indexovat".
-            shutil.rmtree(PROJECTS_DATA_DIR / found.slug, ignore_errors=True)
+            _wipe_artifacts(found.slug, found.root)
             doc.relative_path = found.relative_path
             doc.page_count = found.page_count
             doc.status = "pending"
@@ -220,7 +287,8 @@ def sync_archive(db: Session, roots: list[Path]) -> ArchiveScanSummary:
         else:
             doc.relative_path = found.relative_path
             doc.page_count = found.page_count
-            if doc.status == "ready" and not (PROJECTS_DATA_DIR / found.slug).exists():
+            migrated |= _maybe_migrate(found.root, found.slug)
+            if doc.status == "ready" and not _has_artifacts(found.root, found.slug):
                 # "hotovo" without artifacts: reindex/delete rmtree first and
                 # write the DB after, so a crash in between leaves the row
                 # lying. Back to pending — the user clicks Indexovat.
@@ -238,14 +306,15 @@ def sync_archive(db: Session, roots: list[Path]) -> ArchiveScanSummary:
                 continue
             if doc.status == "processing":
                 continue  # being processed right now — don't pull the rug
-            shutil.rmtree(PROJECTS_DATA_DIR / slug, ignore_errors=True)
+            doc_root = next((r for r in roots if r.name == doc.project), None)
+            _wipe_artifacts(slug, doc_root)
             db.delete(doc)
             removed += 1
 
     db.commit()
-    if removed or changed:
-        # Chunks disappeared from disk (deleted or replaced documents) —
-        # the search cache must not serve them.
+    if removed or changed or migrated:
+        # Chunks disappeared from disk or moved between pools — the search
+        # cache must not serve stale locations.
         library_cache.invalidate()
 
     return ArchiveScanSummary(
@@ -310,7 +379,7 @@ def start_archive_indexing(
             doc.status = "processing"
             db.commit()
             executor.submit(
-                run_project_pipeline, doc.slug, str(root / doc.relative_path)
+                run_project_pipeline, doc.slug, str(root / doc.relative_path), str(root)
             )
             submitted += 1
         return submitted
@@ -335,8 +404,8 @@ def reindex_document(
 
     Needed after a pipeline change (step 3: former sheet documents) or when
     the user replaced the PDF's content. The PDF itself in the archive
-    folder is NOT touched. No cross-machine lock needed: archive artifacts
-    live in the local PROJECTS_DATA_DIR, not in a shared network folder.
+    folder is NOT touched. Artifacts live in <root>/.search_index/{slug}
+    (plus the legacy local pool for old installs).
     """
     from backend.core import library_cache
     from backend.modules.projects.pipeline import run_project_pipeline
@@ -355,9 +424,12 @@ def reindex_document(
     # CONTINUE from the checkpoint: descriptions of the paid pages sit in
     # descriptions.json, the describe resume skips them. Live case
     # 2026-08-02: vision failed on page 166 of ~189 — rmtree was throwing
-    # away ~165 paid pages.
+    # away ~165 paid pages. A legacy local checkpoint moves into the folder
+    # first — the pipeline reads/writes only <root>/.search_index/{slug}.
     if doc.status == "ready":
-        shutil.rmtree(PROJECTS_DATA_DIR / slug, ignore_errors=True)
+        _wipe_artifacts(slug, root)
+    else:
+        _migrate_artifacts(slug, root)
 
     doc.status = "processing"
     doc.error = None
@@ -369,7 +441,9 @@ def reindex_document(
     # the cache again when the document is ready).
     library_cache.invalidate()
 
-    executor.submit(run_project_pipeline, slug, str(root / doc.relative_path))
+    executor.submit(
+        run_project_pipeline, slug, str(root / doc.relative_path), str(root)
+    )
     return doc
 
 

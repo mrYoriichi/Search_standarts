@@ -45,28 +45,33 @@ _FINGERPRINT_TTL_S = 60.0
 _last_sweep = 0.0  # time.monotonic() of the last sweep; 0 = never
 
 
-def _library_index_roots() -> list[Path]:
-    """.search_index roots of every library folder (unreachable included).
+def _shared_index_roots() -> list[Path]:
+    """.search_index roots of every library AND archive folder
+    (unreachable included).
 
-    Indexes live next to the user's PDFs — in `<folder>/.search_index/`.
-    chunk_id carries the folder tag (`{folder_id}__…`), so chunks of
-    different folders cannot collide in the merged pool. Existence is NOT
-    checked here: _load_merged skips missing roots itself, and the
-    fingerprint needs unreachable roots too — to tell "the drive
-    dropped" from "the documents were deleted".
+    Indexes live next to the user's PDFs — in `<folder>/.search_index/`;
+    since 2026-08-07 the project archive stores them the same way. Slugs
+    carry the folder/project tag (`{tag}__…`), so chunks of different
+    folders cannot collide in the merged pool. The same physical folder
+    attached as both a library and an archive is loaded once (same_dir).
+    Existence is NOT checked here: _load_merged skips missing roots
+    itself, and the fingerprint needs unreachable roots too — to tell
+    "the drive dropped" from "the documents were deleted".
     """
     from backend.core.database import SessionLocal
     from backend.modules.settings import service as settings_service
 
     db = SessionLocal()
     try:
-        library_paths = settings_service.get_library_paths(db)
+        folder_paths = settings_service.get_library_paths(
+            db
+        ) + settings_service.get_projects_paths(db)
     finally:
         db.close()
     roots = []
     seen: list[Path] = []
-    for library_path in library_paths:
-        p = Path(library_path)
+    for folder_path in folder_paths:
+        p = Path(folder_path)
         if any(index_store.same_dir(p, s) for s in seen):
             continue  # same physical folder under a second path — no doubling
         seen.append(p)
@@ -82,8 +87,10 @@ def _load_merged() -> tuple[list[dict], dict]:
     models are incomparable. An empty/missing pool is silently skipped;
     it is only an error when no pool has any ready document.
     """
-    roots = _library_index_roots()
+    roots = _shared_index_roots()
     if PROJECTS_DATA_DIR.exists():
+        # Legacy archive pool: indexed by an old app version and not yet
+        # migrated into the project folder (or the folder is read-only).
         roots.append(PROJECTS_DATA_DIR)
 
     all_chunks: list[dict] = []
@@ -123,13 +130,13 @@ def _load_merged() -> tuple[list[dict], dict]:
 def _current_fingerprint(prev: dict[str, int] | None) -> dict[str, int]:
     """Fingerprint of the shared folders: mtime of each embeddings.json.
 
-    Only library roots (_library_index_roots): ANOTHER machine can
-    rewrite them through the shared network folder, and our local
-    invalidate() never sees it. The local archive pool (projects_data)
-    is mutated only by this process — it calls invalidate() itself.
-    embeddings.json is the last pipeline file; its change means a
-    completed re-index, and a new/removed document shows up as an
-    appeared/vanished key.
+    Only shared roots (_shared_index_roots — library and archive
+    folders): ANOTHER machine can rewrite them through the shared network
+    folder, and our local invalidate() never sees it. The legacy local
+    archive pool (projects_data) is mutated only by this process — it
+    calls invalidate() itself. embeddings.json is the last pipeline file;
+    its change means a completed re-index, and a new/removed document
+    shows up as an appeared/vanished key.
 
     An UNREACHABLE root (network drive dropped, VPN) ≠ "documents
     deleted": its entries are carried over from the previous fingerprint
@@ -137,7 +144,7 @@ def _current_fingerprint(prev: dict[str, int] | None) -> dict[str, int]:
     comparison is honest once the drive returns.
     """
     fp: dict[str, int] = {}
-    for root in _library_index_roots():
+    for root in _shared_index_roots():
         try:
             slug_dirs = list(root.iterdir())
         except OSError:

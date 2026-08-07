@@ -131,6 +131,7 @@ async def lifespan(app: FastAPI):
                 run_project_pipeline,
                 pdoc.slug,
                 str(root / pdoc.relative_path),
+                str(root),
             )
             print(f"[startup] Resumed archive pipeline for {pdoc.slug}")
         db.commit()
