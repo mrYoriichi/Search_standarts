@@ -119,12 +119,12 @@ def test_migration_failure_keeps_local_artifacts(db, artifacts_dir, tmp_path):
     root = tmp_path / "Most"
     _make_pdf(root / "tz.pdf")
     slug = make_project_slug("Most", "tz.pdf")
+    (root / ".search_index").write_text("not a folder", encoding="utf-8")
     sync_archive(db, [root])
     doc = db.scalar(select(ProjectDocument).where(ProjectDocument.slug == slug))
     doc.status = "ready"
     db.commit()
     _write_index(artifacts_dir / slug, slug)
-    (root / ".search_index").write_text("not a folder", encoding="utf-8")
 
     sync_archive(db, [root])
 

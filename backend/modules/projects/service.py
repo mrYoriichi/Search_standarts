@@ -192,6 +192,26 @@ def _maybe_migrate(root: Path, slug: str) -> bool:
     return _migrate_artifacts(slug, root)
 
 
+def _root_adoption(root: Path) -> tuple[bool, str | None]:
+    """(can_adopt, readonly_error) of one project folder.
+
+    Ensures the folder passport (meta.json) exists — same as the library:
+    the passport records the embedding model, and foreign indexes are
+    adopted only when the model matches ours. A folder where .search_index
+    cannot be created is read-only: its documents cannot be indexed, so
+    they get a clear error instead of an eternal silent "čeká".
+    """
+    from indexing.embeddings_index import EMBEDDING_MODEL
+
+    meta = index_store.read_meta(root)
+    if meta is None:
+        try:
+            meta = index_store.ensure_meta(root, EMBEDDING_MODEL)
+        except OSError:
+            return False, msg("lib.readonly_folder")
+    return meta.get("embedding_model") == EMBEDDING_MODEL, None
+
+
 def sync_archive(db: Session, roots: list[Path]) -> ArchiveScanSummary:
     """Scan all project folders and sync the project_documents table.
 
@@ -236,12 +256,25 @@ def sync_archive(db: Session, roots: list[Path]) -> ArchiveScanSummary:
     found_slugs: set[str] = set()
     new_count = 0
     changed = 0
+    adopted = 0
     migrated = False
+    # Passport / read-only status once per folder, not per document.
+    adoption = {root: _root_adoption(root) for root in roots if root.is_dir()}
 
     for found in documents:
         found_slugs.add(found.slug)
         doc = existing.get(found.slug)
+        can_adopt, ro_error = adoption[found.root]
         if doc is None:
+            if can_adopt and index_store.has_complete_index(found.root, found.slug):
+                # A colleague already indexed this file in the shared
+                # folder (or the folder was copied with its indexes) —
+                # ready at once, at no cost.
+                status = "ready"
+                adopted += 1
+            else:
+                status = "error" if ro_error else "pending"
+                new_count += 1
             db.add(
                 ProjectDocument(
                     slug=found.slug,
@@ -251,12 +284,12 @@ def sync_archive(db: Session, roots: list[Path]) -> ArchiveScanSummary:
                     # can't drop NOT NULL) — write the constant, no fork left.
                     doc_type="text",
                     page_count=found.page_count,
-                    status="pending",
+                    status=status,
+                    error=ro_error if status == "error" else None,
                     file_size=found.file_size,
                     file_mtime=found.file_mtime,
                 )
             )
-            new_count += 1
         elif doc.status == "processing":
             # Being processed right now — update path/pages, do NOT touch
             # stat: a file replaced under the pipeline is caught by the
@@ -288,6 +321,11 @@ def sync_archive(db: Session, roots: list[Path]) -> ArchiveScanSummary:
             doc.relative_path = found.relative_path
             doc.page_count = found.page_count
             migrated |= _maybe_migrate(found.root, found.slug)
+            if doc.status == "pending" and ro_error:
+                # Stuck in "čeká" while the folder cannot be written —
+                # rescan turns it into a clear error (mirrors the library).
+                doc.status = "error"
+                doc.error = ro_error
             if doc.status == "ready" and not _has_artifacts(found.root, found.slug):
                 # "hotovo" without artifacts: reindex/delete rmtree first and
                 # write the DB after, so a crash in between leaves the row
@@ -312,9 +350,9 @@ def sync_archive(db: Session, roots: list[Path]) -> ArchiveScanSummary:
             removed += 1
 
     db.commit()
-    if removed or changed or migrated:
-        # Chunks disappeared from disk or moved between pools — the search
-        # cache must not serve stale locations.
+    if removed or changed or migrated or adopted:
+        # Chunks disappeared from disk, moved between pools or appeared
+        # without a pipeline run — the next question must see the truth.
         library_cache.invalidate()
 
     return ArchiveScanSummary(
@@ -322,6 +360,7 @@ def sync_archive(db: Session, roots: list[Path]) -> ArchiveScanSummary:
         new=new_count,
         missing=removed,
         changed=changed,
+        adopted=adopted,
         duplicates=duplicates,
         errors=errors,
         unavailable=unavailable,
@@ -363,6 +402,7 @@ def start_archive_indexing(
 
     Returns the number of submitted documents.
     """
+    from backend.core import library_cache
     from backend.modules.projects.pipeline import run_project_pipeline
 
     with _start_indexing_lock:
@@ -371,10 +411,23 @@ def start_archive_indexing(
         ).all()
 
         submitted = 0
+        adopted_any = False
+        adoption: dict[Path, tuple[bool, str | None]] = {}
         for doc in pending:
             root = resolve_project_root(paths, doc.project, doc.relative_path)
             if root is None:
                 continue  # file not found in any folder — skip
+            if root not in adoption:
+                adoption[root] = _root_adoption(root)
+            # Re-check right before the paid run: a colleague may have
+            # indexed this file after our scan — adopt for free instead
+            # (mirrors the library's pending adoption, 785ea29).
+            if adoption[root][0] and index_store.has_complete_index(root, doc.slug):
+                doc.status = "ready"
+                doc.error = None
+                db.commit()
+                adopted_any = True
+                continue
             refresh_file_stat(doc, root)
             doc.status = "processing"
             db.commit()
@@ -382,6 +435,10 @@ def start_archive_indexing(
                 run_project_pipeline, doc.slug, str(root / doc.relative_path), str(root)
             )
             submitted += 1
+        if adopted_any:
+            # Ready documents appeared without a pipeline run — the next
+            # question must see them.
+            library_cache.invalidate()
         return submitted
 
 

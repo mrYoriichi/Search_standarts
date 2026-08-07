@@ -112,6 +112,12 @@ def run_project_pipeline(slug: str, pdf_path: str, root: str) -> None:
         vision_model = settings_service.get_vision_model(db)
         describe_images = settings_service.get_describe_images(db)
         try:
+            # The folder passport records the embedding model — without it
+            # other machines could not adopt the indexes we are about to
+            # write. Also fails early and clearly on a read-only folder.
+            from indexing.embeddings_index import EMBEDDING_MODEL
+
+            index_store.ensure_meta(Path(root), EMBEDDING_MODEL)
             process_text_document(
                 slug=slug,
                 pdf_path=Path(pdf_path),

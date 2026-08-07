@@ -28,6 +28,7 @@ type ScanSummary = {
   new: number
   missing: number
   changed: number // replaced PDFs (new content) — returned to "čeká"
+  adopted: number // ready indexes taken over from the folder, at no cost
   duplicates: string[]
   errors: string[]
   unavailable: string[]
@@ -542,6 +543,8 @@ export default function ArchivePage() {
                     {t('arch.summary', { found: summary.found, fresh: summary.new })}
                     {summary.changed > 0 &&
                       t('arch.summaryChanged', { n: summary.changed })}
+                    {summary.adopted > 0 &&
+                      t('arch.summaryAdopted', { n: summary.adopted })}
                     {summary.missing > 0 &&
                       t('arch.summaryMissing', { n: summary.missing })}
                     {summary.duplicates.length > 0 &&

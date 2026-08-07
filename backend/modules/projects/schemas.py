@@ -41,6 +41,7 @@ class ArchiveScanSummary(BaseModel):
     new: int  # new records added
     missing: int  # removed: files no longer on disk (indexes cleaned up)
     changed: int = 0  # replaced PDFs (new content) — reset to pending
+    adopted: int = 0  # ready indexes taken over from the folder, at no cost
     duplicates: list[str]  # same-named files (slug taken) — not indexed
     errors: list[str]  # files that could not be opened as PDFs
     unavailable: list[str]  # unavailable folders (network drive) — cleanup skipped
