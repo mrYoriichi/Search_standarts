@@ -19,7 +19,9 @@ if sys.stdout is None or sys.stderr is None:
     sys.stdout = _log_file
     sys.stderr = _log_file
 
+import shutil
 import socket
+import subprocess
 import threading
 import time
 import webbrowser
@@ -32,8 +34,37 @@ HOST = "127.0.0.1"
 PORT = 8000
 
 
+def _find_edge() -> str | None:
+    """Locate msedge.exe on Windows; None means "use the default browser"."""
+    if sys.platform != "win32":
+        return None
+    for env_var in ("ProgramFiles(x86)", "ProgramFiles"):
+        base = os.environ.get(env_var)
+        if base:
+            path = os.path.join(base, "Microsoft", "Edge", "Application", "msedge.exe")
+            if os.path.isfile(path):
+                return path
+    return shutil.which("msedge")
+
+
+def _open_app_window(url: str) -> None:
+    """Open the UI in an Edge app window (no address bar/tabs) when available.
+
+    Falls back to the default browser tab if Edge is missing or fails to
+    start — the app must open no matter what.
+    """
+    edge = _find_edge()
+    if edge:
+        try:
+            subprocess.Popen([edge, f"--app={url}"])
+            return
+        except OSError:
+            pass
+    webbrowser.open(url)
+
+
 def _wait_and_open_browser() -> None:
-    """Poll the port until the server accepts connections, then open the browser.
+    """Poll the port until the server accepts connections, then open the UI.
 
     Polling instead of a fixed sleep: startup time (docling/torch imports)
     varies. SS_NO_BROWSER=1 disables the browser (tests/headless).
@@ -45,7 +76,7 @@ def _wait_and_open_browser() -> None:
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
             sock.settimeout(0.5)
             if sock.connect_ex((HOST, PORT)) == 0:
-                webbrowser.open(url)
+                _open_app_window(url)
                 return
         time.sleep(0.5)
 
