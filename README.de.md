@@ -4,6 +4,11 @@
 
 [English](README.md) | [Čeština](README.cs.md) | **Deutsch**
 
+> 🔧 **Für Ingenieure & Entwickler:** die technische Beschreibung — Stack,
+> RAG-Pipeline, Designentscheidungen — steht in
+> [ARCHITECTURE.md](ARCHITECTURE.md) (Englisch). Diese Seite beschreibt das
+> Produkt für seine Nutzer.
+
 Erstellen Sie aus Ihrer eigenen Baudokumentation eine lokale Datenbank und
 durchsuchen Sie sie von einem Ort aus. Dokumente, Projekte, Zeichnungen — ob
 gescannt oder nicht, spielt keine Rolle.

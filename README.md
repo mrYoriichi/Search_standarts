@@ -4,6 +4,10 @@
 
 **English** | [Čeština](README.cs.md) | [Deutsch](README.de.md)
 
+> 🔧 **Engineers & developers:** the technical description — stack, RAG
+> pipeline, design decisions — is in [ARCHITECTURE.md](ARCHITECTURE.md).
+> This page describes the product for its users.
+
 Build a local database out of your own construction documents and search it
 from one place. Documents, projects, drawings — scanned or not, it makes no
 difference.

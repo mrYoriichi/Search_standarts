@@ -4,6 +4,10 @@
 
 [English](README.md) | **Čeština** | [Deutsch](README.de.md)
 
+> 🔧 **Pro inženýry a vývojáře:** technický popis — stack, RAG pipeline,
+> architektonická rozhodnutí — je v [ARCHITECTURE.md](ARCHITECTURE.md)
+> (anglicky). Tato stránka popisuje produkt pro jeho uživatele.
+
 Vytvořte si z vlastní stavební dokumentace lokální databázi a hledejte v ní
 z jednoho místa. Dokumenty, projekty, výkresy — nezáleží na tom, jestli jsou
 naskenované, nebo ne.
