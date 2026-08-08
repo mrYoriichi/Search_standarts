@@ -1,4 +1,4 @@
-# MAI Assistant — technical overview
+# MAI Assistant - technical overview
 
 A local-first desktop RAG application. It turns folders of construction PDFs
 into a searchable database and answers questions about them with a citation
@@ -8,24 +8,24 @@ User-facing description: [README.md](README.md).
 
 ## The problem
 
-Search across a database of PDF documentation — standards, technical reports,
-structural calculations, drawing sets — with a pointer to the source of every
+Search across a database of PDF documentation - standards, technical reports,
+structural calculations, drawing sets - with a pointer to the source of every
 answer.
 
 These PDFs are not plain text: inside them are scans, construction schemes
 and tables. Hence four requirements:
 
-- find an **exact designation** — a standard code, a sheet number, a term;
+- find an **exact designation** - a standard code, a sheet number, a term;
 - find by **meaning**, when the question is worded nothing like the document;
 - search **drawings**, not only prose;
-- keep everything **confidential** — no handing documents and finished
+- keep everything **confidential** - no handing documents and finished
   projects to a third party, no uploading them to somebody else's server.
 
 The requirements come from the daily work of the author and colleagues.
 
 ## The solution
 
-A RAG pipeline that runs entirely on the user's machine — that is what
+A RAG pipeline that runs entirely on the user's machine - that is what
 provides the confidentiality.
 
 Retrieval is hybrid: embeddings for meaning, BM25 for exact terms and codes,
@@ -44,8 +44,8 @@ heartbeat) keeps two people from indexing the same folder at once.
 
 **Drawings are first-class documents.** A per-page router decides how each
 page is processed, so a single PDF can be part prose and part drawing sheets.
-Sheets are read by OCR and described by a vision model — what is drawn, which
-object, which design stage — and that description is what makes them findable.
+Sheets are read by OCR and described by a vision model - what is drawn, which
+object, which design stage - and that description is what makes them findable.
 
 **Every fragment carries its context.** A fragment is not a bare slice of
 text: it is indexed together with the document title and the headings above
@@ -54,7 +54,7 @@ See [What one fragment carries](#what-one-fragment-carries).
 
 **The model cannot invent a citation.** The answering call uses Structured
 Outputs and returns only the ids of the fragments it used; every source
-line — document, section, page — is assembled from our own data, and the page
+line - document, section, page - is assembled from our own data, and the page
 number is a link that opens the original PDF at that page.
 
 **Retrieval respects the user's filter.** BM25 is rebuilt per query from
@@ -63,13 +63,13 @@ user selected instead of the whole corpus.
 
 **Strong search re-reads the pages.** For hard questions the pages behind the
 top sources are rendered (up to 3, ~2200 px) and passed to the answering model
-as images — that is what answers "what is drawn on this sheet" and "which
+as images - that is what answers "what is drawn on this sheet" and "which
 dimension does this table give".
 
 **No vector database.** Normalized float32 embeddings sit in RAM as one NumPy
 matrix and a query is a single matrix multiply: 11–14 ms over tens of
 thousands of fragments. Nothing to install, nothing to run, nothing to
-break — which matters when the product is a desktop installer, not a service.
+break - which matters when the product is a desktop installer, not a service.
 
 **Spending is a design constraint.** Scanning a folder is free and separate
 from the paid indexing step; vision descriptions are checkpointed per page so
@@ -111,7 +111,7 @@ Measured on live data: prose pages reach 575 paths, drawings run
 
 ### Prose pages
 
-- Docling parses only the prose pages — they are collected into a temporary
+- Docling parses only the prose pages - they are collected into a temporary
   PDF, and page numbers are remapped back to the original.
 - Chunking follows level-2 headings; oversized chunks split by level-3
   headings, and as a last resort by paragraphs at a hard limit of 6 000
@@ -122,7 +122,7 @@ Measured on live data: prose pages reach 575 paths, drawings run
 
 ### Drawing pages
 
-- OCR of the whole sheet (RapidOCR) — published drawings often have an empty
+- OCR of the whole sheet (RapidOCR) - published drawings often have an empty
   or broken text layer.
 - Plus whatever text layer there is.
 - Plus a vision "passport" of the sheet.
@@ -130,18 +130,18 @@ Measured on live data: prose pages reach 575 paths, drawings run
 
 The division of labour matters: the vision model supplies **semantics only**
 (what kind of sheet, which object, what is drawn), exact title-block strings
-come from **OCR**, and the design stage is extracted with a **regex** —
+come from **OCR**, and the design stage is extracted with a **regex** -
 vision confuses the short stage codes.
 
 ## What one fragment carries
 
 Retrieval quality is decided here, before any search happens. A fragment is
-stored — and indexed — with its context around it:
+stored - and indexed - with its context around it:
 
 - **Document title**, read by the vision model off the first page. Not the
   file name: `SDS_PK_2025.pdf` is useless to a vector, the real title of the
   document is not.
-- **Parent section and section title** — the headings the fragment sits
+- **Parent section and section title** - the headings the fragment sits
   under.
 - **The text itself**, with descriptions of schemes and tables merged into it
   inline, marked `[SCHÉMA: …]` and `[TABULKA: …]`.
@@ -150,7 +150,7 @@ stored — and indexed — with its context around it:
   title of every fragment, so a sheet knows which project it belongs to.
 
 The header is not decoration: the text that gets embedded, and the text that
-BM25 tokenizes, is `document title + parent section + section title + body` —
+BM25 tokenizes, is `document title + parent section + section title + body` -
 identical in both indexes. A section called "Založení propustků" therefore
 answers a question about culvert foundations even if those words never appear
 in its body.
@@ -175,7 +175,7 @@ use. Fragments it judged relevant but did not use come back separately, as
 **`chunk_id` is `{document_id}_c{counter}`**, not the section number.
 Standards with annexes repeat section numbers, and the earlier scheme produced
 duplicate ids that silently corrupted the index, the rank fusion and the
-assembly of sources — the kind of bug that yields plausible wrong answers
+assembly of sources - the kind of bug that yields plausible wrong answers
 instead of a crash.
 
 **Document identity is the file name** (slugged, Cyrillic transliterated).
@@ -198,7 +198,7 @@ would not limit memory at all.
 
 **No server of ours is in the request path.** The app talks to the OpenAI API
 directly with the user's key; the only backend is a small licence and
-telemetry service, and it is fail-open — if it is unreachable, the app keeps
+telemetry service, and it is fail-open - if it is unreachable, the app keeps
 working.
 
 ## Measured numbers
@@ -238,13 +238,13 @@ search/          library loading, hybrid search, query expansion, answering
 indexing/        BM25 and embedding index construction
 pdf_processing/  page router (prose vs drawing), parser, OCR, vision prompts
 backend/         FastAPI app: core (cache, locks, limits) + feature modules
-frontend/        React SPA (no router, no state library — deliberately small)
+frontend/        React SPA (no router, no state library - deliberately small)
 cli/             run the pipeline and ask questions from a terminal
 tests/           pytest suite (in-memory SQLite, mocked LLM calls)
 ```
 
 Modules are organised by task rather than by layer, and every endpoint is
-plain REST + Pydantic — which makes the API agent-ready without a dedicated
+plain REST + Pydantic - which makes the API agent-ready without a dedicated
 agent layer.
 
 ## Running from source
