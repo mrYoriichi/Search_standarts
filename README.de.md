@@ -75,15 +75,16 @@ Die App selbst ist kostenlos, der Autor verdient nichts daran. Sie zahlen nur
 OpenAI, und zwar direkt: einmalig für die Verarbeitung Ihrer Dokumente und
 danach Cent-Beträge für Fragen.
 
-| Aktion | Kosten |
-|---|---|
-| Verarbeitung einer Dokumentseite | ~$0.04 mit Schemata und Tabellen, reiner Text weniger |
-| Verarbeitung eines Zeichnungsblatts | < $0.01 |
-| Eine Frage | < $0.01 |
-| Eine Frage mit starker Suche | ~$0.04 |
+| Aktion | gpt-5.6-luna (Standard) | gpt-5.6-sol |
+|---|---|---|
+| Verarbeitung einer Seite mit Schemata oder Tabellen | ~$0.002 | ~$0.04 |
+| Verarbeitung eines Zeichnungsblatts | ~$0.002 | ~$0.04 |
+| Eine Frage | ~$0.002 | ~$0.03 |
+| Eine Frage mit starker Suche | ~$0.003 | ~$0.07 |
 
-Ein Dokument mit 300 Seiten kostet einmalig ein paar Dollar; ein Arbeitstag
-voller Fragen kostet Cents.
+Seiten mit reinem Text sind fast kostenlos. Ein Dokument mit 300 Seiten kostet
+mit dem Standardmodell einmalig einige Dutzend Cent (mit gpt-5.6-sol ein paar
+Dollar); ein Arbeitstag voller Fragen kostet Cents.
 
 ## So funktioniert es
 

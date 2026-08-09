@@ -69,15 +69,16 @@ The app itself is free and the author earns nothing from it. You pay OpenAI
 only, and you pay them directly: once for processing your documents, then
 cents for questions.
 
-| Action | Cost |
-|---|---|
-| Process a page of a document | ~$0.04 with schemes and tables, less for plain text |
-| Process a drawing sheet | < $0.01 |
-| One question | < $0.01 |
-| One strong-search question | ~$0.04 |
+| Action | gpt-5.6-luna (default) | gpt-5.6-sol |
+|---|---|---|
+| Process a page with schemes or tables | ~$0.002 | ~$0.04 |
+| Process a drawing sheet | ~$0.002 | ~$0.04 |
+| One question | ~$0.002 | ~$0.03 |
+| One strong-search question | ~$0.003 | ~$0.07 |
 
-A 300-page document is a one-off of a few dollars; a working day of questions
-costs cents.
+Plain text pages are almost free. A 300-page document is a one-off of tens of
+cents on the default model (a few dollars with gpt-5.6-sol); a working day of
+questions costs cents.
 
 ## How it works
 

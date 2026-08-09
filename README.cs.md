@@ -67,15 +67,16 @@ zrušte ho ve svém účtu OpenAI a vytvořte nový.
 Samotná aplikace je zdarma a autor z ní nic nemá. Platíte pouze OpenAI, a to
 přímo: jednou za zpracování dokumentů a potom centy za dotazy.
 
-| Akce | Cena |
-|---|---|
-| Zpracování stránky dokumentu | ~$0.04 se schématy a tabulkami, prostý text méně |
-| Zpracování výkresového listu | < $0.01 |
-| Jeden dotaz | < $0.01 |
-| Dotaz se silným hledáním | ~$0.04 |
+| Akce | gpt-5.6-luna (výchozí) | gpt-5.6-sol |
+|---|---|---|
+| Zpracování stránky se schématy a tabulkami | ~$0.002 | ~$0.04 |
+| Zpracování výkresového listu | ~$0.002 | ~$0.04 |
+| Jeden dotaz | ~$0.002 | ~$0.03 |
+| Dotaz se silným hledáním | ~$0.003 | ~$0.07 |
 
-Dokument o 300 stranách vyjde jednorázově na pár dolarů; celý pracovní den
-dotazů stojí centy.
+Stránky s prostým textem jsou téměř zdarma. Dokument o 300 stranách vyjde s
+výchozím modelem jednorázově na desítky centů (s gpt-5.6-sol na pár dolarů);
+celý pracovní den dotazů stojí centy.
 
 ## Jak to funguje
 
