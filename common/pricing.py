@@ -49,7 +49,12 @@ def embedding_cost(total_tokens: int) -> float:
     return total_tokens * EMBEDDING_PRICE_PER_M / 1_000_000
 
 
-# Averages for the no-LLM forecast, measured 2026-05-21 on two real documents
-# (47 + 71 pages, gpt-5.5 + text-embedding-3-large), weighted by page count.
-AVG_VISION_COST_PER_IMAGE_PAGE: float | None = 0.040  # $/page with figures/tables
-AVG_EMBEDDING_COST_PER_PAGE: float | None = 0.00014  # $/page
+# Averages for the no-LLM forecast: $/page with figures/tables, per vision
+# model. Measured 2026-08-09 on MVL_649 (47 pages, 27 with figures/tables);
+# both models saw identical input tokens, so the pair is directly comparable.
+# Text-only pages are free (vision never sees them) and are NOT averaged in.
+AVG_VISION_COST_PER_IMAGE_PAGE: dict[str, float] = {
+    "gpt-5.6-luna": 0.0014,
+    "gpt-5.6-sol": 0.036,
+}
+AVG_EMBEDDING_COST_PER_PAGE: float | None = 0.00014  # $/page, text-embedding-3-large

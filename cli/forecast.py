@@ -45,14 +45,15 @@ def count_pages_and_visuals(document: dict) -> tuple[int, int]:
     return total, visuals
 
 
-def forecast_one(pdf_path: Path) -> tuple[int, int, float]:
-    """Return (total_pages, pages_with_visuals, predicted_usd) for one PDF."""
+def forecast_one(pdf_path: Path) -> tuple[int, int, dict[str, float]]:
+    """Return (total_pages, pages_with_visuals, {model: predicted_usd}) for one PDF."""
     document = parse_for_forecast(str(pdf_path))
     total, visuals = count_pages_and_visuals(document)
-    cost = (
-        visuals * AVG_VISION_COST_PER_IMAGE_PAGE + total * AVG_EMBEDDING_COST_PER_PAGE
-    )
-    return total, visuals, cost
+    costs = {
+        model: visuals * per_page + total * AVG_EMBEDDING_COST_PER_PAGE
+        for model, per_page in AVG_VISION_COST_PER_IMAGE_PAGE.items()
+    }
+    return total, visuals, costs
 
 
 def main() -> None:
@@ -60,7 +61,7 @@ def main() -> None:
         print("Usage: python -m cli.forecast <path-to-pdf-or-folder>")
         sys.exit(1)
 
-    if AVG_VISION_COST_PER_IMAGE_PAGE is None or AVG_EMBEDDING_COST_PER_PAGE is None:
+    if not AVG_VISION_COST_PER_IMAGE_PAGE or AVG_EMBEDDING_COST_PER_PAGE is None:
         print("[!] Averages missing in pricing.py — run the measurement first.")
         sys.exit(1)
 
@@ -77,16 +78,15 @@ def main() -> None:
 
 def forecast_single(pdf_path: Path) -> None:
     """Forecast for one PDF."""
-    total, visuals, cost = forecast_one(pdf_path)
-    vision_cost = visuals * AVG_VISION_COST_PER_IMAGE_PAGE
+    total, visuals, costs = forecast_one(pdf_path)
     emb_cost = total * AVG_EMBEDDING_COST_PER_PAGE
     print(f"PDF: {pdf_path.name}")
     print(f"  Pages total:      {total}")
     print(f"  With figure/table: {visuals}")
-    print("  Cost forecast:")
-    print(f"    vision:         ~${vision_cost:.4f}")
-    print(f"    embeddings:     ~${emb_cost:.4f}")
-    print(f"    TOTAL:          ~${cost:.4f}")
+    print(f"  Embeddings:       ~${emb_cost:.4f}")
+    print("  TOTAL by vision model:")
+    for model, cost in costs.items():
+        print(f"    {model}: ~${cost:.4f}")
 
 
 def forecast_folder(folder: Path) -> None:
@@ -100,21 +100,23 @@ def forecast_folder(folder: Path) -> None:
 
     total_pages_all = 0
     total_visuals_all = 0
-    total_cost_all = 0.0
+    total_costs_all: dict[str, float] = {m: 0.0 for m in AVG_VISION_COST_PER_IMAGE_PAGE}
     failures = 0
 
     for pdf in pdfs:
         print(f"  {pdf.name}: ", end="", flush=True)
         try:
-            total, visuals, cost = forecast_one(pdf)
+            total, visuals, costs = forecast_one(pdf)
         except Exception as e:
             print(f"[!] error: {e}")
             failures += 1
             continue
-        print(f"{total} p., {visuals} with figure/table → ~${cost:.2f}")
+        per_model = ", ".join(f"{m} ~${c:.2f}" for m, c in costs.items())
+        print(f"{total} p., {visuals} with figure/table → {per_model}")
         total_pages_all += total
         total_visuals_all += visuals
-        total_cost_all += cost
+        for model, cost in costs.items():
+            total_costs_all[model] += cost
 
     print("\n=== TOTAL ===")
     print(f"  Processed:       {len(pdfs) - failures} / {len(pdfs)}")
@@ -122,7 +124,9 @@ def forecast_folder(folder: Path) -> None:
         print(f"  Failures:        {failures}")
     print(f"  Pages total:     {total_pages_all}")
     print(f"  With figure/table: {total_visuals_all}")
-    print(f"  Predicted cost:  ~${total_cost_all:.2f}")
+    print("  Predicted cost by vision model:")
+    for model, cost in total_costs_all.items():
+        print(f"    {model}: ~${cost:.2f}")
 
 
 if __name__ == "__main__":
