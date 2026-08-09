@@ -66,11 +66,12 @@ jobs:
         if: github.ref_type == 'tag'
         uses: softprops/action-gh-release@v2
         with:
-          files: installer/Search_standarts_Setup.exe
+          # Glob: имя файла теперь содержит версию (installer.iss).
+          files: installer/Search_standarts_Setup_*.exe
 
       - name: Upload installer as artifact (smoke run)
         if: github.ref_type != 'tag'
         uses: actions/upload-artifact@v4
         with:
           name: Search_standarts_Setup
-          path: installer/Search_standarts_Setup.exe
+          path: installer/Search_standarts_Setup_*.exe

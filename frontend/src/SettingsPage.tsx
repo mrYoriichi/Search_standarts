@@ -12,7 +12,29 @@ export default function SettingsPage() {
       <PasswordSection />
       <AnswerLanguageSection />
       <OpenAIKeySection />
+      <VersionLine />
     </div>
+  )
+}
+
+// ── Installed app version ─────────────────────────────────────────────────────
+
+function VersionLine() {
+  const { t } = useI18n()
+  const [version, setVersion] = useState<string | null>(null)
+
+  useEffect(() => {
+    fetch('/api/health')
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d: { version?: string } | null) => d?.version && setVersion(d.version))
+      .catch(() => {})
+  }, [])
+
+  if (!version) return null
+  return (
+    <p className="text-sm text-muted-foreground">
+      {t('settings.version', { version })}
+    </p>
   )
 }
 

@@ -3,6 +3,7 @@
 from fastapi import APIRouter
 
 from backend.modules.health.update import get_update_info
+from backend.version import APP_VERSION
 
 
 router = APIRouter()
@@ -10,8 +11,8 @@ router = APIRouter()
 
 @router.get("/health")
 def health() -> dict:
-    """Simple backend liveness check."""
-    return {"status": "ok"}
+    """Simple backend liveness check + installed version (settings page)."""
+    return {"status": "ok", "version": APP_VERSION}
 
 
 @router.get("/update")

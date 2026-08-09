@@ -24,6 +24,7 @@ const cs = {
   'theme.toDark': 'Tmavý režim',
   'update.available': 'Je k dispozici nová verze {version}.',
   'update.download': 'Stáhnout →',
+  'settings.version': 'Verze aplikace: {version}',
 
   // Blocked overlay
   'blocked.title': 'Přístup zablokován',
@@ -251,6 +252,7 @@ const en: Record<MsgKey, string> = {
   'theme.toDark': 'Dark mode',
   'update.available': 'A new version {version} is available.',
   'update.download': 'Download →',
+  'settings.version': 'App version: {version}',
 
   'blocked.title': 'Access blocked',
   'blocked.revoked': 'Access has been revoked by the administrator.',
@@ -465,6 +467,7 @@ const de: Record<MsgKey, string> = {
   'theme.toDark': 'Dunkler Modus',
   'update.available': 'Eine neue Version {version} ist verfügbar.',
   'update.download': 'Herunterladen →',
+  'settings.version': 'App-Version: {version}',
 
   'blocked.title': 'Zugang gesperrt',
   'blocked.revoked': 'Der Zugang wurde vom Administrator entzogen.',

@@ -35,7 +35,8 @@ Compression=lzma2
 SolidCompression=yes
 WizardStyle=modern
 OutputDir=installer
-OutputBaseFilename=Search_standarts_Setup
+; Версия в имени файла — чтобы при скачивании было видно, что ставишь.
+OutputBaseFilename=Search_standarts_Setup_{#MyAppVersion}
 ; Uninstaller icon — taken from the .exe itself.
 UninstallDisplayIcon={app}\{#MyAppExeName}
 
