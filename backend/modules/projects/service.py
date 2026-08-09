@@ -42,12 +42,28 @@ class FoundDocument:
 
 
 @dataclass
+class UnreadableFile:
+    """A PDF that is on disk but could not be opened (broken or locked).
+
+    Отдельный тип, а не строка ошибки: sync должен знать slug и путь,
+    чтобы показать документ со статусом error, а не удалить его как
+    «пропавший с диска» — файл-то на месте.
+    """
+
+    slug: str
+    project: str
+    relative_path: str
+    root: Path
+
+
+@dataclass
 class ArchiveScanResult:
     """Result of walking a project folder."""
 
     documents: list[FoundDocument]
     duplicates: list[str]  # relative_path of files whose slug is taken (namesakes)
     errors: list[str]  # files that could not be opened as PDFs
+    unreadable: list[UnreadableFile]  # the same files, structured for sync
 
 
 def make_project_slug(project: str, relative_path: str) -> str:
@@ -89,6 +105,7 @@ def scan_archive(root: Path, seen_slugs: set[str] | None = None) -> ArchiveScanR
     documents: list[FoundDocument] = []
     duplicates: list[str] = []
     errors: list[str] = []
+    unreadable: list[UnreadableFile] = []
     if seen_slugs is None:
         seen_slugs = set()
 
@@ -105,6 +122,15 @@ def scan_archive(root: Path, seen_slugs: set[str] | None = None) -> ArchiveScanR
             stat = pdf_path.stat()
         except Exception as error:
             errors.append(f"{relative}: {error}")
+            seen_slugs.add(slug)
+            unreadable.append(
+                UnreadableFile(
+                    slug=slug,
+                    project=project,
+                    relative_path=relative.as_posix(),
+                    root=root,
+                )
+            )
             continue
 
         seen_slugs.add(slug)
@@ -126,6 +152,7 @@ def scan_archive(root: Path, seen_slugs: set[str] | None = None) -> ArchiveScanR
         documents=documents,
         duplicates=duplicates,
         errors=errors,
+        unreadable=unreadable,
     )
 
 
@@ -233,6 +260,7 @@ def sync_archive(db: Session, roots: list[Path]) -> ArchiveScanSummary:
     documents: list[FoundDocument] = []
     duplicates: list[str] = []
     errors: list[str] = []
+    unreadable_files: list[UnreadableFile] = []
     unavailable: list[str] = []
     seen_slugs: set[str] = set()
     for root in roots:
@@ -251,6 +279,7 @@ def sync_archive(db: Session, roots: list[Path]) -> ArchiveScanSummary:
         documents.extend(result.documents)
         duplicates.extend(result.duplicates)
         errors.extend(result.errors)
+        unreadable_files.extend(result.unreadable)
 
     existing = {doc.slug: doc for doc in db.scalars(select(ProjectDocument)).all()}
     found_slugs: set[str] = set()
@@ -332,6 +361,27 @@ def sync_archive(db: Session, roots: list[Path]) -> ArchiveScanSummary:
                 # lying. Back to pending — the user clicks Indexovat.
                 doc.status = "pending"
                 doc.error = None
+
+    # Файл на диске есть, но не открылся (битый или заблокирован другой
+    # программой): документ остаётся в списке со статусом error, а не
+    # исчезает как «удалённый». Существующую строку не трогаем: у error
+    # уже есть точная причина из пайплайна, а ready продолжает искаться
+    # по оплаченному индексу (файл может быть заблокирован временно).
+    for bad in unreadable_files:
+        found_slugs.add(bad.slug)
+        if bad.slug not in existing:
+            db.add(
+                ProjectDocument(
+                    slug=bad.slug,
+                    project=bad.project,
+                    relative_path=bad.relative_path,
+                    doc_type="text",
+                    page_count=0,
+                    status="error",
+                    error=msg("err.pdf_read"),
+                )
+            )
+            new_count += 1
 
     removed = 0
     # Archive documents carry no folder label (slug = {project}__{path}), so
