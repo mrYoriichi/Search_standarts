@@ -223,7 +223,7 @@ const cs = {
   'idx.scope': 'Platí pro knihovnu i archiv projektů.',
   'idx.visionModel': 'Model pro zpracování (vision)',
   'idx.visionModelText':
-    'Použije se při skenování dokumentů. Vision tvoří ~99 % ceny dokumentu — „gpt-5.4-mini“ je výrazně levnější, „gpt-5.5“ kvalitnější.',
+    'Použije se při skenování dokumentů. Vision tvoří ~99 % ceny dokumentu — „gpt-5.6-luna“ je výrazně levnější, „gpt-5.6-sol“ kvalitnější.',
   'idx.describeImages': 'Popis obrázků a výkresů (vision)',
   'idx.describeImagesText':
     '„Standardní“ nechá vision popsat schémata a výkresy (lepší vyhledávání, vision tvoří ~99 % ceny). „Bez LLM“ použije jen OCR a text — zdarma.',
@@ -439,7 +439,7 @@ const en: Record<MsgKey, string> = {
   'idx.scope': 'Applies to both the library and the project archive.',
   'idx.visionModel': 'Processing model (vision)',
   'idx.visionModelText':
-    'Used when scanning documents. Vision makes up ~99% of a document’s cost — “gpt-5.4-mini” is much cheaper, “gpt-5.5” higher quality.',
+    'Used when scanning documents. Vision makes up ~99% of a document’s cost — “gpt-5.6-luna” is much cheaper, “gpt-5.6-sol” higher quality.',
   'idx.describeImages': 'Description of images and drawings (vision)',
   'idx.describeImagesText':
     '“Standard” lets vision describe schemes and drawings (better search, vision makes up ~99% of the cost). “No LLM” uses only OCR and text — free.',
@@ -653,7 +653,7 @@ const de: Record<MsgKey, string> = {
   'idx.scope': 'Gilt für die Bibliothek und das Projektarchiv.',
   'idx.visionModel': 'Verarbeitungsmodell (Vision)',
   'idx.visionModelText':
-    'Wird beim Scannen der Dokumente verwendet. Vision macht ~99 % der Dokumentkosten aus — „gpt-5.4-mini“ ist deutlich günstiger, „gpt-5.5“ hochwertiger.',
+    'Wird beim Scannen der Dokumente verwendet. Vision macht ~99 % der Dokumentkosten aus — „gpt-5.6-luna“ ist deutlich günstiger, „gpt-5.6-sol“ hochwertiger.',
   'idx.describeImages': 'Beschreibung von Bildern und Zeichnungen (Vision)',
   'idx.describeImagesText':
     '„Standard“ lässt Vision Schemata und Zeichnungen beschreiben (bessere Suche, Vision macht ~99 % der Kosten aus). „Ohne LLM“ nutzt nur OCR und Text — kostenlos.',

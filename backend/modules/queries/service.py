@@ -132,7 +132,7 @@ def ask(
     document_ids: list[str] | None,
     db: Session,
     mode: str = "hybrid",
-    answer_model: str = "gpt-5.4-mini",
+    answer_model: str = "gpt-5.6-luna",
     expand: bool = True,
     strong: bool = False,
     answer_language: str | None = None,
@@ -141,7 +141,7 @@ def ask(
 
     document_ids=None — search the whole library.
     mode — search mode (hybrid / vector / keyword), see search.hybrid.
-    answer_model — answer generation model (gpt-5.4-mini / gpt-5.5).
+    answer_model — answer generation model (gpt-5.6-luna / gpt-5.6-sol).
     expand — expand the query via LLM before searching (diacritics/synonyms).
     strong — strong search: attach page snapshots of the top sources to the
     answer (heavy questions about drawings/tables; slower and pricier).

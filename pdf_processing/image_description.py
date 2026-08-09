@@ -16,7 +16,7 @@ from openai import OpenAI
 
 # Default vision model. The app overrides it with the vision_model
 # setting; this constant is the default for the CLI and direct calls.
-VISION_MODEL = "gpt-5.4-mini"
+VISION_MODEL = "gpt-5.6-luna"
 
 # Prompt for the vision passport of a drawing page (whole sheet = one
 # image). The goal is not "what is visible" but a SEARCH-RICH passport:

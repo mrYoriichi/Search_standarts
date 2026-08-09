@@ -44,7 +44,7 @@ export default function SearchPage({ active }: { active: boolean }) {
   const [searchMode, setSearchMode] = useState<'hybrid' | 'vector' | 'keyword'>('hybrid')
   // Answer generation model. The answer language is a profile setting
   // (Nastavení), the backend reads it itself.
-  const [answerModel, setAnswerModel] = useState<'gpt-5.4-mini' | 'gpt-5.5'>('gpt-5.4-mini')
+  const [answerModel, setAnswerModel] = useState<'gpt-5.6-luna' | 'gpt-5.6-sol'>('gpt-5.6-luna')
   // Whether to expand the query via LLM before search (diacritics/synonyms). Default yes.
   const [expandQuery, setExpandQuery] = useState(true)
   // Strong search: page snapshots of the top sources go as images to the
@@ -227,7 +227,7 @@ export default function SearchPage({ active }: { active: boolean }) {
 
       <ChoiceCard
         title={t('search.answerModel')}
-        options={['gpt-5.4-mini', 'gpt-5.5'] as const}
+        options={['gpt-5.6-luna', 'gpt-5.6-sol'] as const}
         selected={answerModel}
         onSelect={setAnswerModel}
         label={(value) => value}

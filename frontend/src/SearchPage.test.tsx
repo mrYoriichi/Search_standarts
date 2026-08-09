@@ -36,7 +36,7 @@ const ANSWER: AskResponse = {
   used_chunks: [],
   query_log_id: 7,
   search_query: 'kryti vyztuze',
-  answer_model: 'gpt-5.4-mini',
+  answer_model: 'gpt-5.6-luna',
   answer_ms: 4200,
 }
 
@@ -68,7 +68,7 @@ describe('search page', () => {
     expect(post.body).toEqual({
       question: 'kryti vyztuze?',
       mode: 'hybrid',
-      answer_model: 'gpt-5.4-mini',
+      answer_model: 'gpt-5.6-luna',
       expand: true,
       strong: false,
     })

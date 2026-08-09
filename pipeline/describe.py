@@ -351,7 +351,15 @@ def process(
 
 if __name__ == "__main__":
     if len(sys.argv) < 2:
-        print("Usage:   python -m pipeline.describe <pdf_name>")
-        print("Example: python -m pipeline.describe MVL649")
+        print(
+            "Usage:   python -m pipeline.describe <pdf_name> [vision_model] [doc_dir]"
+        )
+        print("Example: python -m pipeline.describe MVL649 gpt-5.6-sol /tmp/measure_55")
         sys.exit(1)
-    process(sys.argv[1])
+    # Модель и папку можно задать явно: так один и тот же документ
+    # прогоняется на разных моделях в чистые папки — это и есть замер цены.
+    process(
+        sys.argv[1],
+        vision_model=sys.argv[2] if len(sys.argv) > 2 else VISION_MODEL,
+        doc_dir=Path(sys.argv[3]) if len(sys.argv) > 3 else None,
+    )

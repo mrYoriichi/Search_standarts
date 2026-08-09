@@ -12,8 +12,8 @@ import json
 from openai import OpenAI
 
 
-# Answer-generation model (the UI can switch to gpt-5.5 per request).
-ANSWER_MODEL = "gpt-5.4-mini"
+# Answer-generation model (the UI can switch to gpt-5.6-sol per request).
+ANSWER_MODEL = "gpt-5.6-luna"
 
 
 RESPONSE_SCHEMA = {

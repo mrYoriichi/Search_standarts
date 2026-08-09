@@ -11,6 +11,11 @@ Source: https://openai.com/pricing
 
 # Per-1M-token prices per model: (input, output).
 MODEL_PRICES_PER_M: dict[str, tuple[float, float]] = {
+    "gpt-5.6-sol": (5.0, 30.0),
+    "gpt-5.6-luna": (0.20, 1.20),
+    # Сняты с использования 2026-08-09 (заменены на sol и luna), но цены
+    # остаются: у пользователей со старой версией эти модели могли остаться
+    # в настройках и в истории запросов, иначе model_cost упадёт.
     "gpt-5.5": (5.0, 30.0),
     "gpt-5.4-mini": (0.75, 4.50),
 }

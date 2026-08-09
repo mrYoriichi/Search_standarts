@@ -6,7 +6,7 @@ import { t, useI18n } from './i18n'
 // The settings are global — both pipelines read them (standards and project
 // archive), so one modal serves both "Knihovna" and "Archiv projektů".
 
-const VISION_MODELS = ['gpt-5.5', 'gpt-5.4-mini'] as const
+const VISION_MODELS = ['gpt-5.6-sol', 'gpt-5.6-luna'] as const
 
 function VisionModelCard() {
   const [model, setModel] = useState<string | null>(null)

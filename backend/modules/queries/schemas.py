@@ -21,8 +21,8 @@ class AskRequest(BaseModel):
         default="hybrid",
         description="Search mode: hybrid (7 vector + 7 BM25), vector (top-20), keyword (top-10 BM25).",
     )
-    answer_model: Literal["gpt-5.4-mini", "gpt-5.5"] = Field(
-        default="gpt-5.4-mini",
+    answer_model: Literal["gpt-5.6-luna", "gpt-5.6-sol"] = Field(
+        default="gpt-5.6-luna",
         description="Answer-generation model.",
     )
     expand: bool = Field(

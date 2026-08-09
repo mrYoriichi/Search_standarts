@@ -25,8 +25,8 @@ PROJECTS_PATHS_KEY = "projects_library_paths"
 # a document's price). Default matches VISION_MODEL in
 # pdf_processing/image_description.py.
 VISION_MODEL_KEY = "vision_model"
-VISION_MODELS = ("gpt-5.5", "gpt-5.4-mini")
-DEFAULT_VISION_MODEL = "gpt-5.4-mini"  # cheaper; gpt-5.5 by choice in the UI
+VISION_MODELS = ("gpt-5.6-sol", "gpt-5.6-luna")
+DEFAULT_VISION_MODEL = "gpt-5.6-luna"  # cheaper; gpt-5.6-sol by choice in the UI
 # Vision toggle: ON (default) = Standard (describe schemes and drawings),
 # OFF = "No LLM" (OCR/text only, free). Stored as "1"/"0".
 DESCRIBE_IMAGES_KEY = "describe_images"
@@ -242,9 +242,16 @@ def update_projects_path(db: Session, old_raw: str, new_raw: str) -> list[str]:
 
 
 def get_vision_model(db: Session) -> str:
-    """Current vision model for processing; the default when unset."""
+    """Current vision model for processing; the default when unset.
+
+    Снятая с продажи модель могла остаться в настройках со старой версии —
+    откатываемся на дефолт, иначе фронтенд получит значение, которого нет
+    в выпадающем списке.
+    """
     setting = db.scalar(select(Setting).where(Setting.key == VISION_MODEL_KEY))
-    return setting.value if setting else DEFAULT_VISION_MODEL
+    if setting is None or setting.value not in VISION_MODELS:
+        return DEFAULT_VISION_MODEL
+    return setting.value
 
 
 def set_vision_model(db: Session, model: str) -> str:

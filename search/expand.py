@@ -13,7 +13,7 @@ question is kept for answer generation.
 
 from openai import OpenAI
 
-EXPAND_MODEL = "gpt-5.4-mini"
+EXPAND_MODEL = "gpt-5.6-luna"
 
 # Language code → name used in the prompt. Unknown codes are skipped.
 LANGUAGE_NAMES = {"cs": "Czech", "en": "English", "de": "German", "ru": "Russian"}
