@@ -13,6 +13,7 @@ Run AFTER parse:
 import json
 import sys
 import tempfile
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import Callable
 
@@ -35,6 +36,11 @@ from pdf_processing.image_description import (
 from pdf_processing.parser import VISUAL_BLOCK_TYPES, make_document_id
 from pdf_processing.pdfium_lock import PDFIUM_LOCK
 from common.pricing import model_cost
+
+# Сколько vision-запросов одного документа летит параллельно. Это сеть,
+# не CPU. Не задирать: до 3 документов идут одновременно (executor в
+# app.py), то есть к API уходит до 3 × VISION_CONCURRENCY запросов.
+VISION_CONCURRENCY = 4
 
 
 def load_document(json_path: Path) -> dict:
@@ -126,9 +132,12 @@ def describe_drawings(
     already described by a previous run are skipped — they are paid for.
     An empty answer is recorded too ("" = "page processed"; the chunker
     ignores empties). on_page_done fires after each page so the caller
-    can persist progress; on_progress(done, total) before each page
-    feeds the UI (a drawings-only PDF would otherwise sit motionless
-    through the whole vision stage).
+    can persist progress; on_progress(done, total) after each finished
+    page feeds the UI.
+
+    Vision calls run VISION_CONCURRENCY at a time (network, not CPU).
+    The pool only renders and calls the API; descriptions and callbacks
+    are touched by the main thread alone (as_completed loop) — no lock.
 
     Returns (prompt_tokens, completion_tokens) for this run.
     """
@@ -145,9 +154,8 @@ def describe_drawings(
     try:
         with tempfile.TemporaryDirectory() as tmp:
             tmp_dir = Path(tmp)
-            for done, page_number in enumerate(todo, start=1):
-                if on_progress is not None:
-                    on_progress(done, len(todo))
+
+            def describe_one(page_number: int) -> tuple[int, str, int, int]:
                 # Render under the lock; the (long) vision call is outside.
                 with PDFIUM_LOCK:
                     page = doc[page_number - 1]
@@ -157,18 +165,37 @@ def describe_drawings(
                 if _is_blank(pil):
                     # Blank sheet: "" marks it processed; the chunker
                     # ignores empties and a re-run will not come back here.
-                    descriptions[str(page_number)] = ""
-                    if on_page_done is not None:
-                        on_page_done()
-                    continue
+                    return page_number, "", 0, 0
                 tmp_png = tmp_dir / f"draw_{page_number:03d}.png"
                 pil.save(tmp_png)
                 desc, p_tok, c_tok = describe_drawing(tmp_png, model=vision_model)
-                in_tok += p_tok
-                out_tok += c_tok
-                descriptions[str(page_number)] = desc.strip()
-                if on_page_done is not None:
-                    on_page_done()
+                return page_number, desc.strip(), p_tok, c_tok
+
+            with ThreadPoolExecutor(max_workers=VISION_CONCURRENCY) as pool:
+                futures = [pool.submit(describe_one, p) for p in todo]
+                first_error: BaseException | None = None
+                done = 0
+                for future in as_completed(futures):
+                    try:
+                        page_number, desc, p_tok, c_tok = future.result()
+                    except BaseException as exc:
+                        # Первая ошибка: не начатые запросы отменяем, а уже
+                        # летящие дожидаемся и сохраняем — они оплачены.
+                        if first_error is None:
+                            first_error = exc
+                            for f in futures:
+                                f.cancel()
+                        continue
+                    done += 1
+                    in_tok += p_tok
+                    out_tok += c_tok
+                    descriptions[str(page_number)] = desc
+                    if on_page_done is not None:
+                        on_page_done()
+                    if on_progress is not None:
+                        on_progress(done, len(todo))
+                if first_error is not None:
+                    raise first_error
     finally:
         with PDFIUM_LOCK:
             doc.close()
@@ -275,6 +302,7 @@ def process(
     print("Describing via the vision LLM...\n")
 
     block_descriptions: dict[str, str] = output["block_descriptions"]
+    todo: list[tuple[int, Path]] = []
     for i, page_number in enumerate(pages, start=1):
         if page_number in done_pages:
             print(f"[{i}/{len(pages)}] p. {page_number}: already described, skip")
@@ -286,19 +314,52 @@ def process(
             print(f"[{i}/{len(pages)}] p. {page_number}: no screenshot, skip")
             continue
 
-        if on_progress is not None:
-            on_progress(i, len(pages))
-        print(f"[{i}/{len(pages)}] p. {page_number}: calling the LLM...")
-        page_descriptions, in_tok, out_tok = describe_page_visuals(
-            document, page_number, image_path, model=vision_model
-        )
-        block_descriptions.update(page_descriptions)
-        output["described_pages"].append(page_number)
-        save_descriptions(output, descriptions_path)
-        pages_in += in_tok
-        pages_out += out_tok
-        pages_described_count += 1
-        print(f"           descriptions set: {len(page_descriptions)}")
+        todo.append((page_number, image_path))
+
+    # Vision-вызовы летят по VISION_CONCURRENCY параллельно (сеть, не CPU).
+    # Пул делает ТОЛЬКО запрос к API; словарь и файл обновляет главный
+    # поток в цикле as_completed — потокам нечего делить, замок не нужен.
+    # Сохранение после каждой страницы (resume) остаётся как было.
+    with ThreadPoolExecutor(max_workers=VISION_CONCURRENCY) as pool:
+        futures = {
+            pool.submit(
+                describe_page_visuals,
+                document,
+                page_number,
+                image_path,
+                model=vision_model,
+            ): page_number
+            for page_number, image_path in todo
+        }
+        first_error: BaseException | None = None
+        done = 0
+        for future in as_completed(futures):
+            page_number = futures[future]
+            try:
+                page_descriptions, in_tok, out_tok = future.result()
+            except BaseException as exc:
+                # Первая ошибка: не начатые запросы отменяем, а уже летящие
+                # дожидаемся и сохраняем в descriptions.json — они оплачены.
+                if first_error is None:
+                    first_error = exc
+                    for f in futures:
+                        f.cancel()
+                continue
+            done += 1
+            block_descriptions.update(page_descriptions)
+            output["described_pages"].append(page_number)
+            save_descriptions(output, descriptions_path)
+            pages_in += in_tok
+            pages_out += out_tok
+            pages_described_count += 1
+            if on_progress is not None:
+                on_progress(done, len(todo))
+            print(
+                f"[{done}/{len(todo)}] p. {page_number}: "
+                f"descriptions set: {len(page_descriptions)}"
+            )
+        if first_error is not None:
+            raise first_error
 
     # Step 3: vision passports for drawing pages (when the PDF path is
     # known). Progress is saved after every sheet, as above.

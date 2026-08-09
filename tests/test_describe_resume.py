@@ -55,13 +55,14 @@ def test_crash_keeps_paid_pages_and_resume_skips_them(tmp_path, monkeypatch):
     with pytest.raises(RuntimeError):
         describe.process("test", doc_dir=tmp_path)
 
-    # What was paid for is saved: metadata + page 1.
+    # What was paid for is saved: metadata + pages 1 and 3 (vision calls
+    # run in parallel — both were already in flight when page 2 failed).
     saved = json.loads((tmp_path / "descriptions.json").read_text(encoding="utf-8"))
     assert saved["document_title"] == "Titul"
-    assert saved["described_pages"] == [1]
-    assert saved["block_descriptions"] == {"p1_b0": "popis 1"}
+    assert sorted(saved["described_pages"]) == [1, 3]
+    assert saved["block_descriptions"] == {"p1_b0": "popis 1", "p3_b0": "popis 3"}
 
-    # Second run: the API is back. Page 1 and metadata are not bought again.
+    # Second run: the API is back. Only page 2 is bought, nothing twice.
     calls: list[int] = []
 
     def ok(document, page_number, image_path, model):
@@ -75,7 +76,7 @@ def test_crash_keeps_paid_pages_and_resume_skips_them(tmp_path, monkeypatch):
     monkeypatch.setattr(describe, "extract_document_metadata", metadata_must_not_run)
     describe.process("test", doc_dir=tmp_path)
 
-    assert calls == [2, 3]
+    assert calls == [2]
     final = json.loads((tmp_path / "descriptions.json").read_text(encoding="utf-8"))
     assert set(final["block_descriptions"]) == {"p1_b0", "p2_b0", "p3_b0"}
     assert sorted(final["described_pages"]) == [1, 2, 3]
