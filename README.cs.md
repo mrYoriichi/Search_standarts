@@ -4,6 +4,8 @@
 
 [English](README.md) | **Čeština** | [Deutsch](README.de.md)
 
+**⬇️ [Stáhnout pro Windows](https://github.com/mrYoriichi/Search_standarts/releases/latest)** - instalátor zdarma, bez předplatného.
+
 > 🔧 **Pro inženýry a vývojáře:** technický popis - stack, RAG pipeline,
 > architektonická rozhodnutí - je v [ARCHITECTURE.md](ARCHITECTURE.md)
 > (anglicky). Tato stránka popisuje produkt pro jeho uživatele.

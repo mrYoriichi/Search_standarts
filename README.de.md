@@ -4,6 +4,8 @@
 
 [English](README.md) | [Čeština](README.cs.md) | **Deutsch**
 
+**⬇️ [Download für Windows](https://github.com/mrYoriichi/Search_standarts/releases/latest)** - kostenloser Installer, kein Abo.
+
 > 🔧 **Für Ingenieure & Entwickler:** die technische Beschreibung - Stack,
 > RAG-Pipeline, Designentscheidungen - steht in
 > [ARCHITECTURE.md](ARCHITECTURE.md) (Englisch). Diese Seite beschreibt das

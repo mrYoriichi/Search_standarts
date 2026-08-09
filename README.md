@@ -4,6 +4,8 @@
 
 **English** | [Čeština](README.cs.md) | [Deutsch](README.de.md)
 
+**⬇️ [Download for Windows](https://github.com/mrYoriichi/Search_standarts/releases/latest)** - free installer, no subscription.
+
 > 🔧 **Engineers & developers:** the technical description - stack, RAG
 > pipeline, design decisions - is in [ARCHITECTURE.md](ARCHITECTURE.md).
 > This page describes the product for its users.
