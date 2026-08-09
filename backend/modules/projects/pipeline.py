@@ -16,7 +16,7 @@ from pathlib import Path
 
 from sqlalchemy import select
 
-from backend.core import index_lock, index_store, progress
+from backend.core import cpu_gate, index_lock, index_store, progress
 from backend.core.database import SessionLocal
 from backend.core.ui_messages import msg
 from backend.core.errors import classify_pipeline_error
@@ -67,8 +67,12 @@ def process_text_document(
     from pipeline import embed as index_step
     from pipeline import parse as parser_step
 
-    progress.set_progress(slug, msg("progress.reading"))
-    parser_step.process(slug, pdf_path=str(pdf_path), doc_dir=doc_dir, document_id=slug)
+    # «čtení PDF» — только после входа в шлюз (см. core/cpu_gate.py).
+    with cpu_gate.parse_gate:
+        progress.set_progress(slug, msg("progress.reading"))
+        parser_step.process(
+            slug, pdf_path=str(pdf_path), doc_dir=doc_dir, document_id=slug
+        )
     progress.set_progress(slug, msg("progress.images"))
     describe_step.process(
         slug,

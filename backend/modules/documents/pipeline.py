@@ -12,7 +12,7 @@ from pathlib import Path
 
 from sqlalchemy import select
 
-from backend.core import index_lock, library_cache, progress
+from backend.core import cpu_gate, index_lock, library_cache, progress
 from backend.core.database import SessionLocal
 from backend.core.ui_messages import msg
 from backend.core.errors import classify_pipeline_error
@@ -77,18 +77,21 @@ def run_pipeline(slug: str, pdf_path: str | None, doc_dir: Path) -> None:
         try:
             with tempfile.TemporaryDirectory(prefix=f"ss_pages_{slug}_") as tmp:
                 pages_dir = Path(tmp)
-                progress.set_progress(slug, msg("progress.reading"))
-                # document_id=slug: artifacts must carry the scoped slug
-                # ({folder_id}__{file}) from the DB, not the id derived
-                # from the file name — otherwise the "Where to search"
-                # filter would match no chunk.
-                parser_step.process(
-                    slug,
-                    pdf_path=pdf_path,
-                    doc_dir=doc_dir,
-                    document_id=slug,
-                    pages_dir=pages_dir,
-                )
+                # «čtení PDF» ставим только после входа в шлюз — пока
+                # документ ждёт своей очереди на parse, статус не врёт.
+                with cpu_gate.parse_gate:
+                    progress.set_progress(slug, msg("progress.reading"))
+                    # document_id=slug: artifacts must carry the scoped slug
+                    # ({folder_id}__{file}) from the DB, not the id derived
+                    # from the file name — otherwise the "Where to search"
+                    # filter would match no chunk.
+                    parser_step.process(
+                        slug,
+                        pdf_path=pdf_path,
+                        doc_dir=doc_dir,
+                        document_id=slug,
+                        pages_dir=pages_dir,
+                    )
                 progress.set_progress(slug, msg("progress.images"))
                 describe_step.process(
                     slug,
