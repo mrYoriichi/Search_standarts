@@ -81,11 +81,56 @@ def _wait_and_open_browser() -> None:
         time.sleep(0.5)
 
 
+def _run_tray() -> None:
+    """Иконка в трее (только Windows): «Otevřít» и «Ukončit».
+
+    Блокируется до выбора «Ukončit» — pystray хочет главный поток.
+    Импорты ленивые: на macOS/Linux пакета нет (маркер win32 в
+    requirements.txt).
+    """
+    import pystray
+    from PIL import Image, ImageDraw
+
+    from backend.version import APP_VERSION
+
+    # Иконку рисуем кодом — отдельного .ico файла в проекте нет.
+    image = Image.new("RGB", (64, 64), (37, 99, 235))
+    ImageDraw.Draw(image).text((32, 32), "M", fill="white", anchor="mm", font_size=40)
+
+    def open_ui(icon: object, item: object) -> None:
+        _open_app_window(f"http://{HOST}:{PORT}/")
+
+    def quit_app(icon: "pystray.Icon", item: object) -> None:
+        icon.stop()
+
+    pystray.Icon(
+        "asistent_mai",
+        image,
+        f"Asistent MAI {APP_VERSION}",
+        menu=pystray.Menu(
+            pystray.MenuItem("Otevřít", open_ui, default=True),
+            pystray.MenuItem("Ukončit", quit_app),
+        ),
+    ).run()
+
+
 def main() -> None:
     threading.Thread(target=_wait_and_open_browser, daemon=True).start()
+    # Server-объект вместо uvicorn.run(): нужен should_exit для выхода из трея.
     # Pass the app object, not the "backend.app:app" string: the .exe has no
     # source tree to re-import the module by name.
-    uvicorn.run(app, host=HOST, port=PORT, log_level="info")
+    server = uvicorn.Server(uvicorn.Config(app, host=HOST, port=PORT, log_level="info"))
+    if sys.platform == "win32":
+        # Сервер — в фоновом потоке, трей — в главном. После «Ukončit» выход
+        # жёсткий: потоки индексации не daemon и могут крутиться часами, а
+        # недоделанный документ докрутит crash-resume при следующем запуске.
+        threading.Thread(target=server.run, daemon=True).start()
+        _run_tray()
+        server.should_exit = True
+        time.sleep(1)
+        os._exit(0)
+    else:
+        server.run()
 
 
 if __name__ == "__main__":

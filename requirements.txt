@@ -27,3 +27,7 @@ python-multipart==0.0.29
 # Search
 rank_bm25==0.2.2         # BM25 index for lexical search over chunks
 numpy==2.4.6             # embedding matrix + vector search (cosine = one multiply)
+
+# Desktop (иконка в трее Windows-сборки; на macOS/Linux не ставится)
+pystray==0.19.5; sys_platform == "win32"
+Pillow==11.3.0; sys_platform == "win32"  # рисуем иконку кодом; font_size требует >=10.1
