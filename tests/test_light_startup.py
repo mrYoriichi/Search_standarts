@@ -39,9 +39,12 @@ def test_backend_import_does_not_load_ml_stack() -> None:
 
 # Эти стадии выполняются в ОСНОВНОМ процессе (docling нужен только
 # parse, а он живёт в дочернем воркере) — импорт describe/chunk/embed
-# не должен затащить ML-стек обратно в родителя.
+# не должен затащить ML-стек обратно в родителя. pipeline.parse тоже
+# лёгкий: путь резюма (готовый document.json) рендерит скриншоты
+# pdfium'ом, docling грузится только при полном парсе.
 @pytest.mark.parametrize(
-    "module", ["pipeline.describe", "pipeline.chunk", "pipeline.embed"]
+    "module",
+    ["pipeline.parse", "pipeline.describe", "pipeline.chunk", "pipeline.embed"],
 )
 def test_parent_stages_do_not_load_ml_stack(module: str) -> None:
     _assert_light_import(module)

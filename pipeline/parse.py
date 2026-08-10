@@ -2,20 +2,31 @@
 
 If storage ever moves to a database, only the save functions change —
 the parser stays untouched.
+
+Resume: when the artifacts already hold an intact document.json (atomic
+writes guarantee integrity) and the PDF has not changed since, Docling/
+OCR are skipped entirely — only the page screenshots are re-rendered
+via pdfium. A describe crash on page 200 of 769 then costs minutes, not
+an hour of re-parsing. The heavy ML imports live inside _full_parse so
+the resume path never loads them.
 """
 
+import json
+import os
 import sys
 from pathlib import Path
 
+import pypdfium2 as pdfium
+
 from backend.core.paths import CLI_OUTPUT_DIR, CLI_PDF_DIR
 from common.jsonio import save_json_atomic
-from pdf_processing.drawing import insert_drawing_pages
-from pdf_processing.page_router import classify_pages
-from pdf_processing.parser import (
-    collect_pages_to_save,
-    enrich_visual_blocks,
-    parse_prose_pages,
-)
+from pdf_processing.pdfium_lock import PDFIUM_LOCK
+from pdf_processing.visual_blocks import collect_pages_to_save
+
+# Масштаб рендера скриншотов. Должен совпадать с images_scale в
+# parser.parse_pdf (докling-рендер), иначе резюм даст vision картинки
+# другого размера.
+IMAGE_SCALE = 2.0
 
 
 def save_document_json(document: dict, output_root: Path) -> Path:
@@ -54,6 +65,59 @@ def save_page_images(
     return saved_paths
 
 
+def _source_stat(pdf_path: str) -> dict:
+    """Отпечаток исходного PDF для document.json (размер + mtime)."""
+    st = os.stat(pdf_path)
+    return {"file_size": st.st_size, "file_mtime": st.st_mtime}
+
+
+def _load_resumable(pdf_path: str, doc_dir: Path, document_id: str) -> dict | None:
+    """document.json из артефактов, если парс можно не повторять.
+
+    Условия: файл читается (atomic-запись гарантирует целостность),
+    document_id совпадает и PDF не менялся с момента парсинга (отпечаток
+    source). Иначе None — нужен полный парс.
+    """
+    try:
+        document = json.loads((doc_dir / "document.json").read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+    if not isinstance(document, dict) or document.get("document_id") != document_id:
+        return None
+    source = document.get("source")
+    try:
+        if source != _source_stat(pdf_path):
+            return None
+    except OSError:
+        # PDF не читается — пусть полный парс упадёт привычной ошибкой.
+        return None
+    return document
+
+
+def _render_pages(pdf_path: str, pages_to_save: set[int], pages_dir: Path) -> int:
+    """Пере-рендер скриншотов страниц через pdfium (без Docling).
+
+    Тот же масштаб и имена файлов, что у полного парса. Возвращает
+    число сохранённых страниц.
+    """
+    pages_dir.mkdir(parents=True, exist_ok=True)
+    with PDFIUM_LOCK:
+        doc = pdfium.PdfDocument(pdf_path)
+    try:
+        saved = 0
+        for page_num in sorted(pages_to_save):
+            if page_num > len(doc):
+                continue  # defensive: страницы нет в PDF
+            with PDFIUM_LOCK:
+                image = doc[page_num - 1].render(scale=IMAGE_SCALE).to_pil()
+            image.save(pages_dir / f"p{page_num:03d}.png", format="PNG")
+            saved += 1
+        return saved
+    finally:
+        with PDFIUM_LOCK:
+            doc.close()
+
+
 def process(
     pdf_name: str,
     pdf_path: str | None = None,
@@ -84,6 +148,48 @@ def process(
     if pdf_path is None:
         pdf_path = str(CLI_PDF_DIR / f"{pdf_name}.pdf")
 
+    # Резюм — только путь приложения (doc_dir + document_id заданы);
+    # CLI-запуск всегда парсит заново.
+    if doc_dir is not None and document_id is not None:
+        document = _load_resumable(pdf_path, doc_dir, document_id)
+        if document is not None:
+            pages_to_save = collect_pages_to_save(document)
+            pages_to_save.add(1)
+            pages_dir = pages_dir or (doc_dir / "pages")
+            saved = _render_pages(pdf_path, pages_to_save, pages_dir)
+            print(
+                f"Resume: intact document.json, PDF unchanged — "
+                f"skipped Docling/OCR, re-rendered {saved} page screenshots"
+            )
+            return
+
+    _full_parse(
+        pdf_path, doc_dir, document_id, pages_dir, on_text_pages, on_drawing_page
+    )
+
+
+def _full_parse(
+    pdf_path: str,
+    doc_dir: Path | None,
+    document_id: str | None,
+    pages_dir: Path | None,
+    on_text_pages,
+    on_drawing_page,
+) -> None:
+    """Полный парс: Docling по прозе + OCR по чертежам (см. process)."""
+    # Ленивые импорты: docling/torch грузятся только здесь — путь резюма
+    # (и сам старт воркера) остаётся лёгким.
+    from pdf_processing.drawing import insert_drawing_pages
+    from pdf_processing.page_router import classify_pages
+    from pdf_processing.parser import enrich_visual_blocks, parse_prose_pages
+
+    # Отпечаток PDF снимаем ДО чтения: если файл подменят во время
+    # часового парса, резюм со свежим stat не совпадёт и перепарсит.
+    try:
+        source = _source_stat(pdf_path)
+    except OSError:
+        source = None  # файла нет — парс ниже упадёт привычной ошибкой
+
     print(f"Reading {pdf_path}, please wait...")
     # Per-page router: classify every page (prose/drawing). Docling runs
     # ONLY on prose pages (useless and slow on drawings); drawing pages
@@ -95,6 +201,8 @@ def process(
     if document_id:
         document["document_id"] = document_id
     insert_drawing_pages(document, pdf_path, page_types, on_progress=on_drawing_page)
+    if source is not None:
+        document["source"] = source
 
     doc_dir = doc_dir or (CLI_OUTPUT_DIR / document["document_id"])
     doc_dir.mkdir(parents=True, exist_ok=True)
