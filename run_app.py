@@ -141,7 +141,11 @@ def main() -> None:
     # Server-объект вместо uvicorn.run(): нужен should_exit для выхода из трея.
     # Pass the app object, not the "backend.app:app" string: the .exe has no
     # source tree to re-import the module by name.
-    server = uvicorn.Server(uvicorn.Config(app, host=HOST, port=PORT, log_level="info"))
+    # access_log=False: поллинг фронтенда (статус логина, прогресс индексации)
+    # засорял app.log сотнями одинаковых GET-строк.
+    server = uvicorn.Server(
+        uvicorn.Config(app, host=HOST, port=PORT, log_level="info", access_log=False)
+    )
     if sys.platform == "win32":
         # Сервер — в фоновом потоке, трей — в главном. После «Ukončit» выход
         # жёсткий: потоки индексации не daemon и могут крутиться часами, а
