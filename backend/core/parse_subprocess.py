@@ -91,22 +91,23 @@ def _send_job(job: dict) -> subprocess.Popen:
 
 def run_parse(
     slug: str,
-    pdf_path: str,
+    pdf_path: str | None,
     doc_dir: Path,
-    pages_dir: Path,
+    pages_dir: Path | None = None,
     on_text_pages: Callable[[int], None] | None = None,
     on_drawing_page: Callable[[int, int], None] | None = None,
 ) -> None:
     """Прогнать parse одного документа в воркере (блокирует до конца).
 
     События прогресса транслируются в те же колбэки, что были у прямого
-    вызова parse.process. Ошибка → ParseFailedError с готовым текстом.
+    вызова parse.process. pages_dir=None (архив) — скриншоты в
+    doc_dir/pages. Ошибка → ParseFailedError с готовым текстом.
     """
     job = {
         "slug": slug,
         "pdf_path": pdf_path,
         "doc_dir": str(doc_dir),
-        "pages_dir": str(pages_dir),
+        "pages_dir": str(pages_dir) if pages_dir else None,
     }
     with _lock:
         proc = _send_job(job)

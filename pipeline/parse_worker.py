@@ -36,6 +36,7 @@ def _handle_job(job: dict, out: TextIO) -> None:
     # сам старт воркера мгновенный.
     from pipeline import parse as parser_step
 
+    pages_dir = job.get("pages_dir")
     try:
         parser_step.process(
             job["slug"],
@@ -44,7 +45,8 @@ def _handle_job(job: dict, out: TextIO) -> None:
             # document_id = slug: артефакты несут scoped-slug из БД,
             # иначе фильтр «Kde hledat» не найдёт ни одного чанка.
             document_id=job["slug"],
-            pages_dir=Path(job["pages_dir"]),
+            # None (архив) — parse сам положит скриншоты в doc_dir/pages.
+            pages_dir=Path(pages_dir) if pages_dir else None,
             on_text_pages=lambda total: _emit(
                 out, {"event": "text_pages", "total": total}
             ),

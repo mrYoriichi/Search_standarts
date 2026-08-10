@@ -104,15 +104,16 @@ def test_pipeline_releases_lock_when_done(db, artifacts_dir, tmp_path, monkeypat
     # pipeline (run in a thread) must release it after the last document.
     from sqlalchemy.orm import sessionmaker as sm
 
+    from backend.core import parse_subprocess
     from backend.modules.projects import pipeline
-    from pipeline import chunk, describe, embed, parse
+    from pipeline import chunk, describe, embed
 
     root = tmp_path / "Most"
     _make_pdf(root / "tz.pdf")
     sync_archive(db, [root])
     engine = db.get_bind()
     monkeypatch.setattr(pipeline, "SessionLocal", sm(bind=engine))
-    monkeypatch.setattr(parse, "process", lambda *a, **k: None)
+    monkeypatch.setattr(parse_subprocess, "run_parse", lambda *a, **k: None)
     monkeypatch.setattr(describe, "process", lambda *a, **k: None)
 
     def fake_chunk(pdf_name, doc_dir=None):

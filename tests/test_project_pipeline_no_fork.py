@@ -10,7 +10,8 @@ import json
 from sqlalchemy import create_engine, select
 from sqlalchemy.orm import sessionmaker
 
-from pipeline import chunk, describe, embed, parse
+from pipeline import chunk, describe, embed
+from backend.core import parse_subprocess
 from backend.core.database import Base
 from backend.modules.projects import pipeline
 from backend.modules.projects.models import ProjectDocument
@@ -42,16 +43,15 @@ def test_sheet_goes_through_common_pipeline(monkeypatch, tmp_path):
 
     recorded: dict[str, str | None] = {}
 
-    def fake_parse(
-        pdf_name: str,
-        pdf_path: str | None = None,
+    def fake_run_parse(
+        parse_slug: str,
+        pdf_path: str | None,
         doc_dir=None,
-        document_id: str | None = None,
         pages_dir=None,
         on_text_pages=None,
         on_drawing_page=None,
     ) -> None:
-        recorded["document_id"] = document_id
+        recorded["slug"] = parse_slug
 
     def fake_chunk(pdf_name: str, doc_dir=None) -> None:
         doc_dir.mkdir(
@@ -62,7 +62,7 @@ def test_sheet_goes_through_common_pipeline(monkeypatch, tmp_path):
             [{"chunk_id": f"{slug}_c000", "document_title": "vykres_202"}],
         )
 
-    monkeypatch.setattr(parse, "process", fake_parse)
+    monkeypatch.setattr(parse_subprocess, "run_parse", fake_run_parse)
     monkeypatch.setattr(describe, "process", lambda *args, **kwargs: None)
     monkeypatch.setattr(chunk, "process", fake_chunk)
     monkeypatch.setattr(embed, "process", lambda *args, **kwargs: None)
@@ -72,7 +72,7 @@ def test_sheet_goes_through_common_pipeline(monkeypatch, tmp_path):
     )
 
     # The sheet went through the shared pipeline with the scoped slug
-    assert recorded.get("document_id") == slug
+    assert recorded.get("slug") == slug
     # Artifacts land in the project folder itself (<root>/.search_index),
     # and _prefix_project_context added the project to document_title
     chunks = json.loads(

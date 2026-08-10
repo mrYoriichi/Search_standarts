@@ -12,7 +12,7 @@ from pathlib import Path
 
 from sqlalchemy import select
 
-from backend.core import cpu_gate, index_lock, library_cache, progress
+from backend.core import cpu_gate, index_lock, library_cache, parse_subprocess, progress
 from backend.core.database import SessionLocal
 from backend.core.ui_messages import msg
 from backend.core.errors import classify_pipeline_error
@@ -57,13 +57,12 @@ def run_pipeline(slug: str, pdf_path: str | None, doc_dir: Path) -> None:
     On any error: status='failed' + the cause in Document.error_message.
     On success: status='ready', error_message=None.
     """
-    # Lazy imports — Docling and transformers are heavy (20-30 s to
-    # load). Importing at the top would drag them in on every server
-    # start and --reload; here they load on the first real pipeline run.
+    # Lazy imports — deferred so the server start and --reload stay
+    # light. The heavy stage (parse: Docling/torch/OCR) runs in a child
+    # process (core/parse_subprocess) — this process never loads it.
     from pipeline import chunk as chunk_step
     from pipeline import describe as describe_step
     from pipeline import embed as index_step
-    from pipeline import parse as parser_step
 
     # Imported here (not at the top) to avoid a cycle with settings.
     from backend.modules.settings import service as settings_service
@@ -81,15 +80,15 @@ def run_pipeline(slug: str, pdf_path: str | None, doc_dir: Path) -> None:
                 # документ ждёт своей очереди на parse, статус не врёт.
                 with cpu_gate.parse_gate:
                     progress.set_progress(slug, msg("progress.reading"))
-                    # document_id=slug: artifacts must carry the scoped slug
+                    # The worker stamps document_id=slug into the
+                    # artifacts: they must carry the scoped slug
                     # ({folder_id}__{file}) from the DB, not the id derived
                     # from the file name — otherwise the "Where to search"
                     # filter would match no chunk.
-                    parser_step.process(
+                    parse_subprocess.run_parse(
                         slug,
-                        pdf_path=pdf_path,
-                        doc_dir=doc_dir,
-                        document_id=slug,
+                        pdf_path,
+                        doc_dir,
                         pages_dir=pages_dir,
                         on_text_pages=lambda total: progress.set_progress(
                             slug, msg("progress.reading_text", total=total)

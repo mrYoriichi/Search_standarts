@@ -16,7 +16,7 @@ from pathlib import Path
 
 from sqlalchemy import select
 
-from backend.core import cpu_gate, index_lock, index_store, progress
+from backend.core import cpu_gate, index_lock, index_store, parse_subprocess, progress
 from backend.core.database import SessionLocal
 from backend.core.ui_messages import msg
 from backend.core.errors import classify_pipeline_error
@@ -60,21 +60,22 @@ def process_text_document(
     ids come from our slug. describe_images=False -> "No LLM" mode: vision
     is skipped.
     """
-    # Lazy import — Docling is heavy, load it only for actual processing
-    # (same reason as in documents/pipeline.py).
+    # Lazy imports — deferred so the server start stays light. The heavy
+    # stage (parse: Docling/torch/OCR) runs in a child process
+    # (core/parse_subprocess) — this process never loads it.
     from pipeline import chunk as chunk_step
     from pipeline import describe as describe_step
     from pipeline import embed as index_step
-    from pipeline import parse as parser_step
 
     # «čtení PDF» — только после входа в шлюз (см. core/cpu_gate.py).
     with cpu_gate.parse_gate:
         progress.set_progress(slug, msg("progress.reading"))
-        parser_step.process(
+        # pages_dir не задан — parse кладёт скриншоты в doc_dir/pages
+        # (поведение архива не меняем).
+        parse_subprocess.run_parse(
             slug,
-            pdf_path=str(pdf_path),
-            doc_dir=doc_dir,
-            document_id=slug,
+            str(pdf_path),
+            doc_dir,
             on_text_pages=lambda total: progress.set_progress(
                 slug, msg("progress.reading_text", total=total)
             ),
