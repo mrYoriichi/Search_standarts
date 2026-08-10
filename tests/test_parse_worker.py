@@ -48,6 +48,7 @@ def run_worker(
 def test_job_emits_progress_and_done(monkeypatch: pytest.MonkeyPatch) -> None:
     events = run_worker([JOB], monkeypatch)
     assert events == [
+        {"event": "ready"},  # рукопожатие со спавнером — первым делом
         {"event": "text_pages", "total": 2},
         {"event": "drawing_page", "done": 1, "total": 3},
         {"event": "done"},
@@ -81,6 +82,7 @@ def test_error_reports_type_and_text_and_continues(
     # Классификация текста ошибки — дело родителя (там живёт язык UI),
     # воркер шлёт сырые тип и текст.
     assert events == [
+        {"event": "ready"},
         {"event": "error", "type": "ValueError", "text": "boom"},
         {"event": "done"},
     ]
@@ -89,7 +91,7 @@ def test_error_reports_type_and_text_and_continues(
 def test_eof_stops_worker(monkeypatch: pytest.MonkeyPatch) -> None:
     # Пустой stdin (родитель закрыл канал) — serve возвращается сразу.
     events = run_worker([], monkeypatch)
-    assert events == []
+    assert events == [{"event": "ready"}]
 
 
 def test_idle_timeout_exits() -> None:
@@ -106,4 +108,4 @@ def test_idle_timeout_exits() -> None:
     out = io.StringIO()
     # Вернулся сам по таймауту — значит очередь «кончилась» и процесс умрёт.
     parse_worker.serve(BlockingInput(), out, idle_timeout=0.05)
-    assert out.getvalue() == ""
+    assert json.loads(out.getvalue()) == {"event": "ready"}  # и больше ничего

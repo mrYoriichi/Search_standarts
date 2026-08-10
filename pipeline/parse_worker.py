@@ -77,6 +77,11 @@ def serve(inp: TextIO, out: TextIO, idle_timeout: float = IDLE_TIMEOUT_S) -> Non
         lines.put(None)  # EOF: родитель закрыл stdin — работы больше не будет
 
     threading.Thread(target=_reader, daemon=True).start()
+    # Рукопожатие: родитель не шлёт задания, пока не увидит ready.
+    # Замороженный EDR/антивирусом процесс (инцидент 2026-08-10) так
+    # отличим от здорового — родитель дождётся таймаута и уйдёт в
+    # фоллбек вместо вечного ожидания.
+    _emit(out, {"event": "ready"})
     # Маркер в app.log родителя (через префикс [parse]): видно, что
     # процесс воркера дожил до Python-кода и его stderr доходит.
     print("worker ready", file=sys.stderr)

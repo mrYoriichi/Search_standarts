@@ -9,6 +9,7 @@
 """
 
 import json
+import queue
 import subprocess
 import sys
 import threading
@@ -18,12 +19,24 @@ from typing import Callable
 from backend.core.errors import classify_by_name
 from backend.core.ui_messages import msg
 
+# Сколько ждать событие ready от свежего воркера. Здоровый шлёт его
+# сразу после старта (импорты лаунчера — секунды); замороженный
+# EDR/антивирусом процесс не шлёт никогда (инцидент 2026-08-10).
+READY_TIMEOUT_S = 60.0
+
 _lock = threading.Lock()
 _worker: subprocess.Popen | None = None
+# Воркер не ожил ни разу — до перезапуска приложения парсим в родителе,
+# иначе каждый документ ждал бы таймаут заново.
+_worker_blocked = False
 
 
 class ParseFailedError(Exception):
     """Parse в воркере не удался; str(exc) — готовый текст для UI."""
+
+
+class _WorkerBlockedError(Exception):
+    """Свежий воркер не прислал ready за таймаут — процесс заморожен."""
 
 
 def _worker_command() -> list[str]:
@@ -64,6 +77,35 @@ def _spawn() -> subprocess.Popen:
     return proc
 
 
+def _wait_ready(proc: subprocess.Popen) -> bool:
+    """Дождаться события ready от свежего воркера (False = таймаут/EOF).
+
+    Читает stdout в отдельном потоке: у пайпов нет readline с таймаутом.
+    Поток читает РОВНО до ready и останавливается — события заданий
+    остаются главному циклу run_parse.
+    """
+    got: queue.Queue[bool] = queue.Queue()
+
+    def _reader() -> None:
+        while True:
+            line = proc.stdout.readline()
+            if not line:
+                got.put(False)  # процесс умер, не сказав ready
+                return
+            try:
+                if json.loads(line).get("event") == "ready":
+                    got.put(True)
+                    return
+            except json.JSONDecodeError:
+                continue  # мусор нативных библиотек в stdout
+
+    threading.Thread(target=_reader, daemon=True).start()
+    try:
+        return got.get(timeout=READY_TIMEOUT_S)
+    except queue.Empty:
+        return False
+
+
 def _forget(proc: subprocess.Popen) -> None:
     global _worker
     if proc.poll() is None:
@@ -83,6 +125,9 @@ def _send_job(job: dict) -> subprocess.Popen:
             if _worker is not None:
                 _worker.wait()  # похоронить зомби перед заменой
             _worker = _spawn()
+            if not _wait_ready(_worker):
+                _forget(_worker)
+                raise _WorkerBlockedError
         try:
             _worker.stdin.write(line)
             _worker.stdin.flush()
@@ -108,38 +153,87 @@ def run_parse(
     События прогресса транслируются в те же колбэки, что были у прямого
     вызова parse.process. pages_dir=None (архив) — скриншоты в
     doc_dir/pages. Ошибка → ParseFailedError с готовым текстом.
+
+    Если свежий воркер не прислал ready за READY_TIMEOUT_S (EDR/антивирус
+    заморозил дочерний exe — инцидент 2026-08-10), документ парсится в
+    родителе, и до перезапуска приложения воркер больше не спавнится.
     """
-    job = {
-        "slug": slug,
-        "pdf_path": pdf_path,
-        "doc_dir": str(doc_dir),
-        "pages_dir": str(pages_dir) if pages_dir else None,
-    }
-    with _lock:
-        proc = _send_job(job)
-        while True:
-            line = proc.stdout.readline()
-            if not line:
-                # EOF: воркер умер посреди задания (bad_alloc, segfault).
-                # Раньше это роняло ВСЁ приложение — теперь только документ.
-                _forget(proc)
-                raise ParseFailedError(msg("err.parse_crashed"))
+    global _worker_blocked
+    if not _worker_blocked:
+        job = {
+            "slug": slug,
+            "pdf_path": pdf_path,
+            "doc_dir": str(doc_dir),
+            "pages_dir": str(pages_dir) if pages_dir else None,
+        }
+        with _lock:
             try:
-                event = json.loads(line)
-            except json.JSONDecodeError:
-                # Нативная библиотека написала в stdout мимо редиректа
-                # воркера — не протокол, просто в лог.
-                print(f"[parse] {line.rstrip()}", file=sys.stderr)
-                continue
-            kind = event.get("event")
-            if kind == "text_pages" and on_text_pages:
-                on_text_pages(event["total"])
-            elif kind == "drawing_page" and on_drawing_page:
-                on_drawing_page(event["done"], event["total"])
-            elif kind == "done":
-                return
-            elif kind == "error":
-                raise ParseFailedError(classify_by_name(event["type"], event["text"]))
+                proc = _send_job(job)
+            except _WorkerBlockedError:
+                _worker_blocked = True
+                print(
+                    "[parse] worker never became ready — EDR/antivirus freeze? "
+                    "Falling back to in-process parse until restart",
+                    file=sys.stderr,
+                )
+            else:
+                while True:
+                    line = proc.stdout.readline()
+                    if not line:
+                        # EOF: воркер умер посреди задания (bad_alloc,
+                        # segfault). Раньше это роняло ВСЁ приложение —
+                        # теперь только документ.
+                        _forget(proc)
+                        raise ParseFailedError(msg("err.parse_crashed"))
+                    try:
+                        event = json.loads(line)
+                    except json.JSONDecodeError:
+                        # Нативная библиотека написала в stdout мимо
+                        # редиректа воркера — не протокол, просто в лог.
+                        print(f"[parse] {line.rstrip()}", file=sys.stderr)
+                        continue
+                    kind = event.get("event")
+                    if kind == "text_pages" and on_text_pages:
+                        on_text_pages(event["total"])
+                    elif kind == "drawing_page" and on_drawing_page:
+                        on_drawing_page(event["done"], event["total"])
+                    elif kind == "done":
+                        return
+                    elif kind == "error":
+                        raise ParseFailedError(
+                            classify_by_name(event["type"], event["text"])
+                        )
+    _parse_in_process(
+        slug, pdf_path, doc_dir, pages_dir, on_text_pages, on_drawing_page
+    )
+
+
+def _parse_in_process(
+    slug: str,
+    pdf_path: str | None,
+    doc_dir: Path,
+    pages_dir: Path | None,
+    on_text_pages: Callable[[int], None] | None,
+    on_drawing_page: Callable[[int, int], None] | None,
+) -> None:
+    """Запасной путь: parse в основном процессе, как до воркера.
+
+    Индексация работает и там, где EDR/антивирус замораживает дочерний
+    exe. Цена — модели остаются в памяти родителя до перезапуска.
+    Ошибки пробрасываются сырыми: пайплайн классифицирует их сам, как в
+    довокерные времена.
+    """
+    from pipeline import parse as parse_step
+
+    parse_step.process(
+        slug,
+        pdf_path=pdf_path,
+        doc_dir=doc_dir,
+        document_id=slug,
+        pages_dir=pages_dir,
+        on_text_pages=on_text_pages,
+        on_drawing_page=on_drawing_page,
+    )
 
 
 def stop_worker() -> None:
