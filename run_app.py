@@ -63,6 +63,18 @@ def _open_app_window(url: str) -> None:
     webbrowser.open(url)
 
 
+def server_already_running(port: int = PORT) -> bool:
+    """True, если на порту уже слушает другой экземпляр приложения.
+
+    С треем приложение живёт после закрытия окна; повторный клик по
+    ярлыку не должен поднимать второй сервер (двойная память, гонки за
+    БД, «порт занят») — вместо этого просто открываем окно к первому.
+    """
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+        sock.settimeout(0.5)
+        return sock.connect_ex((HOST, port)) == 0
+
+
 def _wait_and_open_browser() -> None:
     """Poll the port until the server accepts connections, then open the UI.
 
@@ -115,6 +127,12 @@ def _run_tray() -> None:
 
 
 def main() -> None:
+    if server_already_running():
+        # Приложение уже работает (в трее) — не запускаем второй
+        # экземпляр, только показываем его окно.
+        _open_app_window(f"http://{HOST}:{PORT}/")
+        return
+
     threading.Thread(target=_wait_and_open_browser, daemon=True).start()
     # Server-объект вместо uvicorn.run(): нужен should_exit для выхода из трея.
     # Pass the app object, not the "backend.app:app" string: the .exe has no
