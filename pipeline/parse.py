@@ -14,6 +14,7 @@ the resume path never loads them.
 import json
 import os
 import sys
+import time
 from pathlib import Path
 
 import pypdfium2 as pdfium
@@ -178,10 +179,17 @@ def _full_parse(
 ) -> None:
     """Полный парс: Docling по прозе + OCR по чертежам (см. process)."""
     # Ленивые импорты: docling/torch грузятся только здесь — путь резюма
-    # (и сам старт воркера) остаётся лёгким.
+    # (и сам старт воркера) остаётся лёгким. Замер: на машине с EDR
+    # (инцидент 2026-08-10) первый импорт в воркере может идти десятки
+    # минут — цифра в логе покажет, кто съел время.
+    import_start = time.monotonic()
     from pdf_processing.drawing import insert_drawing_pages
     from pdf_processing.page_router import classify_pages
     from pdf_processing.parser import enrich_visual_blocks, parse_prose_pages
+
+    import_elapsed = time.monotonic() - import_start
+    if import_elapsed > 1.0:  # только первый импорт процесса, дальше ~0
+        print(f"ML stack imported in {import_elapsed:.1f}s")
 
     # Отпечаток PDF снимаем ДО чтения: если файл подменят во время
     # часового парса, резюм со свежим stat не совпадёт и перепарсит.
