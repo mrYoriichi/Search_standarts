@@ -32,8 +32,6 @@ import webbrowser
 
 import uvicorn
 
-from backend.app import app
-
 HOST = "127.0.0.1"
 PORT = 8000
 
@@ -131,11 +129,26 @@ def _run_tray() -> None:
 
 
 def main() -> None:
+    if "--parse-worker" in sys.argv:
+        # Служебный режим: в сборке отдельного python.exe нет, поэтому
+        # спавнер (core/parse_subprocess) запускает этот же exe ещё раз
+        # с флагом. Такая копия — не приложение, а воркер parse: ни
+        # сервера, ни окна — только цикл заданий, после которого процесс
+        # умирает и возвращает ОС память моделей.
+        from pipeline.parse_worker import main as worker_main
+
+        worker_main()
+        return
+
     if server_already_running():
         # Приложение уже работает (в трее) — не запускаем второй
         # экземпляр, только показываем его окно.
         _open_app_window(f"http://{HOST}:{PORT}/")
         return
+
+    # Импорт здесь, а не сверху: ветка воркера бэкенд не грузит.
+    from backend.app import app
+    from backend.core.parse_subprocess import stop_worker
 
     threading.Thread(target=_wait_and_open_browser, daemon=True).start()
     # Server-объект вместо uvicorn.run(): нужен should_exit для выхода из трея.
@@ -153,10 +166,16 @@ def main() -> None:
         threading.Thread(target=server.run, daemon=True).start()
         _run_tray()
         server.should_exit = True
+        # Воркер parse — отдельный процесс: без явного kill остался бы
+        # сиротой с гигабайтами моделей после выхода приложения.
+        stop_worker()
         time.sleep(1)
         os._exit(0)
     else:
-        server.run()
+        try:
+            server.run()
+        finally:
+            stop_worker()
 
 
 if __name__ == "__main__":

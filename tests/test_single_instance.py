@@ -39,3 +39,22 @@ def test_main_opens_window_and_exits_when_running(monkeypatch):
     run_app.main()
 
     assert opened == [f"http://{run_app.HOST}:{run_app.PORT}/"]
+
+
+def test_parse_worker_flag_runs_worker_not_app(monkeypatch):
+    # exe, запущенный спавнером с --parse-worker, — это воркер parse:
+    # ни проверки порта, ни сервера, ни окна.
+    import pipeline.parse_worker
+
+    called: list[str] = []
+    monkeypatch.setattr(run_app.sys, "argv", ["run_app.py", "--parse-worker"])
+    monkeypatch.setattr(pipeline.parse_worker, "main", lambda: called.append("worker"))
+    monkeypatch.setattr(
+        run_app,
+        "server_already_running",
+        lambda port=None: (_ for _ in ()).throw(AssertionError("must not check port")),
+    )
+
+    run_app.main()
+
+    assert called == ["worker"]
