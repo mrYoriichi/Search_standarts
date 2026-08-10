@@ -11,8 +11,21 @@ from backend.core.ui_messages import msg
 
 def classify_pipeline_error(exc: Exception) -> str:
     """Return a human-readable cause for the UI."""
-    name = type(exc).__name__
-    text = str(exc).lower()
+    # Parse now runs in a worker process; the spawner already built the
+    # final UI text from the worker's raw (type, text) report.
+    if type(exc).__name__ == "ParseFailedError":
+        return str(exc)
+    return classify_by_name(type(exc).__name__, str(exc))
+
+
+def classify_by_name(name: str, raw_text: str) -> str:
+    """Classify by exception type name and message text.
+
+    Split from classify_pipeline_error so the parse worker can report an
+    error as raw strings across the process boundary — the parent builds
+    the UI text here, in its own current language.
+    """
+    text = raw_text.lower()
 
     if name == "AuthenticationError":
         return msg("err.bad_api_key")
@@ -44,6 +57,6 @@ def classify_pipeline_error(exc: Exception) -> str:
     # so the path from the exception stays visible. The specific read-only
     # library-folder text comes from scan_library itself.
     if name == "PermissionError":
-        return msg("err.locked_or_no_write", exc=exc)
+        return msg("err.locked_or_no_write", exc=raw_text)
 
-    return msg("err.unexpected", name=name, exc=exc)
+    return msg("err.unexpected", name=name, exc=raw_text)

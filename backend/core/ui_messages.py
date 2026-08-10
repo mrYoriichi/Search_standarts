@@ -74,6 +74,11 @@ MESSAGES: dict[str, dict[str, str]] = {
         "en": "The file could not be read as a PDF — it is corrupted or not a PDF.",
         "de": "Die Datei konnte nicht als PDF gelesen werden — sie ist beschädigt oder keine PDF.",
     },
+    "err.parse_crashed": {
+        "cs": "Čtení PDF selhalo — proces neočekávaně skončil (pravděpodobně nedostatek paměti). Zkuste dokument indexovat znovu.",
+        "en": "Reading the PDF failed — the process ended unexpectedly (likely out of memory). Try indexing the document again.",
+        "de": "Das Lesen der PDF ist fehlgeschlagen — der Prozess wurde unerwartet beendet (wahrscheinlich zu wenig Speicher). Indexieren Sie das Dokument erneut.",
+    },
     "err.locked_or_no_write": {
         "cs": (
             "Soubor nebo složka je uzamčena, nebo chybí oprávnění k zápisu — "
