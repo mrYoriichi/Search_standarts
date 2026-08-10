@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 from backend.core import index_store, library_cache, secrets, ui_messages
 from backend.core.ui_messages import msg
 from backend.modules.documents.models import Document
+from backend.modules.projects.models import ProjectDocument
 from backend.modules.settings.models import Setting
 
 
@@ -231,8 +232,33 @@ def add_projects_path(db: Session, raw_path: str) -> list[str]:
     return _add_to_path_list(db, PROJECTS_PATHS_KEY, PROJECTS_PATH_KEY, raw_path)
 
 
+def _forget_project_documents(db: Session, raw_path: str, remaining: list[str]) -> None:
+    """Отвязка папки архива: удалить из БД записи её документов.
+
+    Иначе документы отключённой папки висят «čeká» до следующего скана
+    (живой случай 2026-08-10). Слаг архива не несёт folder_id —
+    принадлежность определяем по имени проекта (= имени папки), саму
+    папку не читаем: отключить можно и недоступную. Тёзка среди
+    оставшихся папок → не удаляем ничего (лучше сироты, чем снести
+    документы чужой папки). Артефакты в `.search_index` не трогаем —
+    повторное подключение усыновит их бесплатно.
+    """
+    project = Path(raw_path).expanduser().resolve().name
+    if project in {Path(p).name for p in remaining}:
+        return
+    for doc in db.scalars(select(ProjectDocument)).all():
+        # processing не трогаем: пайплайн ещё пишет статус по этой записи.
+        if doc.status == "processing":
+            continue
+        if doc.project == project:
+            db.delete(doc)
+    db.commit()
+
+
 def remove_projects_path(db: Session, raw_path: str) -> list[str]:
-    return _remove_from_path_list(db, PROJECTS_PATHS_KEY, PROJECTS_PATH_KEY, raw_path)
+    result = _remove_from_path_list(db, PROJECTS_PATHS_KEY, PROJECTS_PATH_KEY, raw_path)
+    _forget_project_documents(db, raw_path, result)
+    return result
 
 
 def update_projects_path(db: Session, old_raw: str, new_raw: str) -> list[str]:
