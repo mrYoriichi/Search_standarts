@@ -95,7 +95,8 @@ def run_pipeline(slug: str, pdf_path: str | None, doc_dir: Path) -> None:
                             slug, msg("progress.reading_text", total=total)
                         ),
                         on_drawing_page=lambda done, total: progress.set_progress(
-                            slug, msg("progress.reading_drawing", done=done, total=total)
+                            slug,
+                            msg("progress.reading_drawing", done=done, total=total),
                         ),
                     )
                 progress.set_progress(slug, msg("progress.images"))

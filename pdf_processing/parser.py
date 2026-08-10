@@ -54,7 +54,6 @@ TEXT_BLOCK_TYPES = {
 VISUAL_BLOCK_TYPES = {"figure", "table"}
 
 
-
 def map_label(docling_label) -> str:
     """Map a Docling label to our type; unknown labels pass through."""
     label_str = getattr(docling_label, "value", str(docling_label)).lower()
