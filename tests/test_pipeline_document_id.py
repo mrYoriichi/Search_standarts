@@ -35,6 +35,8 @@ def test_run_pipeline_passes_scoped_document_id(fake_db, monkeypatch, tmp_path):
         doc_dir=None,
         document_id: str | None = None,
         pages_dir=None,
+        on_text_pages=None,
+        on_drawing_page=None,
     ) -> None:
         recorded["document_id"] = document_id
 

@@ -71,7 +71,16 @@ def process_text_document(
     with cpu_gate.parse_gate:
         progress.set_progress(slug, msg("progress.reading"))
         parser_step.process(
-            slug, pdf_path=str(pdf_path), doc_dir=doc_dir, document_id=slug
+            slug,
+            pdf_path=str(pdf_path),
+            doc_dir=doc_dir,
+            document_id=slug,
+            on_text_pages=lambda total: progress.set_progress(
+                slug, msg("progress.reading_text", total=total)
+            ),
+            on_drawing_page=lambda done, total: progress.set_progress(
+                slug, msg("progress.reading_drawing", done=done, total=total)
+            ),
         )
     progress.set_progress(slug, msg("progress.images"))
     describe_step.process(

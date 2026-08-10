@@ -60,6 +60,8 @@ def process(
     doc_dir: Path | None = None,
     document_id: str | None = None,
     pages_dir: Path | None = None,
+    on_text_pages=None,
+    on_drawing_page=None,
 ) -> None:
     """Parse one PDF and save the result.
 
@@ -75,6 +77,9 @@ def process(
     pages_dir — where page screenshots go; defaults to <doc_dir>/pages/.
     The .search_index pipeline passes a temporary local folder so PNGs
     never travel to a network drive.
+    on_text_pages(total) — перед Docling: сколько текстовых страниц
+    уйдёт в него одним куском (внутри Docling прогресса нет).
+    on_drawing_page(done, total) — после каждой OCR-страницы чертежей.
     """
     if pdf_path is None:
         pdf_path = str(CLI_PDF_DIR / f"{pdf_name}.pdf")
@@ -84,10 +89,12 @@ def process(
     # ONLY on prose pages (useless and slow on drawings); drawing pages
     # are read by OCR and inserted in their places.
     page_types = classify_pages(pdf_path)
+    if on_text_pages:
+        on_text_pages(page_types.count("text"))
     document, page_images = parse_prose_pages(pdf_path, page_types)
     if document_id:
         document["document_id"] = document_id
-    insert_drawing_pages(document, pdf_path, page_types)
+    insert_drawing_pages(document, pdf_path, page_types, on_progress=on_drawing_page)
 
     doc_dir = doc_dir or (CLI_OUTPUT_DIR / document["document_id"])
     doc_dir.mkdir(parents=True, exist_ok=True)

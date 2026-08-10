@@ -68,13 +68,21 @@ def read_drawing_page(page: "pdfium.PdfPage") -> str:
     return build_drawing_text(layer, ocr_image(image))
 
 
-def insert_drawing_pages(document: dict, pdf_path: str, page_types: list[str]) -> None:
+def insert_drawing_pages(
+    document: dict,
+    pdf_path: str,
+    page_types: list[str],
+    on_progress=None,
+) -> None:
     """Insert drawing pages (OCR) into the document at their positions.
 
     Prose pages were already parsed by Docling and sit in the document.
     Docling never saw the drawing pages — they are read via OCR here and
     the final page list is assembled in the correct order (prose +
     drawings). Prose pages Docling did not produce (blank) are skipped.
+
+    on_progress(done, total) — вызывается после каждой чертёжной
+    страницы: OCR идёт минутами, без прогресса UI выглядит зависшим.
     """
     import pypdfium2 as pdfium
 
@@ -85,6 +93,8 @@ def insert_drawing_pages(document: dict, pdf_path: str, page_types: list[str]) -
     with PDFIUM_LOCK:
         doc = pdfium.PdfDocument(pdf_path)
     try:
+        total_drawings = page_types.count("drawing")
+        done_drawings = 0
         pages: list[dict] = []
         for i, page_type in enumerate(page_types):
             page_number = i + 1
@@ -92,6 +102,9 @@ def insert_drawing_pages(document: dict, pdf_path: str, page_types: list[str]) -
                 with PDFIUM_LOCK:
                     pdf_page = doc[i]
                 drawing_text = read_drawing_page(pdf_page)
+                done_drawings += 1
+                if on_progress:
+                    on_progress(done_drawings, total_drawings)
                 pages.append(
                     {
                         "page_number": page_number,

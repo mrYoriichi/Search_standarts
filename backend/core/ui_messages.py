@@ -228,6 +228,16 @@ MESSAGES: dict[str, dict[str, str]] = {
         "en": "reading PDF…",
         "de": "PDF wird gelesen…",
     },
+    "progress.reading_text": {
+        "cs": "čtení PDF: text ({total} stran)…",
+        "en": "reading PDF: text ({total} pages)…",
+        "de": "PDF wird gelesen: Text ({total} Seiten)…",
+    },
+    "progress.reading_drawing": {
+        "cs": "čtení PDF: výkres {done}/{total}",
+        "en": "reading PDF: drawing {done}/{total}",
+        "de": "PDF wird gelesen: Zeichnung {done}/{total}",
+    },
     "progress.images": {
         "cs": "popis obrázků…",
         "en": "describing images…",

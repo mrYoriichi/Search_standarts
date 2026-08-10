@@ -48,6 +48,8 @@ def test_sheet_goes_through_common_pipeline(monkeypatch, tmp_path):
         doc_dir=None,
         document_id: str | None = None,
         pages_dir=None,
+        on_text_pages=None,
+        on_drawing_page=None,
     ) -> None:
         recorded["document_id"] = document_id
 
