@@ -26,9 +26,40 @@ from typing import TextIO
 IDLE_TIMEOUT_S = 60.0
 
 
+class _SafeWriter:
+    """stderr воркера, переживающий смерть родителя.
+
+    Родителя убили через диспетчер задач → каналы закрыты, запись
+    кидает OSError (WinError/Errno 22). Печать пайплайна (Reading…,
+    трейсбеки) не должна ронять сироту с системным окном «Unhandled
+    exception» (инцидент 2026-08-10) — глотаем и пишем в никуда;
+    процесс завершит первый же _emit в протокол.
+    """
+
+    def __init__(self, target: TextIO) -> None:
+        self._target = target
+
+    def write(self, text: str) -> int:
+        try:
+            return self._target.write(text)
+        except OSError:
+            return len(text)
+
+    def flush(self) -> None:
+        try:
+            self._target.flush()
+        except OSError:
+            pass
+
+
 def _emit(out: TextIO, payload: dict) -> None:
-    out.write(json.dumps(payload) + "\n")
-    out.flush()
+    try:
+        out.write(json.dumps(payload) + "\n")
+        out.flush()
+    except OSError:
+        # Родитель умер (труба закрыта) — события слать некому и
+        # работать не для кого. Тихий выход вместо системного окна.
+        raise SystemExit(0) from None
 
 
 def _handle_job(job: dict, out: TextIO) -> None:
@@ -101,8 +132,11 @@ def main() -> None:
     proto_out = sys.stdout
     # Печать пайплайна и библиотек (Reading..., прогресс-бары docling)
     # не должна ломать протокол — весь обычный вывод уводим в stderr,
-    # родитель дописывает его в app.log.
-    sys.stdout = sys.stderr
+    # родитель дописывает его в app.log. Обёртка _SafeWriter — чтобы
+    # сирота (родителя убили) не падал на печати в мёртвый канал.
+    safe_err = _SafeWriter(sys.stderr)
+    sys.stdout = safe_err
+    sys.stderr = safe_err
     serve(sys.stdin, proto_out)
 
 

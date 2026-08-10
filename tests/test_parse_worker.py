@@ -94,6 +94,34 @@ def test_eof_stops_worker(monkeypatch: pytest.MonkeyPatch) -> None:
     assert events == [{"event": "ready"}]
 
 
+class _BrokenPipe(io.StringIO):
+    """Труба, у которой умер читатель (родителя убили через диспетчер)."""
+
+    def write(self, s: str) -> int:
+        raise OSError(22, "Invalid argument")
+
+    def flush(self) -> None:
+        raise OSError(22, "Invalid argument")
+
+
+def test_dead_parent_pipe_exits_quietly(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Родитель умер — запись протокола падает OSError. Раньше сирота
+    # ронял необработанное исключение и показывал системное окно
+    # «Unhandled exception» (инцидент 2026-08-10); теперь тихий выход.
+    monkeypatch.setattr(pipeline.parse, "process", fake_process)
+    inp = io.StringIO(json.dumps(JOB) + "\n")
+    with pytest.raises(SystemExit):
+        parse_worker.serve(inp, _BrokenPipe())
+
+
+def test_safe_writer_swallows_dead_pipe() -> None:
+    # Печать пайплайна (Reading…, трейсбеки) в мёртвый stderr не должна
+    # ронять воркер — прото-канал сам завершит процесс при следующем emit.
+    safe = parse_worker._SafeWriter(_BrokenPipe())
+    safe.write("Reading /pdfs/doc1.pdf, please wait...")
+    safe.flush()  # не упало — этого достаточно
+
+
 def test_idle_timeout_exits() -> None:
     class BlockingInput:
         """stdin, из которого никогда ничего не приходит."""
