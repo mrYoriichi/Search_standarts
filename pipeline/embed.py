@@ -24,7 +24,10 @@ load_dotenv()
 from backend.core.paths import CLI_OUTPUT_DIR
 from indexing.embeddings_index import build_embeddings_index, EMBEDDING_MODEL
 from common.jsonio import save_json_atomic
-from pdf_processing.parser import make_document_id
+
+# Лёгкий модуль вместо parser: embed работает в основном процессе,
+# импорт parser затащил бы docling/torch в родителя.
+from pdf_processing.document_id import make_document_id
 from common.pricing import embedding_cost
 
 

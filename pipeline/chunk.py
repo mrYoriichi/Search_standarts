@@ -17,7 +17,10 @@ from pathlib import Path
 from backend.core.paths import CLI_OUTPUT_DIR
 from common.jsonio import save_json_atomic
 from pdf_processing.chunker import build_chunks_routed
-from pdf_processing.parser import make_document_id
+
+# Лёгкий модуль вместо parser: chunk работает в основном процессе,
+# импорт parser затащил бы docling/torch в родителя.
+from pdf_processing.document_id import make_document_id
 
 
 def load_json(json_path: Path) -> dict:

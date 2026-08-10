@@ -18,6 +18,10 @@ from docling.document_converter import DocumentConverter, PdfFormatOption
 from backend.core.paths import DOCLING_MODELS
 from pdf_processing.document_id import make_document_id
 from pdf_processing.pdfium_lock import PDFIUM_LOCK
+from pdf_processing.visual_blocks import (  # noqa: F401 — re-export, старые импорты живы
+    VISUAL_BLOCK_TYPES,
+    collect_pages_to_save,
+)
 
 
 # Docling label → our internal block type. Adding a new type = editing
@@ -48,10 +52,6 @@ TEXT_BLOCK_TYPES = {
     "list_item",
     "footnote",
 }
-
-
-# Block types that need page screenshots (for the vision LLM).
-VISUAL_BLOCK_TYPES = {"figure", "table"}
 
 
 def map_label(docling_label) -> str:
@@ -218,26 +218,6 @@ def build_document_dict(doc, pdf_filename: str) -> dict:
         "document_name": pdf_filename,
         "pages": pages_list,
     }
-
-
-def collect_pages_to_save(document: dict) -> set[int]:
-    """Page numbers to save as PNGs: only pages containing figure/table.
-
-    The textual context of neighbouring pages travels separately (the
-    page_text field) when sent to the vision LLM.
-    """
-    pages = document["pages"]
-    pages_to_save: set[int] = set()
-
-    for page in pages:
-        has_visual = any(
-            block["type"] in VISUAL_BLOCK_TYPES for block in page["blocks"]
-        )
-        if not has_visual:
-            continue
-        pages_to_save.add(page["page_number"])
-
-    return pages_to_save
 
 
 def parse_pdf(pdf_path: str) -> tuple[dict, dict]:

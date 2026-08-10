@@ -33,7 +33,11 @@ from pdf_processing.image_description import (
     describe_page_visuals,
     extract_document_metadata,
 )
-from pdf_processing.parser import VISUAL_BLOCK_TYPES, make_document_id
+
+# Лёгкие модули вместо parser: describe работает в ОСНОВНОМ процессе,
+# импорт parser затащил бы docling/torch обратно в родителя.
+from pdf_processing.document_id import make_document_id
+from pdf_processing.visual_blocks import VISUAL_BLOCK_TYPES
 from pdf_processing.pdfium_lock import PDFIUM_LOCK
 from common.pricing import model_cost
 
