@@ -8,6 +8,8 @@ connections. Unlike dev (`uvicorn --reload`) there is no code reload.
 import os
 import sys
 
+from backend.core.log_time import TimestampWriter
+
 # In a console-less build (.exe, console=False) sys.stdout/stderr are None.
 # uvicorn calls sys.stdout.isatty() on startup and the pipeline prints —
 # both crash on None. Redirect output to a log file in the data directory
@@ -15,7 +17,9 @@ import sys
 if sys.stdout is None or sys.stderr is None:
     from backend.core.paths import DATA_DIR
 
-    _log_file = open(DATA_DIR / "app.log", "a", encoding="utf-8", buffering=1)
+    _log_file = TimestampWriter(
+        open(DATA_DIR / "app.log", "a", encoding="utf-8", buffering=1)
+    )
     sys.stdout = _log_file
     sys.stderr = _log_file
 
