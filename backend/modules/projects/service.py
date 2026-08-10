@@ -25,7 +25,7 @@ from backend.modules.projects.schemas import (
     ProjectGroup,
 )
 from pdf_processing.page_count import count_pages
-from pdf_processing.parser import make_document_id
+from pdf_processing.document_id import make_document_id
 
 
 @dataclass

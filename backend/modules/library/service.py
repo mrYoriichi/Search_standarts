@@ -29,7 +29,7 @@ from backend.modules.library.schemas import (
     ScanSummary,
 )
 from pdf_processing.page_count import count_pages
-from pdf_processing.parser import make_document_id
+from pdf_processing.document_id import make_document_id
 
 
 # PDF status resolver by slug: (status, pinned, error, progress). Tells the
