@@ -9,7 +9,7 @@ from pathlib import Path
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from backend.core import index_lock, index_store, library_cache
+from backend.core import index_lock, index_store, library_cache, progress
 from backend.core.ui_messages import msg
 from backend.modules.documents.models import Document
 from backend.modules.documents.pipeline import run_pipeline_locked
@@ -140,6 +140,8 @@ def reindex_document(
 
     index_store.ensure_meta(library_path, EMBEDDING_MODEL)
     index_lock.register(library_path, 1)
+    # «čeká ve frontě» до входа в шлюз parse (как при обычном старте).
+    progress.set_progress(slug, msg("progress.queued"))
     executor.submit(
         run_pipeline_locked,
         library_path,

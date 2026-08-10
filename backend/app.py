@@ -29,8 +29,9 @@ from pathlib import Path
 # Load .env as early as possible — before importing services that read env vars.
 load_dotenv()
 
-from backend.core import index_lock, index_store
+from backend.core import index_lock, index_store, progress
 from backend.core.database import Base, SessionLocal, engine, ensure_columns
+from backend.core.ui_messages import msg
 from backend.core.paths import FRONTEND_DIST
 from backend.modules.auth import service as auth_service
 from backend.modules.auth.deps import require_auth
@@ -97,6 +98,8 @@ async def lifespan(app: FastAPI):
                 print(f"[startup] {doc.slug}: folder indexed by {busy} — pending")
                 continue
             index_lock.register(folder, 1)
+            # «čeká ve frontě» до входа в шлюз parse (как при обычном старте).
+            progress.set_progress(doc.slug, msg("progress.queued"))
             executor.submit(
                 run_pipeline_locked,
                 folder,
@@ -134,6 +137,7 @@ async def lifespan(app: FastAPI):
             # The file may have been replaced while the app was down: the stat
             # must match the version the pipeline is about to read.
             projects_service.refresh_file_stat(pdoc, root)
+            progress.set_progress(pdoc.slug, msg("progress.queued"))
             executor.submit(
                 run_project_pipeline,
                 pdoc.slug,

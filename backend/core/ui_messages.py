@@ -228,6 +228,13 @@ MESSAGES: dict[str, dict[str, str]] = {
         "de": "PDF in keinem Archivordner gefunden: {path}",
     },
     # --- indexing progress (pipeline stages) ---
+    # Шлюз parse пускает один документ за раз: остальные отправленные
+    # честно показывают очередь, а не «zpracovává se».
+    "progress.queued": {
+        "cs": "čeká ve frontě…",
+        "en": "waiting in queue…",
+        "de": "wartet in der Warteschlange…",
+    },
     "progress.reading": {
         "cs": "čtení PDF…",
         "en": "reading PDF…",

@@ -502,6 +502,8 @@ def start_archive_indexing(
                 doc.status = "processing"
             db.commit()
             for doc in to_run:
+                # «čeká ve frontě» до входа в шлюз parse (как в библиотеке).
+                progress.set_progress(doc.slug, msg("progress.queued"))
                 executor.submit(
                     run_project_pipeline,
                     doc.slug,
@@ -579,6 +581,8 @@ def reindex_document(
     # the cache again when the document is ready).
     library_cache.invalidate()
 
+    # «čeká ve frontě» до входа в шлюз parse (как при обычном старте).
+    progress.set_progress(slug, msg("progress.queued"))
     executor.submit(
         run_project_pipeline, slug, str(root / doc.relative_path), str(root)
     )

@@ -473,6 +473,9 @@ def start_indexing(
                 pdf_path = (
                     str(library_path / doc.relative_path) if doc.relative_path else None
                 )
+                # «čeká ve frontě» до входа в шлюз parse — иначе до трёх
+                # документов выглядят «zpracovává se», а работает один.
+                progress.set_progress(doc.slug, msg("progress.queued"))
                 executor.submit(
                     run_pipeline_locked,
                     library_path,
