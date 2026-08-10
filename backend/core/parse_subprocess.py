@@ -56,6 +56,10 @@ def _spawn() -> subprocess.Popen:
         errors="replace",
         creationflags=creationflags,
     )
+    # Жизненный цикл воркера — в app.log: без этих строк зависание
+    # (инцидент 2026-08-10: воркер в сборке жив, но молчит — подозрение
+    # на EDR/антивирус) неотличимо от чего угодно другого.
+    print(f"[parse] spawned worker pid={proc.pid}", file=sys.stderr)
     threading.Thread(target=_drain_stderr, args=(proc,), daemon=True).start()
     return proc
 
@@ -65,6 +69,7 @@ def _forget(proc: subprocess.Popen) -> None:
     if proc.poll() is None:
         proc.kill()
     proc.wait()
+    print(f"[parse] worker pid={proc.pid} gone (rc={proc.returncode})", file=sys.stderr)
     if _worker is proc:
         _worker = None
 
@@ -81,6 +86,7 @@ def _send_job(job: dict) -> subprocess.Popen:
         try:
             _worker.stdin.write(line)
             _worker.stdin.flush()
+            print(f"[parse] job sent: {job['slug']}", file=sys.stderr)
             return _worker
         except OSError:
             # Воркер умер по idle-таймауту ровно между poll() и write —

@@ -32,6 +32,7 @@ def _emit(out: TextIO, payload: dict) -> None:
 
 
 def _handle_job(job: dict, out: TextIO) -> None:
+    print(f"job received: {job.get('slug')}", file=sys.stderr)
     # Ленивый импорт: docling/torch грузятся при первом задании,
     # сам старт воркера мгновенный.
     from pipeline import parse as parser_step
@@ -76,6 +77,9 @@ def serve(inp: TextIO, out: TextIO, idle_timeout: float = IDLE_TIMEOUT_S) -> Non
         lines.put(None)  # EOF: родитель закрыл stdin — работы больше не будет
 
     threading.Thread(target=_reader, daemon=True).start()
+    # Маркер в app.log родителя (через префикс [parse]): видно, что
+    # процесс воркера дожил до Python-кода и его stderr доходит.
+    print("worker ready", file=sys.stderr)
     while True:
         try:
             line = lines.get(timeout=idle_timeout)
