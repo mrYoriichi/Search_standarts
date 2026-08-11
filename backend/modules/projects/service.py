@@ -443,6 +443,7 @@ def start_archive_indexing(
     db: Session,
     paths: list[Path],
     executor: ThreadPoolExecutor,
+    only_slug: str | None = None,
 ) -> tuple[int, list[str]]:
     """Send pending archive documents to the pipeline.
 
@@ -454,15 +455,19 @@ def start_archive_indexing(
     indexing (as in the library): a folder being indexed by another
     machine is skipped, its documents stay pending.
 
+    only_slug — кнопка ▶ у файла: запустить ТОЛЬКО этот pending-документ
+    (зеркально библиотеке). Неизвестный slug = ноль запусков без ошибки.
+
     Returns (submitted, list of "folder: who is indexing").
     """
     from backend.core import index_lock, library_cache
     from backend.modules.projects.pipeline import run_project_pipeline
 
     with _start_indexing_lock:
-        pending = db.scalars(
-            select(ProjectDocument).where(ProjectDocument.status == "pending")
-        ).all()
+        query = select(ProjectDocument).where(ProjectDocument.status == "pending")
+        if only_slug is not None:
+            query = query.where(ProjectDocument.slug == only_slug)
+        pending = db.scalars(query).all()
 
         # Group pending by folder — one lock per folder.
         by_root: dict[Path, list[ProjectDocument]] = {}

@@ -70,6 +70,20 @@ def index_library(
     return {"started": started, "locked": locked}
 
 
+@router.post("/library/index/{slug}")
+def index_library_document(
+    slug: str,
+    request: Request,
+    db: Session = Depends(get_session),
+) -> dict:
+    """Send ONE pending document to processing (the ▶ button on a file)."""
+    executor = request.app.state.executor
+    started, locked = service.start_indexing(
+        _library_paths(db), db, executor, only_slug=slug
+    )
+    return {"started": started, "locked": locked}
+
+
 @router.get("/library/stats", response_model=LibraryStats)
 def library_stats(db: Session = Depends(get_session)) -> LibraryStats:
     """Ready-page counters shown in the library and archive headers."""

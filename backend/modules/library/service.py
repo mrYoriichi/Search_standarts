@@ -405,6 +405,7 @@ def start_indexing(
     paths: list[Path],
     db: Session,
     executor: ThreadPoolExecutor,
+    only_slug: str | None = None,
 ) -> tuple[int, list[str]]:
     """Send pending documents to the pipeline, each into its own folder.
 
@@ -417,12 +418,19 @@ def start_indexing(
     is already indexing it (shared network folder) — its documents are left
     pending and we report who is busy.
 
+    only_slug — кнопка ▶ у файла: запустить ТОЛЬКО этот pending-документ
+    (вся логика — усыновление, лок, очередь — общая). Неизвестный/уже не
+    pending slug = ноль запусков без ошибки (кнопка могла «прокиснуть»).
+
     Returns (submitted, list of "folder: who is indexing").
     """
     from indexing.embeddings_index import EMBEDDING_MODEL
 
     with _start_indexing_lock:
-        pending = db.scalars(select(Document).where(Document.status == "pending")).all()
+        query = select(Document).where(Document.status == "pending")
+        if only_slug is not None:
+            query = query.where(Document.slug == only_slug)
+        pending = db.scalars(query).all()
 
         # Group pending by folder — one lock per folder.
         by_folder: dict[Path, list[Document]] = {}

@@ -81,3 +81,16 @@ def index_archive(
         db, _projects_paths(db), request.app.state.executor
     )
     return {"started": submitted, "locked": locked}
+
+
+@router.post("/projects/index/{slug}")
+def index_archive_document(
+    slug: str,
+    request: Request,
+    db: Session = Depends(get_session),
+) -> dict:
+    """Send ONE pending archive document to processing (the ▶ button)."""
+    submitted, locked = service.start_archive_indexing(
+        db, _projects_paths(db), request.app.state.executor, only_slug=slug
+    )
+    return {"started": submitted, "locked": locked}
