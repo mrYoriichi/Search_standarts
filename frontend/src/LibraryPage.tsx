@@ -63,6 +63,27 @@ async function togglePin(slug: string): Promise<void> {
 }
 
 
+async function stopDocument(slug: string): Promise<void> {
+  // ⏹: queued docs return to čeká immediately, a running one stops at
+  // the nearest safe point (checkpoints survive, resuming is free).
+  try {
+    await fetch(`/api/documents/${slug}/stop`, { method: 'POST' })
+  } catch {
+    alert(t('common.networkError'))
+  }
+}
+
+
+// Slugs of all processing documents in the folder subtree (⏹ on a folder).
+function collectProcessing(folder: LibraryFolder): string[] {
+  const slugs = folder.files
+    .filter((f) => f.status === 'processing')
+    .map((f) => f.slug)
+  for (const sub of folder.folders) slugs.push(...collectProcessing(sub))
+  return slugs
+}
+
+
 async function indexOneDocument(slug: string): Promise<boolean> {
   // The ▶ button on a pending file: send just this document to processing.
   try {
@@ -295,6 +316,18 @@ function FileRow({
           ▶️
         </button>
       )}
+      {file.status === 'processing' && (
+        <button
+          onClick={async () => {
+            await stopDocument(file.slug)
+            onChange()
+          }}
+          title={t('lib.stopTitle')}
+          className="text-base leading-none opacity-25 hover:opacity-100"
+        >
+          ⏹
+        </button>
+      )}
       {(file.status === 'ready' || file.status === 'failed') && (
         <button
           onClick={async () => {
@@ -390,6 +423,23 @@ function FolderView({
         <details key={f.path} className="rounded-md border bg-muted/20 p-3">
           <summary className="cursor-pointer text-sm font-semibold flex items-center gap-2">
             📁 {f.name}
+            {collectProcessing(f).length > 0 && (
+              <button
+                onClick={async (e) => {
+                  // Не разворачивать/сворачивать папку кликом по ⏹.
+                  e.preventDefault()
+                  e.stopPropagation()
+                  for (const slug of collectProcessing(f)) {
+                    await stopDocument(slug)
+                  }
+                  onChange()
+                }}
+                title={t('lib.stopFolderTitle')}
+                className="text-base leading-none opacity-25 hover:opacity-100"
+              >
+                ⏹
+              </button>
+            )}
           </summary>
           <div className="flex flex-col gap-1 mt-2 ml-1">
             <FolderView folder={f} freshlyReady={freshlyReady} onChange={onChange} />

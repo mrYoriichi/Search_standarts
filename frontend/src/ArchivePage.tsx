@@ -74,6 +74,17 @@ async function reindexDocument(
   }
 }
 
+async function stopDocument(slug: string): Promise<void> {
+  // ⏹: queued docs return to čeká immediately, a running one stops at
+  // the nearest safe point (checkpoints survive, resuming is free).
+  try {
+    await fetch(`/api/projects/${slug}/stop`, { method: 'POST' })
+  } catch {
+    alert(t('common.networkError'))
+  }
+}
+
+
 async function indexOneDocument(slug: string): Promise<boolean> {
   // The ▶ button on a pending file: send just this document to processing.
   try {
@@ -92,6 +103,29 @@ async function indexOneDocument(slug: string): Promise<boolean> {
     alert(t('common.networkError'))
     return false
   }
+}
+
+function StopProjectButton({
+  docs,
+  onStop,
+}: {
+  docs: ArchiveDocument[]
+  onStop: (docs: ArchiveDocument[]) => void
+}) {
+  return (
+    <button
+      onClick={(e) => {
+        // Не сворачивать проект кликом по ⏹.
+        e.preventDefault()
+        e.stopPropagation()
+        onStop(docs)
+      }}
+      title={t('lib.stopFolderTitle')}
+      className="text-base leading-none opacity-25 hover:opacity-100"
+    >
+      ⏹
+    </button>
+  )
 }
 
 // All pinned archive documents (flat, for the "Připnuté" section).
@@ -195,6 +229,18 @@ function DocumentRow({
             className="text-base leading-none opacity-25 hover:opacity-100"
           >
             ▶️
+          </button>
+        )}
+        {doc.status === 'processing' && (
+          <button
+            onClick={async () => {
+              await stopDocument(doc.slug)
+              onChange()
+            }}
+            title={t('lib.stopTitle')}
+            className="text-base leading-none opacity-25 hover:opacity-100"
+          >
+            ⏹
           </button>
         )}
         {(doc.status === 'ready' || doc.status === 'error') && (
@@ -400,6 +446,14 @@ export default function ArchivePage() {
     } finally {
       setScanning(false)
     }
+  }
+
+  async function stopProject(docs: ArchiveDocument[]) {
+    // ⏹ в шапке проекта: остановить все его работающие документы.
+    for (const d of docs) {
+      if (d.status === 'processing') await stopDocument(d.slug)
+    }
+    await loadAll()
   }
 
   async function startIndexing() {
@@ -615,6 +669,14 @@ export default function ArchivePage() {
                               {active > 0 && t('arch.processingCount', { n: active })}
                               {errors > 0 && t('arch.errorCount', { n: errors })}
                             </span>
+                            {project.documents.some(
+                              (d) => d.status === 'processing',
+                            ) && (
+                              <StopProjectButton
+                                docs={project.documents}
+                                onStop={stopProject}
+                              />
+                            )}
                           </summary>
                           <div className="flex flex-col gap-1 mt-2 ml-1">
                             {project.documents.map((doc) => (
