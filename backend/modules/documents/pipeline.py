@@ -12,7 +12,15 @@ from pathlib import Path
 
 from sqlalchemy import select
 
-from backend.core import cpu_gate, index_lock, library_cache, parse_subprocess, progress
+from backend.core import (
+    cancel,
+    cpu_gate,
+    index_lock,
+    library_cache,
+    parse_subprocess,
+    progress,
+)
+from backend.core.cancel import IndexingCancelled
 from backend.core.database import SessionLocal
 from backend.core.ui_messages import msg
 from backend.core.errors import classify_pipeline_error
@@ -69,6 +77,14 @@ def run_pipeline(slug: str, pdf_path: str | None, doc_dir: Path) -> None:
 
     db = SessionLocal()
     try:
+        # ⏹ по документу в очереди: эндпоинт уже вернул его в čeká —
+        # выходим, не начиная (лок папки снимет finally обёртки).
+        if cancel.requested(slug):
+            _return_to_pending(db, slug)
+            return
+        cancel.mark_running(slug)
+        should_cancel = lambda: cancel.requested(slug)  # noqa: E731
+
         # The vision model is the cost lever, chosen in the UI. Read at
         # document start so the current choice applies.
         vision_model = settings_service.get_vision_model(db)
@@ -79,6 +95,8 @@ def run_pipeline(slug: str, pdf_path: str | None, doc_dir: Path) -> None:
                 # «čtení PDF» ставим только после входа в шлюз — пока
                 # документ ждёт своей очереди на parse, статус не врёт.
                 with cpu_gate.parse_gate:
+                    if should_cancel():
+                        raise IndexingCancelled
                     progress.set_progress(slug, msg("progress.reading"))
                     # The worker stamps document_id=slug into the
                     # artifacts: they must carry the scoped slug
@@ -97,7 +115,10 @@ def run_pipeline(slug: str, pdf_path: str | None, doc_dir: Path) -> None:
                             slug,
                             msg("progress.reading_drawing", done=done, total=total),
                         ),
+                        should_cancel=should_cancel,
                     )
+                if should_cancel():
+                    raise IndexingCancelled
                 progress.set_progress(slug, msg("progress.images"))
                 describe_step.process(
                     slug,
@@ -112,11 +133,21 @@ def run_pipeline(slug: str, pdf_path: str | None, doc_dir: Path) -> None:
                     on_drawing_progress=lambda done, total: progress.set_progress(
                         slug, msg("progress.drawings_page", done=done, total=total)
                     ),
+                    should_cancel=should_cancel,
                 )
+            if should_cancel():
+                raise IndexingCancelled
             progress.set_progress(slug, msg("progress.chunking"))
             chunk_step.process(slug, doc_dir=doc_dir)
+            if should_cancel():
+                raise IndexingCancelled
             progress.set_progress(slug, msg("progress.embedding"))
             index_step.process(slug, doc_dir=doc_dir)
+        except IndexingCancelled:
+            # Остановка ⏹ — не ошибка: документ снова čeká, чекпоинты
+            # целы, продолжение бесплатно.
+            _return_to_pending(db, slug)
+            return
         except Exception as exc:
             logger.exception("Pipeline for %s failed", slug)
             doc = db.scalar(select(Document).where(Document.slug == slug))
@@ -164,5 +195,15 @@ def run_pipeline(slug: str, pdf_path: str | None, doc_dir: Path) -> None:
             pass
         track_event("pdf_indexed", chunks_count=chunks_count)
     finally:
+        cancel.mark_done(slug)
         progress.clear_progress(slug)
         db.close()
+
+
+def _return_to_pending(db, slug: str) -> None:
+    """Остановленный документ — снова čeká (если его никто не перевёл)."""
+    doc = db.scalar(select(Document).where(Document.slug == slug))
+    if doc is not None and doc.status == "processing":
+        doc.status = "pending"
+        doc.error_message = None
+        db.commit()

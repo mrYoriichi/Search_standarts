@@ -24,6 +24,7 @@ load_dotenv()
 
 import pypdfium2 as pdfium
 
+from backend.core.cancel import IndexingCancelled
 from backend.core.paths import CLI_OUTPUT_DIR
 from common.jsonio import save_json_atomic
 from pdf_processing.drawing import RENDER_MAX_SIDE_PX
@@ -125,6 +126,7 @@ def describe_drawings(
     descriptions: dict[str, str],
     on_page_done: Callable[[], None] | None = None,
     on_progress: Callable[[int, int], None] | None = None,
+    should_cancel: Callable[[], bool] | None = None,
 ) -> tuple[int, int]:
     """Vision passports for the document's drawing pages (extends descriptions).
 
@@ -180,6 +182,16 @@ def describe_drawings(
                 first_error: BaseException | None = None
                 done = 0
                 for future in as_completed(futures):
+                    # Остановка ⏹ = та же семантика, что ошибка: не начатые
+                    # отменяем, летящие дожидаемся и сохраняем (оплачены).
+                    if (
+                        first_error is None
+                        and should_cancel is not None
+                        and should_cancel()
+                    ):
+                        first_error = IndexingCancelled()
+                        for f in futures:
+                            f.cancel()
                     try:
                         page_number, desc, p_tok, c_tok = future.result()
                     except BaseException as exc:
@@ -215,6 +227,7 @@ def process(
     pdf_path: str | None = None,
     describe_images: bool = True,
     on_drawing_progress: Callable[[int, int], None] | None = None,
+    should_cancel: Callable[[], bool] | None = None,
 ) -> None:
     """Describe schemes and document metadata into descriptions.json.
 
@@ -234,6 +247,8 @@ def process(
     never called (no metadata, no scheme or drawing descriptions): an
     empty descriptions.json is written and chunks build from OCR/text —
     free.
+    should_cancel — остановка ⏹: проверяется между страницами; уже
+    оплаченные ответы сохраняются, поднимается IndexingCancelled.
     """
     doc_dir = doc_dir or (CLI_OUTPUT_DIR / make_document_id(pdf_name))
     document_path = doc_dir / "document.json"
@@ -338,6 +353,12 @@ def process(
         first_error: BaseException | None = None
         done = 0
         for future in as_completed(futures):
+            # Остановка ⏹ = та же семантика, что ошибка: не начатые
+            # отменяем, летящие дожидаемся и сохраняем (оплачены).
+            if first_error is None and should_cancel is not None and should_cancel():
+                first_error = IndexingCancelled()
+                for f in futures:
+                    f.cancel()
             page_number = futures[future]
             try:
                 page_descriptions, in_tok, out_tok = future.result()
@@ -377,6 +398,7 @@ def process(
             descriptions=output["drawing_descriptions"],
             on_page_done=lambda: save_descriptions(output, descriptions_path),
             on_progress=on_drawing_progress,
+            should_cancel=should_cancel,
         )
         print(f"  Drawings described: {len(output['drawing_descriptions'])}")
     drawing_descriptions = output["drawing_descriptions"]

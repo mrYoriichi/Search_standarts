@@ -38,6 +38,7 @@ def test_run_pipeline_passes_scoped_document_id(fake_db, monkeypatch, tmp_path):
         pages_dir=None,
         on_text_pages=None,
         on_drawing_page=None,
+        should_cancel=None,
     ) -> None:
         recorded["slug"] = slug
 

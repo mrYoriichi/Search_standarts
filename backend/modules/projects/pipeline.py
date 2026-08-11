@@ -16,7 +16,15 @@ from pathlib import Path
 
 from sqlalchemy import select
 
-from backend.core import cpu_gate, index_lock, index_store, parse_subprocess, progress
+from backend.core import (
+    cancel,
+    cpu_gate,
+    index_lock,
+    index_store,
+    parse_subprocess,
+    progress,
+)
+from backend.core.cancel import IndexingCancelled
 from backend.core.database import SessionLocal
 from backend.core.ui_messages import msg
 from backend.core.errors import classify_pipeline_error
@@ -67,8 +75,12 @@ def process_text_document(
     from pipeline import describe as describe_step
     from pipeline import embed as index_step
 
+    should_cancel = lambda: cancel.requested(slug)  # noqa: E731
+
     # «čtení PDF» — только после входа в шлюз (см. core/cpu_gate.py).
     with cpu_gate.parse_gate:
+        if should_cancel():
+            raise IndexingCancelled
         progress.set_progress(slug, msg("progress.reading"))
         # pages_dir не задан — parse кладёт скриншоты в doc_dir/pages
         # (поведение архива не меняем).
@@ -82,7 +94,10 @@ def process_text_document(
             on_drawing_page=lambda done, total: progress.set_progress(
                 slug, msg("progress.reading_drawing", done=done, total=total)
             ),
+            should_cancel=should_cancel,
         )
+    if should_cancel():
+        raise IndexingCancelled
     progress.set_progress(slug, msg("progress.images"))
     describe_step.process(
         slug,
@@ -96,10 +111,15 @@ def process_text_document(
         on_drawing_progress=lambda done, total: progress.set_progress(
             slug, msg("progress.drawings_page", done=done, total=total)
         ),
+        should_cancel=should_cancel,
     )
+    if should_cancel():
+        raise IndexingCancelled
     progress.set_progress(slug, msg("progress.chunking"))
     chunk_step.process(slug, doc_dir=doc_dir)
     _prefix_project_context(doc_dir, project)
+    if should_cancel():
+        raise IndexingCancelled
     progress.set_progress(slug, msg("progress.embedding"))
     index_step.process(slug, doc_dir=doc_dir)
 
@@ -133,6 +153,15 @@ def _run_project_pipeline(slug: str, pdf_path: str, root: str) -> None:
         if doc is None:
             logger.error("run_project_pipeline: slug %s not found in the DB", slug)
             return
+        # ⏹ по документу в очереди: эндпоинт уже вернул его в čeká —
+        # выходим, не переводя обратно в processing.
+        if cancel.requested(slug):
+            if doc.status == "processing":
+                doc.status = "pending"
+                doc.error = None
+                db.commit()
+            return
+        cancel.mark_running(slug)
         doc.status = "processing"
         db.commit()
 
@@ -153,6 +182,13 @@ def _run_project_pipeline(slug: str, pdf_path: str, root: str) -> None:
                 doc_dir=index_store.doc_dir(Path(root), slug),
                 describe_images=describe_images,
             )
+        except IndexingCancelled:
+            # Остановка ⏹ — не ошибка: документ снова čeká, чекпоинты
+            # целы, продолжение бесплатно.
+            doc.status = "pending"
+            doc.error = None
+            db.commit()
+            return
         except Exception as exc:
             logger.exception("Archive pipeline for %s failed", slug)
             doc.status = "error"
@@ -171,5 +207,6 @@ def _run_project_pipeline(slug: str, pdf_path: str, root: str) -> None:
 
         library_cache.invalidate()
     finally:
+        cancel.mark_done(slug)
         progress.clear_progress(slug)
         db.close()

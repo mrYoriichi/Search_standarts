@@ -19,6 +19,7 @@ from typing import Callable
 
 import psutil
 
+from backend.core.cancel import IndexingCancelled
 from backend.core.errors import classify_by_name
 from backend.core.ui_messages import msg
 
@@ -42,6 +43,8 @@ _worker: subprocess.Popen | None = None
 # Воркер не ожил ни разу — до перезапуска приложения парсим в родителе,
 # иначе каждый документ ждал бы таймаут заново.
 _worker_blocked = False
+# Какой slug воркер жуёт прямо сейчас (для kill_if_parsing из ⏹).
+_current_slug: str | None = None
 
 
 class ParseFailedError(Exception):
@@ -212,6 +215,19 @@ def _send_job(job: dict) -> subprocess.Popen:
     raise ParseFailedError(msg("err.parse_crashed"))
 
 
+def kill_if_parsing(slug: str) -> None:
+    """⏹ посреди parse: убить воркер, если он жуёт именно этот slug.
+
+    Родитель, заблокированный в readline (Docling молчит минутами),
+    получит EOF и — при взведённом флаге отмены — поднимет
+    IndexingCancelled вместо err.parse_crashed. Без _lock: его держит
+    сам run_parse.
+    """
+    proc = _worker
+    if _current_slug == slug and proc is not None and proc.poll() is None:
+        proc.kill()
+
+
 def run_parse(
     slug: str,
     pdf_path: str | None,
@@ -219,6 +235,7 @@ def run_parse(
     pages_dir: Path | None = None,
     on_text_pages: Callable[[int], None] | None = None,
     on_drawing_page: Callable[[int, int], None] | None = None,
+    should_cancel: Callable[[], bool] | None = None,
 ) -> None:
     """Прогнать parse одного документа в воркере (блокирует до конца).
 
@@ -232,7 +249,11 @@ def run_parse(
     (заморозка на первом импорте docling/torch). В обоих случаях
     замёрзший процесс убивается, документ парсится в родителе, и до
     перезапуска приложения воркер больше не спавнится.
+
+    should_cancel — остановка ⏹: флаг между событиями (или EOF после
+    kill_if_parsing) → воркер убит, IndexingCancelled.
     """
+    global _current_slug
     if not _worker_blocked:
         job = {
             "slug": slug,
@@ -241,50 +262,66 @@ def run_parse(
             "pages_dir": str(pages_dir) if pages_dir else None,
         }
         with _lock:
+            _current_slug = slug
             try:
-                proc = _send_job(job)
-            except _WorkerBlockedError:
-                _mark_blocked("worker never became ready")
-            else:
-                got_first = False
-                while True:
-                    if got_first:
-                        line = proc.stdout.readline()
-                    else:
-                        # До первого события воркер грузит ML-стек;
-                        # причина отказа уже в логе от _wait_first_line.
-                        line = _wait_first_line(proc)
-                        if line is None:
+                try:
+                    proc = _send_job(job)
+                except _WorkerBlockedError:
+                    _mark_blocked("worker never became ready")
+                else:
+                    got_first = False
+                    while True:
+                        if got_first:
+                            line = proc.stdout.readline()
+                        else:
+                            # До первого события воркер грузит ML-стек;
+                            # причина отказа — в логе от _wait_first_line.
+                            line = _wait_first_line(proc)
+                            if line is None:
+                                _forget(proc)
+                                _mark_blocked("worker frozen after job")
+                                break  # → фоллбек ниже
+                        if not line:
+                            # EOF: воркер умер посреди задания. При ⏹ это
+                            # kill_if_parsing — остановка, а не сбой.
                             _forget(proc)
-                            _mark_blocked("worker frozen after job")
-                            break  # → фоллбек ниже
-                    if not line:
-                        # EOF: воркер умер посреди задания (bad_alloc,
-                        # segfault). Раньше это роняло ВСЁ приложение —
-                        # теперь только документ.
-                        _forget(proc)
-                        raise ParseFailedError(msg("err.parse_crashed"))
-                    try:
-                        event = json.loads(line)
-                    except json.JSONDecodeError:
-                        # Нативная библиотека написала в stdout мимо
-                        # редиректа воркера — не протокол, просто в лог.
-                        print(f"[parse] {line.rstrip()}", file=sys.stderr)
-                        continue
-                    got_first = True
-                    kind = event.get("event")
-                    if kind == "text_pages" and on_text_pages:
-                        on_text_pages(event["total"])
-                    elif kind == "drawing_page" and on_drawing_page:
-                        on_drawing_page(event["done"], event["total"])
-                    elif kind == "done":
-                        return
-                    elif kind == "error":
-                        raise ParseFailedError(
-                            classify_by_name(event["type"], event["text"])
-                        )
+                            if should_cancel and should_cancel():
+                                raise IndexingCancelled
+                            raise ParseFailedError(msg("err.parse_crashed"))
+                        try:
+                            event = json.loads(line)
+                        except json.JSONDecodeError:
+                            # Нативная библиотека написала в stdout мимо
+                            # редиректа воркера — не протокол, в лог.
+                            print(f"[parse] {line.rstrip()}", file=sys.stderr)
+                            continue
+                        got_first = True
+                        if should_cancel and should_cancel():
+                            # Воркер убиваем: недоеденное задание слало бы
+                            # события в протокол следующего документа.
+                            _forget(proc)
+                            raise IndexingCancelled
+                        kind = event.get("event")
+                        if kind == "text_pages" and on_text_pages:
+                            on_text_pages(event["total"])
+                        elif kind == "drawing_page" and on_drawing_page:
+                            on_drawing_page(event["done"], event["total"])
+                        elif kind == "done":
+                            return
+                        elif kind == "error":
+                            raise ParseFailedError(
+                                classify_by_name(event["type"], event["text"])
+                            )
+            finally:
+                _current_slug = None
     _parse_in_process(
-        slug, pdf_path, doc_dir, pages_dir, on_text_pages, on_drawing_page
+        slug,
+        pdf_path,
+        doc_dir,
+        pages_dir,
+        on_text_pages,
+        on_drawing_page,
+        should_cancel,
     )
 
 
@@ -295,16 +332,26 @@ def _parse_in_process(
     pages_dir: Path | None,
     on_text_pages: Callable[[int], None] | None,
     on_drawing_page: Callable[[int, int], None] | None,
+    should_cancel: Callable[[], bool] | None = None,
 ) -> None:
     """Запасной путь: parse в основном процессе, как до воркера.
 
     Индексация работает и там, где EDR/антивирус замораживает дочерний
     exe. Цена — модели остаются в памяти родителя до перезапуска.
     Ошибки пробрасываются сырыми: пайплайн классифицирует их сам, как в
-    довокерные времена.
+    довокерные времена. Остановка ⏹ здесь возможна только между
+    OCR-страницами (сам Docling одним куском не прервать).
     """
     from pipeline import parse as parse_step
 
+    def guarded_drawing(done: int, total: int) -> None:
+        if should_cancel and should_cancel():
+            raise IndexingCancelled
+        if on_drawing_page:
+            on_drawing_page(done, total)
+
+    if should_cancel and should_cancel():
+        raise IndexingCancelled
     parse_step.process(
         slug,
         pdf_path=pdf_path,
@@ -312,7 +359,7 @@ def _parse_in_process(
         document_id=slug,
         pages_dir=pages_dir,
         on_text_pages=on_text_pages,
-        on_drawing_page=on_drawing_page,
+        on_drawing_page=guarded_drawing,
     )
 
 

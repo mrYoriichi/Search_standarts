@@ -50,6 +50,7 @@ def test_sheet_goes_through_common_pipeline(monkeypatch, tmp_path):
         pages_dir=None,
         on_text_pages=None,
         on_drawing_page=None,
+        should_cancel=None,
     ) -> None:
         recorded["slug"] = parse_slug
 
