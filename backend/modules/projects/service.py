@@ -14,7 +14,7 @@ from pathlib import Path
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from backend.core import index_store, progress
+from backend.core import cancel, index_store, parse_subprocess, progress
 from backend.core.ui_messages import msg
 from backend.core.paths import PROJECTS_DATA_DIR
 from backend.modules.projects.models import ProjectDocument
@@ -521,6 +521,27 @@ def start_archive_indexing(
             # question must see them.
             library_cache.invalidate()
         return submitted, locked
+
+
+def stop_document(db: Session, slug: str) -> None:
+    """⏹: остановить индексацию архивного документа (зеркально библиотеке).
+
+    Очередь — сразу в čeká; работает — флаг + «zastavuje se…», пайплайн
+    выйдет на безопасной точке; воркер parse убивается, если жуёт именно
+    этот документ. Не-processing — тихий no-op.
+    """
+    doc = db.scalar(select(ProjectDocument).where(ProjectDocument.slug == slug))
+    if doc is None or doc.status != "processing":
+        return
+    cancel.request(slug)
+    if cancel.is_running(slug):
+        progress.set_progress(slug, msg("progress.stopping"))
+        parse_subprocess.kill_if_parsing(slug)
+    else:
+        doc.status = "pending"
+        doc.error = None
+        db.commit()
+        progress.clear_progress(slug)
 
 
 class DocumentBusyError(Exception):

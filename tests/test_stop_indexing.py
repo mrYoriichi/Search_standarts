@@ -184,6 +184,84 @@ def test_archive_queued_cancel_returns_pending(db, tmp_path):
     assert not cancel.requested("p__tz")
 
 
+# --- эндпоинт остановки (сервисный слой) ---
+
+
+def test_stop_queued_document_returns_pending_immediately(db):
+    # Документ в очереди executor (processing, но пайплайн не начался):
+    # ⏹ возвращает его в čeká сразу, не дожидаясь его очереди.
+    from backend.core import progress
+    from backend.modules.documents import service as doc_service
+    from backend.core.ui_messages import msg
+
+    doc = _lib_doc(db, "f1__doc1")
+    progress.set_progress("f1__doc1", msg("progress.queued"))
+
+    doc_service.stop_document(db, "f1__doc1")
+
+    db.refresh(doc)
+    assert doc.status == "pending"
+    assert progress.get_progress("f1__doc1") is None
+    assert cancel.requested("f1__doc1")  # задача executor выйдет молча
+
+
+def test_stop_running_document_flags_and_waits(db):
+    # Документ реально работает: статус не трогаем (пайплайн сам дойдёт
+    # до безопасной точки), но флаг взведён и в прогрессе «zastavuje se».
+    from backend.core import progress
+    from backend.modules.documents import service as doc_service
+    from backend.core.ui_messages import msg
+
+    doc = _lib_doc(db, "f1__doc1")
+    cancel.mark_running("f1__doc1")
+
+    doc_service.stop_document(db, "f1__doc1")
+
+    db.refresh(doc)
+    assert doc.status == "processing"
+    assert cancel.requested("f1__doc1")
+    assert progress.get_progress("f1__doc1") == msg("progress.stopping")
+    progress.clear_progress("f1__doc1")
+
+
+def test_stop_archive_queued_document(db):
+    from backend.core import progress
+    from backend.modules.projects import service as proj_service
+    from backend.core.ui_messages import msg
+
+    doc = ProjectDocument(
+        slug="p__tz",
+        project="p",
+        relative_path="tz.pdf",
+        doc_type="text",
+        page_count=1,
+        status="processing",
+    )
+    db.add(doc)
+    db.commit()
+    progress.set_progress("p__tz", msg("progress.queued"))
+
+    proj_service.stop_document(db, "p__tz")
+
+    db.refresh(doc)
+    assert doc.status == "pending"
+    assert progress.get_progress("p__tz") is None
+
+
+def test_stop_non_processing_document_is_noop(db):
+    from backend.modules.documents import service as doc_service
+
+    doc = _lib_doc(db, "f1__doc1")
+    doc.status = "ready"
+    db.commit()
+
+    doc_service.stop_document(db, "f1__doc1")
+
+    db.refresh(doc)
+    assert doc.status == "ready"
+    assert not cancel.requested("f1__doc1")
+
+
 # --- describe: отмена между страницами ---
 
 

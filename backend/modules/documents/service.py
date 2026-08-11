@@ -9,7 +9,14 @@ from pathlib import Path
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from backend.core import index_lock, index_store, library_cache, progress
+from backend.core import (
+    cancel,
+    index_lock,
+    index_store,
+    library_cache,
+    parse_subprocess,
+    progress,
+)
 from backend.core.ui_messages import msg
 from backend.modules.documents.models import Document
 from backend.modules.documents.pipeline import run_pipeline_locked
@@ -150,6 +157,29 @@ def reindex_document(
         index_store.doc_dir(library_path, slug),
     )
     return doc
+
+
+def stop_document(db: Session, slug: str) -> None:
+    """⏹: остановить индексацию документа (кооперативно, см. core/cancel).
+
+    В очереди executor (пайплайн не начался) — сразу вернуть в čeká:
+    задача выйдет молча, когда дойдёт очередь. Реально работает — взвести
+    флаг («zastavuje se…»), пайплайн выйдет на безопасной точке; воркер
+    parse убивается сразу, если жуёт именно этот документ. Не-processing
+    документ — тихий no-op (кнопка могла «прокиснуть»).
+    """
+    doc = db.scalar(select(Document).where(Document.slug == slug))
+    if doc is None or doc.status != "processing":
+        return
+    cancel.request(slug)
+    if cancel.is_running(slug):
+        progress.set_progress(slug, msg("progress.stopping"))
+        parse_subprocess.kill_if_parsing(slug)
+    else:
+        doc.status = "pending"
+        doc.error_message = None
+        db.commit()
+        progress.clear_progress(slug)
 
 
 def delete_document(db: Session, slug: str, paths: list[Path] | None = None) -> None:

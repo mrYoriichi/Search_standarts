@@ -47,6 +47,14 @@ def reindex_document(
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
+@router.post("/documents/{slug}/stop")
+def stop_document(slug: str, db: Session = Depends(get_session)) -> dict:
+    """⏹: stop indexing this document (queued — immediately, running —
+    at the nearest safe point). Checkpoints survive, resuming is free."""
+    service.stop_document(db, slug)
+    return {"status": "ok"}
+
+
 @router.delete("/documents/{slug}")
 def delete_document(slug: str, db: Session = Depends(get_session)) -> dict:
     """Remove the document from the index. The PDF stays in place."""

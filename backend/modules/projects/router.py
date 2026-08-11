@@ -71,6 +71,14 @@ def reindex_document(
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
+@router.post("/projects/{slug}/stop")
+def stop_document(slug: str, db: Session = Depends(get_session)) -> dict:
+    """⏹: stop indexing this archive document (queued — immediately,
+    running — at the nearest safe point)."""
+    service.stop_document(db, slug)
+    return {"status": "ok"}
+
+
 @router.post("/projects/index")
 def index_archive(
     request: Request,

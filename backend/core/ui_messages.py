@@ -235,6 +235,11 @@ MESSAGES: dict[str, dict[str, str]] = {
         "en": "waiting in queue…",
         "de": "wartet in der Warteschlange…",
     },
+    "progress.stopping": {
+        "cs": "zastavuje se…",
+        "en": "stopping…",
+        "de": "wird gestoppt…",
+    },
     "progress.reading": {
         "cs": "čtení PDF…",
         "en": "reading PDF…",
