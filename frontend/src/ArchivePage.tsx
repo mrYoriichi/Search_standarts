@@ -74,6 +74,26 @@ async function reindexDocument(
   }
 }
 
+async function indexOneDocument(slug: string): Promise<boolean> {
+  // The ▶ button on a pending file: send just this document to processing.
+  try {
+    const res = await fetch(`/api/projects/index/${slug}`, { method: 'POST' })
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}))
+      alert(data.detail ?? t('common.errorStatus', { status: res.status }))
+      return false
+    }
+    const data: { locked?: string[] } = await res.json()
+    if (data.locked && data.locked.length > 0) {
+      alert(t('lib.lockedMsg', { list: data.locked.join('\n') }))
+    }
+    return true
+  } catch {
+    alert(t('common.networkError'))
+    return false
+  }
+}
+
 // All pinned archive documents (flat, for the "Připnuté" section).
 function collectPinned(archive: ArchiveResponse): ArchiveDocument[] {
   const pinned: ArchiveDocument[] = []
@@ -166,6 +186,17 @@ function DocumentRow({
           {t('arch.pages', { n: doc.page_count })}
         </span>
         <StatusLabel doc={doc} freshlyReady={freshlyReady.has(doc.slug)} />
+        {doc.status === 'pending' && (
+          <button
+            onClick={async () => {
+              if (await indexOneDocument(doc.slug)) onChange()
+            }}
+            title={t('lib.indexOneTitle')}
+            className="text-base leading-none opacity-25 hover:opacity-100"
+          >
+            ▶️
+          </button>
+        )}
         {(doc.status === 'ready' || doc.status === 'error') && (
           <button
             onClick={async () => {

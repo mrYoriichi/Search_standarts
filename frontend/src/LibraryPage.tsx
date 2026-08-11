@@ -63,6 +63,27 @@ async function togglePin(slug: string): Promise<void> {
 }
 
 
+async function indexOneDocument(slug: string): Promise<boolean> {
+  // The ▶ button on a pending file: send just this document to processing.
+  try {
+    const res = await fetch(`/api/library/index/${slug}`, { method: 'POST' })
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}))
+      alert(data.detail ?? t('common.errorStatus', { status: res.status }))
+      return false
+    }
+    const data: { locked?: string[] } = await res.json()
+    if (data.locked && data.locked.length > 0) {
+      alert(t('lib.lockedMsg', { list: data.locked.join('\n') }))
+    }
+    return true
+  } catch {
+    alert(t('common.networkError'))
+    return false
+  }
+}
+
+
 async function reindexDocument(
   slug: string,
   title: string,
@@ -263,6 +284,17 @@ function FileRow({
         progress={file.progress}
         freshlyReady={freshlyReady.has(file.slug)}
       />
+      {file.status === 'pending' && (
+        <button
+          onClick={async () => {
+            if (await indexOneDocument(file.slug)) onChange()
+          }}
+          title={t('lib.indexOneTitle')}
+          className="text-base leading-none opacity-25 hover:opacity-100"
+        >
+          ▶️
+        </button>
+      )}
       {(file.status === 'ready' || file.status === 'failed') && (
         <button
           onClick={async () => {
