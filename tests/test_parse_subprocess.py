@@ -62,6 +62,16 @@ import time
 time.sleep(600)
 """
 
+# Воркер ожил (ready), взял задание — и замёрз на импорте ML-стека:
+# ровно картина app.log 2026-08-11 (worker ready + job received, а
+# «ML stack imported» так и не пришёл).
+READY_THEN_FREEZE = """
+import json, sys, time
+print(json.dumps({"event": "ready"}), flush=True)
+sys.stdin.readline()
+time.sleep(600)
+"""
+
 
 @pytest.fixture(autouse=True)
 def clean_worker() -> Iterator[None]:
@@ -180,6 +190,24 @@ def test_blocked_worker_not_respawned_for_next_job(
     call()
     assert len(fallback) == 2
     assert len(spawns) == 1
+
+
+def test_frozen_import_falls_back_to_in_process(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # ready пришёл, задание ушло, но ни одного события за таймаут (EDR
+    # душит первый импорт docling/torch) — воркер убит, документ
+    # парсится в родителе, воркер больше не спавнится.
+    use_worker(monkeypatch, READY_THEN_FREEZE)
+    monkeypatch.setattr(parse_subprocess, "FIRST_EVENT_TIMEOUT_S", 0.5)
+    fallback: list[tuple] = []
+    monkeypatch.setattr(
+        parse_subprocess, "_parse_in_process", lambda *a: fallback.append(a)
+    )
+    call()
+    assert len(fallback) == 1
+    assert parse_subprocess._worker is None  # замёрзший процесс убит
+    assert parse_subprocess._worker_blocked
 
 
 def test_job_line_is_valid_json_with_paths(monkeypatch: pytest.MonkeyPatch) -> None:

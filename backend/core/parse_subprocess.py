@@ -23,6 +23,10 @@ from backend.core.ui_messages import msg
 # сразу после старта (импорты лаунчера — секунды); замороженный
 # EDR/антивирусом процесс не шлёт никогда (инцидент 2026-08-10).
 READY_TIMEOUT_S = 60.0
+# Сколько ждать ПЕРВОЕ событие после отправки задания. До него воркер
+# грузит docling/torch (обычно до минуты); EDR может заморозить именно
+# этот импорт — ready приходит, а событий нет (лог 2026-08-11).
+FIRST_EVENT_TIMEOUT_S = 300.0
 
 _lock = threading.Lock()
 _worker: subprocess.Popen | None = None
@@ -106,6 +110,34 @@ def _wait_ready(proc: subprocess.Popen) -> bool:
         return False
 
 
+def _read_line(proc: subprocess.Popen, timeout: float) -> str | None:
+    """Строка stdout воркера с таймаутом (None = таймаут, "" = EOF).
+
+    Отдельный поток: у пайпов нет readline с таймаутом. Вызывать только
+    когда по таймауту процесс будет убит — иначе застрявший в readline
+    поток украл бы следующую строку у основного цикла.
+    """
+    got: queue.Queue[str] = queue.Queue()
+    threading.Thread(
+        target=lambda: got.put(proc.stdout.readline()), daemon=True
+    ).start()
+    try:
+        return got.get(timeout=timeout)
+    except queue.Empty:
+        return None
+
+
+def _mark_blocked(reason: str) -> None:
+    """Запомнить, что воркер заморожен, и объяснить это в app.log."""
+    global _worker_blocked
+    _worker_blocked = True
+    print(
+        f"[parse] {reason} — EDR/antivirus freeze? "
+        "Falling back to in-process parse until restart",
+        file=sys.stderr,
+    )
+
+
 def _forget(proc: subprocess.Popen) -> None:
     global _worker
     if proc.poll() is None:
@@ -154,11 +186,13 @@ def run_parse(
     вызова parse.process. pages_dir=None (архив) — скриншоты в
     doc_dir/pages. Ошибка → ParseFailedError с готовым текстом.
 
-    Если свежий воркер не прислал ready за READY_TIMEOUT_S (EDR/антивирус
-    заморозил дочерний exe — инцидент 2026-08-10), документ парсится в
-    родителе, и до перезапуска приложения воркер больше не спавнится.
+    Заморозка воркера EDR/антивирусом (инцидент 2026-08-10/11) ловится
+    в двух точках: нет ready за READY_TIMEOUT_S после спавна, или нет
+    ни одного события за FIRST_EVENT_TIMEOUT_S после отправки задания
+    (заморозка на первом импорте docling/torch). В обоих случаях
+    замёрзший процесс убивается, документ парсится в родителе, и до
+    перезапуска приложения воркер больше не спавнится.
     """
-    global _worker_blocked
     if not _worker_blocked:
         job = {
             "slug": slug,
@@ -170,15 +204,23 @@ def run_parse(
             try:
                 proc = _send_job(job)
             except _WorkerBlockedError:
-                _worker_blocked = True
-                print(
-                    "[parse] worker never became ready — EDR/antivirus freeze? "
-                    "Falling back to in-process parse until restart",
-                    file=sys.stderr,
-                )
+                _mark_blocked("worker never became ready")
             else:
+                got_first = False
                 while True:
-                    line = proc.stdout.readline()
+                    if got_first:
+                        line = proc.stdout.readline()
+                    else:
+                        # До первого события воркер грузит ML-стек; нет
+                        # событий за таймаут — заморожен на импорте.
+                        line = _read_line(proc, FIRST_EVENT_TIMEOUT_S)
+                        if line is None:
+                            _forget(proc)
+                            _mark_blocked(
+                                f"no event within {FIRST_EVENT_TIMEOUT_S:.0f}s "
+                                "after job"
+                            )
+                            break  # → фоллбек ниже
                     if not line:
                         # EOF: воркер умер посреди задания (bad_alloc,
                         # segfault). Раньше это роняло ВСЁ приложение —
@@ -192,6 +234,7 @@ def run_parse(
                         # редиректа воркера — не протокол, просто в лог.
                         print(f"[parse] {line.rstrip()}", file=sys.stderr)
                         continue
+                    got_first = True
                     kind = event.get("event")
                     if kind == "text_pages" and on_text_pages:
                         on_text_pages(event["total"])
