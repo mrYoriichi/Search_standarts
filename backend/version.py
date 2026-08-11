@@ -8,7 +8,7 @@ For a new release: update here (duplicate the version in installer.iss),
 check PUBLIC_BUILD, then build the installer. See BUILD.md.
 """
 
-APP_VERSION = "0.5.2"
+APP_VERSION = "0.5.3"
 
 # One codebase — two builds (decision 2026-07-15, NOT a fork).
 # True  — public build: license verify is fail-open. An unreachable
