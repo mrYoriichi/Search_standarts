@@ -31,3 +31,7 @@ numpy==2.4.6             # embedding matrix + vector search (cosine = one multip
 # Desktop (иконка в трее Windows-сборки; на macOS/Linux не ставится)
 pystray==0.19.5; sys_platform == "win32"
 Pillow==11.3.0; sys_platform == "win32"  # рисуем иконку кодом; font_size требует >=10.1
+
+# Process management
+psutil==7.2.0            # память parse-воркера: отличаем «грузит ML» от
+                         # «заморожен EDR» (инцидент 2026-08-11)

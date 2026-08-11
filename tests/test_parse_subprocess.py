@@ -64,13 +64,34 @@ time.sleep(600)
 
 # Воркер ожил (ready), взял задание — и замёрз на импорте ML-стека:
 # ровно картина app.log 2026-08-11 (worker ready + job received, а
-# «ML stack imported» так и не пришёл).
+# «ML stack imported» так и не пришёл). Память стоит, событий нет.
 READY_THEN_FREEZE = """
 import json, sys, time
 print(json.dumps({"event": "ready"}), flush=True)
 sys.stdin.readline()
 time.sleep(600)
 """
+
+# Медленный, но ЖИВОЙ воркер: событий ещё нет, зато память растёт —
+# так выглядит честная загрузка ML-стека на медленном диске. Такого
+# убивать нельзя, сколько бы он ни возился (до абсолютного потолка).
+GROWING_THEN_DONE = """
+import json, sys, time
+print(json.dumps({"event": "ready"}), flush=True)
+sys.stdin.readline()
+blobs = []
+for _ in range(20):
+    blobs.append(bytearray(2_000_000))  # +2 МБ за шаг — «импорт идёт»
+    time.sleep(0.05)
+print(json.dumps({"event": "done"}), flush=True)
+"""
+
+
+def fast_watchdog(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Ускоренные окна сторожа — тесты не ждут настоящие минуты."""
+    monkeypatch.setattr(parse_subprocess, "_POLL_SLICE_S", 0.05)
+    monkeypatch.setattr(parse_subprocess, "NO_PROGRESS_TIMEOUT_S", 0.3)
+    monkeypatch.setattr(parse_subprocess, "FIRST_EVENT_TIMEOUT_S", 10.0)
 
 
 @pytest.fixture(autouse=True)
@@ -195,11 +216,11 @@ def test_blocked_worker_not_respawned_for_next_job(
 def test_frozen_import_falls_back_to_in_process(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    # ready пришёл, задание ушло, но ни одного события за таймаут (EDR
-    # душит первый импорт docling/torch) — воркер убит, документ
+    # ready пришёл, задание ушло, но событий нет И память стоит (EDR
+    # заморозил первый импорт docling/torch) — воркер убит, документ
     # парсится в родителе, воркер больше не спавнится.
     use_worker(monkeypatch, READY_THEN_FREEZE)
-    monkeypatch.setattr(parse_subprocess, "FIRST_EVENT_TIMEOUT_S", 0.5)
+    fast_watchdog(monkeypatch)
     fallback: list[tuple] = []
     monkeypatch.setattr(
         parse_subprocess, "_parse_in_process", lambda *a: fallback.append(a)
@@ -208,6 +229,22 @@ def test_frozen_import_falls_back_to_in_process(
     assert len(fallback) == 1
     assert parse_subprocess._worker is None  # замёрзший процесс убит
     assert parse_subprocess._worker_blocked
+
+
+def test_growing_memory_means_alive_not_killed(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Событий нет дольше окна «нет прогресса», но память растёт —
+    # воркер честно грузит ML-стек, его не убиваем и дожидаемся done.
+    use_worker(monkeypatch, GROWING_THEN_DONE)
+    fast_watchdog(monkeypatch)
+    fallback: list[tuple] = []
+    monkeypatch.setattr(
+        parse_subprocess, "_parse_in_process", lambda *a: fallback.append(a)
+    )
+    call()
+    assert fallback == []  # дождались done, фоллбек не сработал
+    assert not parse_subprocess._worker_blocked
 
 
 def test_job_line_is_valid_json_with_paths(monkeypatch: pytest.MonkeyPatch) -> None:

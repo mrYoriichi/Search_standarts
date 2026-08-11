@@ -13,8 +13,11 @@ import queue
 import subprocess
 import sys
 import threading
+import time
 from pathlib import Path
 from typing import Callable
+
+import psutil
 
 from backend.core.errors import classify_by_name
 from backend.core.ui_messages import msg
@@ -23,10 +26,16 @@ from backend.core.ui_messages import msg
 # сразу после старта (импорты лаунчера — секунды); замороженный
 # EDR/антивирусом процесс не шлёт никогда (инцидент 2026-08-10).
 READY_TIMEOUT_S = 60.0
-# Сколько ждать ПЕРВОЕ событие после отправки задания. До него воркер
-# грузит docling/torch (обычно до минуты); EDR может заморозить именно
-# этот импорт — ready приходит, а событий нет (лог 2026-08-11).
-FIRST_EVENT_TIMEOUT_S = 300.0
+# Ожидание ПЕРВОГО события после отправки задания — по прогрессу, не по
+# секундомеру: до него воркер грузит docling/torch, и живой процесс
+# постоянно растёт по памяти. Память стоит NO_PROGRESS_TIMEOUT_S подряд
+# при полной тишине = заморожен EDR (лог 2026-08-11: ready и job
+# received пришли за секунду, дальше 0% CPU и ни байта).
+# FIRST_EVENT_TIMEOUT_S — абсолютный потолок на любой случай.
+NO_PROGRESS_TIMEOUT_S = 45.0
+FIRST_EVENT_TIMEOUT_S = 600.0
+_POLL_SLICE_S = 5.0
+_RSS_GROWTH_MIN = 1024 * 1024  # +1 МБ между замерами = «жив, грузится»
 
 _lock = threading.Lock()
 _worker: subprocess.Popen | None = None
@@ -110,21 +119,52 @@ def _wait_ready(proc: subprocess.Popen) -> bool:
         return False
 
 
-def _read_line(proc: subprocess.Popen, timeout: float) -> str | None:
-    """Строка stdout воркера с таймаутом (None = таймаут, "" = EOF).
+def _worker_rss(proc: subprocess.Popen) -> int | None:
+    """Память воркера в байтах (None — процесс умер или замер не удался)."""
+    try:
+        return psutil.Process(proc.pid).memory_info().rss
+    except Exception:
+        return None
 
-    Отдельный поток: у пайпов нет readline с таймаутом. Вызывать только
-    когда по таймауту процесс будет убит — иначе застрявший в readline
-    поток украл бы следующую строку у основного цикла.
+
+def _wait_first_line(proc: subprocess.Popen) -> str | None:
+    """Первая строка stdout после задания; None = воркер заморожен.
+
+    Слушаем кусками по _POLL_SLICE_S, между ними меряем память: растёт —
+    воркер честно грузит ML-стек, ждём дальше (медленный диск ≠
+    заморозка). Не растёт NO_PROGRESS_TIMEOUT_S подряд — процесс стоит.
     """
     got: queue.Queue[str] = queue.Queue()
     threading.Thread(
         target=lambda: got.put(proc.stdout.readline()), daemon=True
     ).start()
-    try:
-        return got.get(timeout=timeout)
-    except queue.Empty:
-        return None
+    deadline = time.monotonic() + FIRST_EVENT_TIMEOUT_S
+    last_rss = _worker_rss(proc)
+    growing_at = time.monotonic()
+    while True:
+        try:
+            return got.get(timeout=_POLL_SLICE_S)
+        except queue.Empty:
+            pass
+        now = time.monotonic()
+        if now > deadline:
+            print(
+                f"[parse] no event within {FIRST_EVENT_TIMEOUT_S:.0f}s after job",
+                file=sys.stderr,
+            )
+            return None
+        rss = _worker_rss(proc)
+        if rss is not None and (last_rss is None or rss - last_rss >= _RSS_GROWTH_MIN):
+            last_rss = rss
+            growing_at = now
+        elif now - growing_at > NO_PROGRESS_TIMEOUT_S:
+            mb = (rss or 0) / 1_000_000
+            print(
+                f"[parse] worker memory static at {mb:.0f} MB for "
+                f"{NO_PROGRESS_TIMEOUT_S:.0f}s, no events",
+                file=sys.stderr,
+            )
+            return None
 
 
 def _mark_blocked(reason: str) -> None:
@@ -211,15 +251,12 @@ def run_parse(
                     if got_first:
                         line = proc.stdout.readline()
                     else:
-                        # До первого события воркер грузит ML-стек; нет
-                        # событий за таймаут — заморожен на импорте.
-                        line = _read_line(proc, FIRST_EVENT_TIMEOUT_S)
+                        # До первого события воркер грузит ML-стек;
+                        # причина отказа уже в логе от _wait_first_line.
+                        line = _wait_first_line(proc)
                         if line is None:
                             _forget(proc)
-                            _mark_blocked(
-                                f"no event within {FIRST_EVENT_TIMEOUT_S:.0f}s "
-                                "after job"
-                            )
+                            _mark_blocked("worker frozen after job")
                             break  # → фоллбек ниже
                     if not line:
                         # EOF: воркер умер посреди задания (bad_alloc,
