@@ -28,8 +28,10 @@ jobs:
         run: |
           import re
           tag = "${{ github.ref_name }}".removeprefix("v")
-          py = re.search(r'APP_VERSION = "([^"]+)"', open("backend/version.py").read()).group(1)
-          iss = re.search(r'#define MyAppVersion "([^"]+)"', open("installer.iss").read()).group(1)
+          # encoding: на Windows-раннере дефолт cp1252, а в installer.iss
+          # есть русские комментарии (UTF-8) — без него гард падает.
+          py = re.search(r'APP_VERSION = "([^"]+)"', open("backend/version.py", encoding="utf-8").read()).group(1)
+          iss = re.search(r'#define MyAppVersion "([^"]+)"', open("installer.iss", encoding="utf-8").read()).group(1)
           assert tag == py == iss, f"tag={tag} version.py={py} installer.iss={iss}"
 
       - uses: actions/setup-node@v7
