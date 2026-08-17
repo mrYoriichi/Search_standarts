@@ -1,4 +1,4 @@
-# MAI Assistant - search your construction database
+# MAI Search - search your construction database
 
 [![CI](https://github.com/mrYoriichi/Search_standarts/actions/workflows/ci.yml/badge.svg)](https://github.com/mrYoriichi/Search_standarts/actions/workflows/ci.yml)
 

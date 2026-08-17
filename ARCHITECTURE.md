@@ -1,4 +1,4 @@
-# MAI Assistant - technical overview
+# MAI Search - technical overview
 
 A local-first desktop RAG application. It turns folders of construction PDFs
 into a searchable database and answers questions about them with a citation

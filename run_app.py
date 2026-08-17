@@ -118,9 +118,9 @@ def _run_tray() -> None:
         icon.stop()
 
     pystray.Icon(
-        "asistent_mai",
+        "mai_search",
         image,
-        f"Asistent MAI {APP_VERSION}",
+        f"MAI Search {APP_VERSION}",
         menu=pystray.Menu(
             pystray.MenuItem("Otevřít", open_ui, default=True),
             pystray.MenuItem("Ukončit", quit_app),

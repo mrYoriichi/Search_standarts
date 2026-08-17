@@ -1,4 +1,4 @@
-# MAI Assistant - Suche in Ihrer Baudatenbank
+# MAI Search - Suche in Ihrer Baudatenbank
 
 [![CI](https://github.com/mrYoriichi/Search_standarts/actions/workflows/ci.yml/badge.svg)](https://github.com/mrYoriichi/Search_standarts/actions/workflows/ci.yml)
 

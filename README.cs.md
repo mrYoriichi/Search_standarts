@@ -1,4 +1,4 @@
-# MAI Assistant - vyhledávání ve vaší stavební databázi
+# MAI Search - vyhledávání ve vaší stavební databázi
 
 [![CI](https://github.com/mrYoriichi/Search_standarts/actions/workflows/ci.yml/badge.svg)](https://github.com/mrYoriichi/Search_standarts/actions/workflows/ci.yml)
 
