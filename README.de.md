@@ -1,10 +1,10 @@
 # MAI Search - Suche in Ihrer Baudatenbank
 
-[![CI](https://github.com/mrYoriichi/Search_standarts/actions/workflows/ci.yml/badge.svg)](https://github.com/mrYoriichi/Search_standarts/actions/workflows/ci.yml)
+[![CI](https://github.com/mrYoriichi/mai-search/actions/workflows/ci.yml/badge.svg)](https://github.com/mrYoriichi/mai-search/actions/workflows/ci.yml)
 
 [English](README.md) | [Čeština](README.cs.md) | **Deutsch**
 
-**⬇️ [Download für Windows](https://github.com/mrYoriichi/Search_standarts/releases/latest)** - kostenloser Installer, kein Abo.
+**⬇️ [Download für Windows](https://github.com/mrYoriichi/mai-search/releases/latest)** - kostenloser Installer, kein Abo.
 
 > 🔧 **Für Ingenieure & Entwickler:** die technische Beschreibung - Stack,
 > RAG-Pipeline, Designentscheidungen - steht in
@@ -129,7 +129,7 @@ werden einfach nicht durchsucht.
 1. **Laden Sie den Installer** für Windows herunter - er braucht keine
    Administratorrechte. *(Der öffentliche Build wird vorbereitet und erscheint
    auf der Seite
-   [Releases](https://github.com/mrYoriichi/Search_standarts/releases).)*
+   [Releases](https://github.com/mrYoriichi/mai-search/releases).)*
 2. **Registrieren Sie sich** beim ersten Start - E-Mail und Passwort,
    kostenlos, kein Abo.
 3. **Besorgen Sie einen OpenAI-Schlüssel:** Konto auf

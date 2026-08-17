@@ -10,9 +10,7 @@ import httpx
 
 from backend.version import APP_VERSION
 
-RELEASES_URL = (
-    "https://api.github.com/repos/mrYoriichi/Search_standarts/releases/latest"
-)
+RELEASES_URL = "https://api.github.com/repos/mrYoriichi/mai-search/releases/latest"
 
 _NO_UPDATE: dict = {
     "update_available": False,
@@ -42,7 +40,10 @@ def get_update_info() -> dict:
 def _fetch_update_info() -> dict | None:
     """One GitHub call; None (= retry next time) on any failure."""
     try:
-        response = httpx.get(RELEASES_URL, timeout=5)
+        # follow_redirects: httpx сам по редиректам не ходит, а GitHub
+        # отвечает 301 после переименования репозитория — без этого
+        # флага проверка обновлений молча умерла бы при каждом rename.
+        response = httpx.get(RELEASES_URL, timeout=5, follow_redirects=True)
         response.raise_for_status()
         release = response.json()
     except (httpx.HTTPError, ValueError):

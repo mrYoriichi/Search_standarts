@@ -1,10 +1,10 @@
 # MAI Search - search your construction database
 
-[![CI](https://github.com/mrYoriichi/Search_standarts/actions/workflows/ci.yml/badge.svg)](https://github.com/mrYoriichi/Search_standarts/actions/workflows/ci.yml)
+[![CI](https://github.com/mrYoriichi/mai-search/actions/workflows/ci.yml/badge.svg)](https://github.com/mrYoriichi/mai-search/actions/workflows/ci.yml)
 
 **English** | [Čeština](README.cs.md) | [Deutsch](README.de.md)
 
-**⬇️ [Download for Windows](https://github.com/mrYoriichi/Search_standarts/releases/latest)** - free installer, no subscription.
+**⬇️ [Download for Windows](https://github.com/mrYoriichi/mai-search/releases/latest)** - free installer, no subscription.
 
 > 🔧 **Engineers & developers:** the technical description - stack, RAG
 > pipeline, design decisions - is in [ARCHITECTURE.md](ARCHITECTURE.md).
@@ -119,7 +119,7 @@ simply not searched.
 
 1. **Download the installer** for Windows - it needs no administrator rights.
    *(The public build is in preparation and will appear on the
-   [Releases](https://github.com/mrYoriichi/Search_standarts/releases) page.)*
+   [Releases](https://github.com/mrYoriichi/mai-search/releases) page.)*
 2. **Register** on the first launch - email and password, free, no
    subscription.
 3. **Get an OpenAI key:** create an account at

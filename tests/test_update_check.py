@@ -12,7 +12,7 @@ import pytest
 from backend.modules.health import update
 
 
-RELEASE_URL = "https://github.com/mrYoriichi/Search_standarts/releases/tag/v9.9.9"
+RELEASE_URL = "https://github.com/mrYoriichi/mai-search/releases/tag/v9.9.9"
 
 
 @pytest.fixture(autouse=True)
@@ -24,7 +24,7 @@ def fresh_cache(monkeypatch):
 def _fake_get(payload: dict | None = None, status: int = 200):
     """Stub for httpx.get returning a canned GitHub answer (or a timeout)."""
 
-    def fake_get(url, timeout):
+    def fake_get(url, timeout, follow_redirects=False):
         if payload is None:
             raise httpx.ConnectTimeout("offline")
         return httpx.Response(status, json=payload, request=httpx.Request("GET", url))

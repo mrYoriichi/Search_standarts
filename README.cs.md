@@ -1,10 +1,10 @@
 # MAI Search - vyhledávání ve vaší stavební databázi
 
-[![CI](https://github.com/mrYoriichi/Search_standarts/actions/workflows/ci.yml/badge.svg)](https://github.com/mrYoriichi/Search_standarts/actions/workflows/ci.yml)
+[![CI](https://github.com/mrYoriichi/mai-search/actions/workflows/ci.yml/badge.svg)](https://github.com/mrYoriichi/mai-search/actions/workflows/ci.yml)
 
 [English](README.md) | **Čeština** | [Deutsch](README.de.md)
 
-**⬇️ [Stáhnout pro Windows](https://github.com/mrYoriichi/Search_standarts/releases/latest)** - instalátor zdarma, bez předplatného.
+**⬇️ [Stáhnout pro Windows](https://github.com/mrYoriichi/mai-search/releases/latest)** - instalátor zdarma, bez předplatného.
 
 > 🔧 **Pro inženýry a vývojáře:** technický popis - stack, RAG pipeline,
 > architektonická rozhodnutí - je v [ARCHITECTURE.md](ARCHITECTURE.md)
@@ -115,7 +115,7 @@ limit zůstanou v seznamu s označením a jen se v nich nehledá.
 
 1. **Stáhněte si instalátor** pro Windows - nepotřebuje práva správce.
    *(Veřejná verze se připravuje a objeví se na stránce
-   [Releases](https://github.com/mrYoriichi/Search_standarts/releases).)*
+   [Releases](https://github.com/mrYoriichi/mai-search/releases).)*
 2. **Zaregistrujte se** při prvním spuštění - e-mail a heslo, zdarma, bez
    předplatného.
 3. **Získejte klíč OpenAI:** založte účet na
