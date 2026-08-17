@@ -76,7 +76,7 @@ def test_http_error_status_means_no_update(monkeypatch):
 def test_success_is_cached(monkeypatch):
     calls = []
 
-    def counting_get(url, timeout):
+    def counting_get(url, timeout, follow_redirects=False):
         calls.append(url)
         return httpx.Response(
             200,
