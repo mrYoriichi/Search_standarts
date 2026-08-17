@@ -114,8 +114,7 @@ limit zůstanou v seznamu s označením a jen se v nich nehledá.
 ## Jak začít
 
 1. **Stáhněte si instalátor** pro Windows - nepotřebuje práva správce.
-   *(Veřejná verze se připravuje a objeví se na stránce
-   [Releases](https://github.com/mrYoriichi/mai-search/releases).)*
+   [Poslední verze](https://github.com/mrYoriichi/mai-search/releases/latest)
 2. **Zaregistrujte se** při prvním spuštění - e-mail a heslo, zdarma, bez
    předplatného.
 3. **Získejte klíč OpenAI:** založte účet na

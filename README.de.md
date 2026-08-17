@@ -127,9 +127,8 @@ werden einfach nicht durchsucht.
 ## Erste Schritte
 
 1. **Laden Sie den Installer** für Windows herunter - er braucht keine
-   Administratorrechte. *(Der öffentliche Build wird vorbereitet und erscheint
-   auf der Seite
-   [Releases](https://github.com/mrYoriichi/mai-search/releases).)*
+   Administratorrechte.
+   [Neueste Version](https://github.com/mrYoriichi/mai-search/releases/latest)
 2. **Registrieren Sie sich** beim ersten Start - E-Mail und Passwort,
    kostenlos, kein Abo.
 3. **Besorgen Sie einen OpenAI-Schlüssel:** Konto auf

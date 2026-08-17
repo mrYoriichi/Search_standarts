@@ -118,8 +118,7 @@ simply not searched.
 ## Getting started
 
 1. **Download the installer** for Windows - it needs no administrator rights.
-   *(The public build is in preparation and will appear on the
-   [Releases](https://github.com/mrYoriichi/mai-search/releases) page.)*
+   [Latest release](https://github.com/mrYoriichi/mai-search/releases/latest)
 2. **Register** on the first launch - email and password, free, no
    subscription.
 3. **Get an OpenAI key:** create an account at
