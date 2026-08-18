@@ -10,6 +10,7 @@ import tempfile
 from pathlib import Path
 
 import pypdfium2 as pdfium
+from docling.backend.pypdfium2_backend import PyPdfiumDocumentBackend
 from docling.datamodel.accelerator_options import AcceleratorDevice, AcceleratorOptions
 from docling.datamodel.base_models import InputFormat
 from docling.datamodel.pipeline_options import PdfPipelineOptions
@@ -239,9 +240,16 @@ def parse_pdf(pdf_path: str) -> tuple[dict, dict]:
         device=AcceleratorDevice.CPU
     )
 
+    # Читалка PDF — pypdfium2: дефолтный docling-parse на Windows течёт
+    # по памяти на документах с сотнями текстовых страниц (TP100:
+    # 188 стр. → 24 ГБ, docling issue #3671). Качество сравнено на
+    # реальных документах (2026-08-18): заголовки/таблицы не хуже.
     converter = DocumentConverter(
         format_options={
-            InputFormat.PDF: PdfFormatOption(pipeline_options=pipeline_options)
+            InputFormat.PDF: PdfFormatOption(
+                pipeline_options=pipeline_options,
+                backend=PyPdfiumDocumentBackend,
+            )
         }
     )
 
