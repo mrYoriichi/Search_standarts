@@ -13,7 +13,7 @@
 ; Result: installer\Search_standarts_Setup.exe
 
 #define MyAppName "Search_standarts"
-#define MyAppVersion "0.6.0"
+#define MyAppVersion "0.6.1"
 #define MyAppPublisher "Search_standarts"
 #define MyAppExeName "Search_standarts.exe"
 
