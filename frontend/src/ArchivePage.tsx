@@ -678,7 +678,10 @@ export default function ArchivePage() {
                               />
                             )}
                           </summary>
-                          <div className="flex flex-col gap-1 mt-2 ml-1">
+                          {/* Кап высоты: длинный список документов
+                              прокручивается внутри проекта, а не
+                              растягивает страницу. */}
+                          <div className="flex flex-col gap-1 mt-2 ml-1 max-h-96 overflow-y-auto pr-1">
                             {project.documents.map((doc) => (
                               <DocumentRow
                                 key={doc.slug}

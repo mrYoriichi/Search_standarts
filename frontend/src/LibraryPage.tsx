@@ -441,7 +441,9 @@ function FolderView({
               </button>
             )}
           </summary>
-          <div className="flex flex-col gap-1 mt-2 ml-1">
+          {/* Кап высоты: длинный список файлов прокручивается внутри
+              папки, а не растягивает страницу на несколько экранов. */}
+          <div className="flex flex-col gap-1 mt-2 ml-1 max-h-96 overflow-y-auto pr-1">
             <FolderView folder={f} freshlyReady={freshlyReady} onChange={onChange} />
           </div>
         </details>
