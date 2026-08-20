@@ -64,3 +64,66 @@ def test_batches_respect_token_limit(monkeypatch):
     assert len(calls) > 1
     assert sum(len(c) for c in calls) == 6
     assert len(index["items"]) == 6
+
+
+def _token_reject(n_texts: int) -> Exception:
+    """Серверный отказ «слишком много токенов в запросе» (код OpenAI)."""
+    import httpx
+    from openai import BadRequestError
+
+    return BadRequestError(
+        f"Requested too many tokens for {n_texts} texts",
+        response=httpx.Response(400, request=httpx.Request("POST", "https://x")),
+        body={"code": "max_tokens_per_request"},
+    )
+
+
+def test_server_token_reject_splits_batch(monkeypatch):
+    """Сервер считает токены сам; его отказ делит пачку пополам и повторяет.
+
+    Инцидент 2026-08-20 (TP188): локальный счёт дал ≤250k и один батч,
+    сервер насчитал 424k и отбил запрос — документ падал целиком.
+    """
+    calls: list[list[str]] = []
+
+    def fake(texts: list[str]) -> tuple[list[list[float]], int]:
+        calls.append(list(texts))
+        if len(texts) > 2:  # «серверный» лимит, о котором наш счётчик не знает
+            raise _token_reject(len(texts))
+        return [[0.1, 0.2] for _ in texts], len(texts)
+
+    monkeypatch.setattr(embeddings_index, "get_embeddings", fake)
+    index, _ = embeddings_index.build_embeddings_index(_chunks(5))
+    # Все 5 чанков обработаны, порядок цел: 5 → (2, 3) → 3 → (1, 2).
+    assert [it["chunk_id"] for it in index["items"]] == [f"c{i:03d}" for i in range(5)]
+    assert [len(c) for c in calls] == [5, 2, 3, 1, 2]
+
+
+def test_other_bad_request_propagates(monkeypatch):
+    """Чужие 400 (не про токены) не глотаем — пусть падают как раньше."""
+    import httpx
+    from openai import BadRequestError
+
+    def fake(texts: list[str]):
+        raise BadRequestError(
+            "invalid",
+            response=httpx.Response(400, request=httpx.Request("POST", "https://x")),
+            body={"code": "invalid_api_key"},
+        )
+
+    monkeypatch.setattr(embeddings_index, "get_embeddings", fake)
+    with pytest.raises(BadRequestError):
+        embeddings_index.build_embeddings_index(_chunks(3))
+
+
+def test_single_text_reject_propagates(monkeypatch):
+    """Один текст пополам не делится — отказ уходит наверх, не в бесконечный цикл."""
+
+    def fake(texts: list[str]):
+        raise _token_reject(len(texts))
+
+    monkeypatch.setattr(embeddings_index, "get_embeddings", fake)
+    from openai import BadRequestError
+
+    with pytest.raises(BadRequestError):
+        embeddings_index.build_embeddings_index(_chunks(1))

@@ -6,7 +6,7 @@ differ. Complements BM25 (exact matches).
 
 import numpy as np
 import tiktoken
-from openai import OpenAI
+from openai import BadRequestError, OpenAI
 
 
 # Changing the embedding model is a one-line change here.
@@ -40,6 +40,27 @@ def get_embeddings(texts: list[str]) -> tuple[list[list[float]], int]:
     )
     vectors = [item.embedding for item in response.data]
     return vectors, response.usage.total_tokens
+
+
+def _embed_batch(texts: list[str]) -> tuple[list[list[float]], int]:
+    """get_embeddings с ретраем на серверный отказ «слишком много токенов».
+
+    Локальный tiktoken-подсчёт может разойтись с серверным (инцидент
+    2026-08-20, TP188: наш счёт ≤250k и один батч, сервер насчитал 424k —
+    причина расхождения не найдена). Отказ max_tokens_per_request делит
+    пачку пополам рекурсивно вместо падения документа; один текст пополам
+    не делится — такой отказ пробрасываем.
+    """
+    try:
+        return get_embeddings(texts)
+    except BadRequestError as e:
+        if e.code != "max_tokens_per_request" or len(texts) < 2:
+            raise
+        mid = len(texts) // 2
+        print(f"  embeddings: server rejected {len(texts)} texts, splitting in half")
+        left_vectors, left_tokens = _embed_batch(texts[:mid])
+        right_vectors, right_tokens = _embed_batch(texts[mid:])
+        return left_vectors + right_vectors, left_tokens + right_tokens
 
 
 def build_searchable_text(chunk: dict) -> str:
@@ -92,12 +113,19 @@ def build_embeddings_index(chunks: list[dict]) -> tuple[dict, int]:
         batches[-1].append(text)
         batch_tokens += n_tokens
 
+    # Диагностика всегда: при расхождении нашего счёта с серверным
+    # (см. _embed_batch) обе цифры должны быть видны в app.log рядом.
+    print(
+        f"  embeddings: {len(texts)} texts, ~{sum(token_counts)} tokens "
+        f"(local count), {len(batches)} batch(es)"
+    )
+
     embeddings: list[list[float]] = []
     tokens = 0
     for n, batch in enumerate(batches, start=1):
         if len(batches) > 1:
             print(f"  embeddings: batch {n}/{len(batches)} ({len(batch)} texts)")
-        vectors, used = get_embeddings(batch)
+        vectors, used = _embed_batch(batch)
         embeddings.extend(vectors)
         tokens += used
 
