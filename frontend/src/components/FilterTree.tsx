@@ -37,7 +37,9 @@ export function FilterTree({
         />
         <span className="font-medium">📁 {folder.name}</span>
       </summary>
-      <div className="ml-5 mt-1 flex flex-col gap-1">
+      {/* Кап высоты: длинный список прокручивается внутри папки, а не
+          растягивает фильтр на весь экран. */}
+      <div className="ml-5 mt-1 flex flex-col gap-1 max-h-96 overflow-y-auto pr-1">
         {folder.folders.map((sub) => (
           <FilterTree
             key={sub.path}

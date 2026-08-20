@@ -46,13 +46,16 @@ export function buildArchiveTree(archive: ArchiveApiResponse): LibraryFolder {
   }
 
   for (const project of archive.projects) {
+    // Каждый проект — своя папка, как на странице архива; иначе файлы
+    // из корней всех проектов ссыпаются в один плоский список.
+    const projectFolder = ensureFolder(root, project.name, project.name)
     for (const doc of project.documents) {
       // Split on both separators: old Windows records contain `\`.
       const parts = doc.relative_path.split(/[\\/]/)
-      let node = root
-      let accPath = ''
+      let node = projectFolder
+      let accPath = project.name
       for (const part of parts.slice(0, -1)) {
-        accPath = accPath ? `${accPath}/${part}` : part
+        accPath = `${accPath}/${part}`
         node = ensureFolder(node, part, accPath)
       }
       node.files.push({

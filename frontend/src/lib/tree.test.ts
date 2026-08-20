@@ -63,10 +63,37 @@ describe('buildArchiveTree', () => {
     ],
   }
 
-  it('nests by relative_path', () => {
+  it('groups documents under their project folder, like the archive page', () => {
+    // Two projects with root-level files used to merge into one flat list.
+    const root = buildArchiveTree({
+      paths: [],
+      projects: [
+        {
+          name: 'P47',
+          documents: [
+            { slug: 'p47__a', project: 'P47', relative_path: 'a.pdf', status: 'ready' },
+          ],
+        },
+        {
+          name: 'Lavka',
+          documents: [
+            { slug: 'lavka__b', project: 'Lavka', relative_path: 'b.pdf', status: 'ready' },
+          ],
+        },
+      ],
+    })
+
+    expect(root.files).toEqual([])
+    expect(root.folders.map((f) => f.name)).toEqual(['P47', 'Lavka'])
+    expect(root.folders[0].files[0].name).toEqual('a.pdf')
+    expect(root.folders[1].files[0].name).toEqual('b.pdf')
+  })
+
+  it('nests by relative_path inside the project folder', () => {
     const root = buildArchiveTree(archive)
 
-    const tz = root.folders.find((f) => f.name === 'TZ')!
+    const most = root.folders.find((f) => f.name === 'Most')!
+    const tz = most.folders.find((f) => f.name === 'TZ')!
     expect(tz.files.map((f) => f.name)).toEqual(['tz.pdf'])
     expect(tz.folders.find((f) => f.name === 'vykresy')!.files[0].name).toEqual('v1.pdf')
   })
@@ -89,7 +116,8 @@ describe('buildArchiveTree', () => {
       ],
     })
 
-    expect(root.folders[0].name).toEqual('TZ')
-    expect(root.folders[0].files[0].name).toEqual('tz.pdf')
+    const most = root.folders.find((f) => f.name === 'Most')!
+    expect(most.folders[0].name).toEqual('TZ')
+    expect(most.folders[0].files[0].name).toEqual('tz.pdf')
   })
 })
